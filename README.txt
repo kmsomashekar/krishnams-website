@@ -1,0 +1,1 @@
+Rename your resume PDF to resume.pdf and place it in this folder before uploading.
