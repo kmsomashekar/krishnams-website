@@ -60,7 +60,7 @@ border:1px solid var(--border);color:#fff;background:transparent
 
 .hero-image-wrapper{
     position:relative;
-    width:420px;
+    width:700px;
     max-width:100%;
     justify-self:center;
 }
@@ -201,4 +201,54 @@ transition:.3s
 .container{padding:0 20px}
 .hero-actions,.contact-cta-buttons{flex-direction:column}
 .btn{justify-content:center}
+}
+
+
+/* ==========================================================================
+   Executive Dashboard Portfolio
+   ========================================================================== */
+
+.dashboard-hero{
+    padding-top:120px;
+    padding-bottom:40px;
+}
+
+.dashboard-feature{
+    padding-top:20px;
+    padding-bottom:30px;
+}
+
+.dashboard-section{
+    padding-top:40px !important;
+    padding-bottom:40px !important;
+}
+
+.dashboard-image{
+    width:100%;
+    border-radius:18px;
+    box-shadow:var(--shadow);
+    margin-bottom:2rem;
+}
+
+.dashboard-actions{
+    display:flex;
+    justify-content:center;
+    margin:2rem 0;
+}
+
+.dashboard-overview{
+    margin-top:2rem;
+}
+
+.dashboard-overview p{
+    margin-bottom:1rem;
+}
+
+.dashboard-roadmap .cert-card{
+    height:100%;
+}
+
+.dashboard-return{
+    padding:20px 0 40px;
+    text-align:center;
 }
