@@ -1,143 +1,113 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Executive Dashboard Portfolio | Krishna M S</title>
-<link rel="stylesheet" href="css/styles.css">
-<script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=qiZ62TZ8OcBYJk4uVds0cTwhgwwDjCu6MMEHAo_JVxC2Rfr-mZjqV6jM2BpqBKkIKe5IHnrtEb9szuxvCBMhaEMTiJyCn77n-e3JUynkaA7YtSjAHjx8zG0jTAArQGmgAd9dYqM9JDSKJP5fvXVhKYRXhlUx_-utKhAKjrJ41ZPwZSk1sW5uqC8udpI6VfEQk2JNWLrMS7sy8K-q0q0XuuPcCtFEpIbDOBheVpCj5C7qnJ6-Xm-sbp9RYRgtl8GuqKzqGBoNtVCV-OqcXui6H1C1JU_F8qW_lCkut48I3kkvQ0KucdXYs7-toefLOF-C" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://me.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9jaGF0Z3B0LmNvbS9iYWNrZW5kLWFwaS9lc3R1YXJ5L2NvbnRlbnQ_aWQ9ZmlsZV8wMDAwMDAwMDMzMzQ3MjA5YTE0ODQxZWQzNzRmYWYyMiZmbj1wb3dlcmJpJTI4NiUyOS5odG1sJmNkPWF0dGFjaG1lbnQmdHM9NDk1NTMxJnA9ZnMmY2lkPTEmc2lnPWI1NmZjNDE3NTlmYzQ0YzQ5ZjI1ZDA5ZTNmNjJiOTliM2QwYjVlNjlkYjlmMGM4Y2YyZmNhNzQ5YTA4ZmVlOTAmdj0w"/></head>
+<link href="css/styles.css" rel="stylesheet"/>
+<script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=BFHVlz2nQA_pvguuenwVjodN-lvnSGfa8_Kba7GSk548-2K-x2do0fEE4e3UOeubj6SjXNlc_yH0ptZctKuJH1OLfMglNa1Ks2lELzTP_v8BGEvhdI2Mgd9YdIOnhDOvu0qPCQ2_yIDB0Ok9JIi9jDwl3T4t6YYxyl0Oqk0brxMm2a53y25IbyMjFqD9lt_Y-JxnvG8svutJfJzg4-g9wjPm1-WZPv2lI_0f3n_7_06ysH2mW7sETgQ85tsBOghrzb-SagjkGKzJJAZzWPbD9mr1MYXjzp8-rj5Yaf29d7MPrJ4HsfuNu9MpHWUVio5v" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://me.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9jaGF0Z3B0LmNvbS9iYWNrZW5kLWFwaS9lc3R1YXJ5L2NvbnRlbnQ_aWQ9ZmlsZV8wMDAwMDAwMDcxOGM3MWZhODIzNTQ5NmRmYzFkNDY1YyZmbj1wb3dlcmJpX3VwZGF0ZWQuaHRtbCZjZD1hdHRhY2htZW50JnRzPTQ5NTUzNSZwPWZzJmNpZD0xJnNpZz01Njg3MGM2OTMyMjAwOWEzZjkxYmMyMGVmNGEzMjU3MGQxYTMwZjQ4MWJkZDMxYzZkMDRkZjZkNmM5NWI1NDc3JnY9MA"/><script charset="UTF-8" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=qiZ62TZ8OcBYJk4uVds0cTwhgwwDjCu6MMEHAo_JVxC2Rfr-mZjqV6jM2BpqBKkIKe5IHnrtEb9szuxvCBMhaEMTiJyCn77n-e3JUynkaA7YtSjAHjx8zG0jTAArQGmgAd9dYqM9JDSKJP5fvXVhKYRXhlUx_-utKhAKjrJ41ZPwZSk1sW5uqC8udpI6VfEQk2JNWLrMS7sy8K-q0q0XuuPcCtFEpIbDOBheVpCj5C7qnJ6-Xm-sbp9RYRgtl8GuqKzqGBoNtVCV-OqcXui6H1C1JU_F8qW_lCkut48I3kkvQ0KucdXYs7-toefLOF-C" type="text/javascript"></script><link crossorigin="anonymous" href="https://me.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9jaGF0Z3B0LmNvbS9iYWNrZW5kLWFwaS9lc3R1YXJ5L2NvbnRlbnQ_aWQ9ZmlsZV8wMDAwMDAwMDMzMzQ3MjA5YTE0ODQxZWQzNzRmYWYyMiZmbj1wb3dlcmJpJTI4NiUyOS5odG1sJmNkPWF0dGFjaG1lbnQmdHM9NDk1NTMxJnA9ZnMmY2lkPTEmc2lnPWI1NmZjNDE3NTlmYzQ0YzQ5ZjI1ZDA5ZTNmNjJiOTliM2QwYjVlNjlkYjlmMGM4Y2YyZmNhNzQ5YTA4ZmVlOTAmdj0w" rel="stylesheet"/></head>
 <body>
-
 <header class="main-header">
-  <div class="container header-container">
-    <a href="index.html" class="logo-area">
-      <img src="images/kms-logo.png" alt="KMS Logo" class="nav-logo">
-    </a>
-
-    <nav id="primary-navigation" class="main-navigation">
-      <ul class="nav-links">
-        <li><a href="index.html" class="nav-link">Home</a></li>
-        <li><a href="powerbi.html" class="nav-link active">Executive Dashboard Portfolio</a></li>
-        <li><a href="index.html#contact" class="nav-link">Contact</a></li>
-      </ul>
-    </nav>
-  </div>
+<div class="container header-container">
+<a class="logo-area" href="index.html">
+<img alt="KMS Logo" class="nav-logo" src="images/kms-logo.png"/>
+</a>
+<nav class="main-navigation" id="primary-navigation">
+<ul class="nav-links">
+<li><a class="nav-link" href="index.html">Home</a></li>
+<li><a class="nav-link active" href="powerbi.html">Executive Dashboard Portfolio</a></li>
+<li><a class="nav-link" href="index.html#contact">Contact</a></li>
+</ul>
+</nav>
+</div>
 </header>
-
 <main>
-
 <section class="hero-section dashboard-hero">
-  <div class="container">
-    <div class="hero-content">
-      <h1 class="hero-title" style="text-align:center;">Executive Dashboard Portfolio</h1>
-      <p class="hero-subtitle" style="text-align:center;">
+<div class="container">
+<div class="hero-content">
+<h1 class="hero-title" style="text-align:center;">Executive Dashboard Portfolio</h1>
+<p class="hero-subtitle" style="text-align:center;">
         Executive Reporting • Business Intelligence • Decision Support
       </p>
-      <p class="hero-summary" style="max-width:900px;margin:0 auto;text-align:center;">
-        A growing portfolio of executive dashboards showcasing IT Operations,
-        Cybersecurity, Governance, Risk Management, Infrastructure and Business
-        Continuity using Microsoft Power BI.
-      </p>
-    </div>
-  </div>
+<p class="hero-summary" style="max-width:900px;margin:0 auto;text-align:center;">A portfolio of executive dashboards demonstrating IT Operations, Cybersecurity Governance, Executive Reporting, Risk Management, Compliance and Business Intelligence using Microsoft Power BI.</p>
+</div>
+</div>
 </section>
-
 <section class="expertise-section dashboard-feature dashboard-section">
-  <div class="container">
-
-    <div class="expertise-card">
-
-      <div style="text-align:center;">
-        <h2 class="section-title">Executive IT Operations Dashboard</h2>
-        <p class="section-subtitle">Published • July 2026</p>
-      </div>
-
-      <img
-        src="images/executive-dashboard-v1.png"
-        alt="Executive IT Operations Dashboard"
-        class="dashboard-image">
-
-      <div class="dashboard-actions">
-        <a href="documents/Executive_IT_Operations_Dashboard_v1.pdf"
-           class="btn btn-primary"
-           target="_blank">
+<div class="container">
+<div class="expertise-card">
+<div style="text-align:center;">
+<h2 class="section-title">Executive IT Operations Dashboard</h2>
+<p class="section-subtitle">Published • July 2026</p>
+</div>
+<img alt="Executive IT Operations Dashboard" class="dashboard-image" src="images/executive-dashboard-v1.png"/>
+<div class="dashboard-actions">
+<a class="btn btn-primary" href="documents/Executive_IT_Operations_Dashboard_v1.pdf" target="_blank">
           Download Dashboard PDF
         </a>
-      </div>
-
-      <div class="dashboard-overview">
-        <h3>Overview</h3>
-
-        <p>
+</div>
+<div class="dashboard-overview">
+<h3>Overview</h3>
+<p>
           Designed for CIOs and IT leadership, this dashboard consolidates
           operational health, service management, infrastructure performance,
           cybersecurity posture, asset lifecycle, and executive KPIs into a
           single executive reporting view.
         </p>
-
-        <p>
+<p>
           The dashboard provides leadership with timely visibility into service
           quality, infrastructure reliability, operational trends, and security
           indicators to support informed decision-making.
         </p>
-
-        <div class="badge-container">
-          <span class="tech-badge">Power BI</span>
-          <span class="tech-badge">Power Query</span>
-          <span class="tech-badge">DAX</span>
-          <span class="tech-badge">Data Modeling</span>
-          <span class="tech-badge">IT Operations</span>
-          <span class="tech-badge">Cybersecurity</span>
-          <span class="tech-badge">Executive KPIs</span>
-        </div>
-      </div>
-
-    </div>
-
-  </div>
-</section>
-
+<div class="badge-container">
+<span class="tech-badge">Power BI</span>
+<span class="tech-badge">Power Query</span>
+<span class="tech-badge">DAX</span>
+<span class="tech-badge">Data Modeling</span>
+<span class="tech-badge">IT Operations</span>
+<span class="tech-badge">Cybersecurity</span>
+<span class="tech-badge">Executive KPIs</span>
+</div>
+</div>
+</div>
+</div>
+</section><section class="expertise-section dashboard-feature dashboard-section"><div class="container"><div class="expertise-card"><div style="text-align:center;"><h2 class="section-title">Executive Cybersecurity Dashboard</h2><p class="section-subtitle">Published • July 2026</p></div><img alt="Executive Cybersecurity Dashboard" class="dashboard-image" src="images/executive-cybersecurity-dashboard-v1.png"/><div class="dashboard-actions"><a class="btn btn-primary" href="documents/Executive_Cybersecurity_Dashboard_v1.pdf" target="_blank">Download Dashboard PDF</a></div><div class="dashboard-overview"><h3>Executive Summary</h3><p>This executive cybersecurity dashboard provides leadership with a consolidated view of enterprise security posture, vulnerability management, patch compliance, cyber risk, email security, and governance metrics.</p><h3>Business Value</h3><ul><li>Executive visibility into enterprise cybersecurity posture</li><li>Monitor vulnerability trends and remediation priorities</li><li>Track patch compliance</li><li>Measure security awareness and MFA adoption</li><li>Review compliance against major frameworks</li><li>Summarise enterprise cyber risks</li></ul><h3>Technologies Used</h3><div class="badge-container"><span class="tech-badge">Microsoft Power BI</span><span class="tech-badge">Power Query</span><span class="tech-badge">DAX</span><span class="tech-badge">Microsoft Excel</span><span class="tech-badge">Cybersecurity</span><span class="tech-badge">ISO 27001</span><span class="tech-badge">Risk Management</span><span class="tech-badge">Executive Reporting</span></div><h3>Representative Sample Data</h3><p>This dashboard uses representative sample data created exclusively for demonstration and portfolio purposes.</p></div></div></div></section>
 <section class="certifications-section dashboard-section dashboard-roadmap">
-  <div class="container">
-    <h2 class="section-title">Dashboard Portfolio Roadmap</h2>
-
-    <div class="grid-3-col">
-      <div class="cert-card"><div class="cert-badge">✓</div><h3>Executive IT Operations</h3><p class="cert-issuer">Version 1.0 • Published</p></div>
-      <div class="cert-card"><div class="cert-badge">2</div><h3>Executive Cybersecurity</h3><p class="cert-issuer">Planned</p></div>
-      <div class="cert-card"><div class="cert-badge">3</div><h3>ISO 27001 &amp; GRC</h3><p class="cert-issuer">Planned</p></div>
-      <div class="cert-card"><div class="cert-badge">4</div><h3>IT Service Management</h3><p class="cert-issuer">Planned</p></div>
-      <div class="cert-card"><div class="cert-badge">5</div><h3>Infrastructure &amp; Cloud</h3><p class="cert-issuer">Planned</p></div>
-      <div class="cert-card"><div class="cert-badge">6</div><h3>Business Continuity &amp; Disaster Recovery</h3><p class="cert-issuer">Planned</p></div>
-    </div>
-  </div>
+<div class="container">
+<h2 class="section-title">Dashboard Portfolio Roadmap</h2>
+<div class="grid-3-col">
+<div class="cert-card"><div class="cert-badge">✓</div><h3>Executive IT Operations</h3><p class="cert-issuer">Version 1.0 • Published</p></div>
+<div class="cert-card"><div class="cert-badge">✓</div><h3>Executive Cybersecurity</h3><p class="cert-issuer">Version 1.0 • Published</p></div>
+<div class="cert-card"><div class="cert-badge">3</div><h3>ISO 27001 &amp; GRC</h3><p class="cert-issuer">Planned</p></div>
+<div class="cert-card"><div class="cert-badge">4</div><h3>IT Service Management</h3><p class="cert-issuer">Planned</p></div>
+<div class="cert-card"><div class="cert-badge">5</div><h3>Infrastructure &amp; Cloud</h3><p class="cert-issuer">Planned</p></div>
+<div class="cert-card"><div class="cert-badge">6</div><h3>Business Continuity &amp; Disaster Recovery</h3><p class="cert-issuer">Planned</p></div>
+</div>
+</div>
 </section>
-
 <section class="contact-section dashboard-section">
-  <div class="container contact-container">
-    <div class="contact-card">
-      <h2>Portfolio Notice</h2>
-      <p>
+<div class="container contact-container">
+<div class="contact-card">
+<h2>Portfolio Notice</h2>
+<p>
         All dashboards use representative sample data created exclusively for
         demonstration purposes. No employer, customer, proprietary, or
         confidential information is included.
       </p>
-    </div>
-  </div>
+</div>
+</div>
 </section>
-
 </main>
-
 <section class="dashboard-return">
-  <a href="index.html" class="btn btn-secondary">← Return to Home</a>
+<a class="btn btn-secondary" href="index.html">← Return to Home</a>
 </section>
-
 <footer class="main-footer">
-  <div class="container footer-content">
-    <p>&copy; 2026 Krishna M S. All Rights Reserved.</p>
-    <p class="footer-tagline">Executive Dashboard Portfolio</p>
-  </div>
+<div class="container footer-content">
+<p>© 2026 Krishna M S. All Rights Reserved.</p>
+<p class="footer-tagline">Executive Dashboard Portfolio</p>
+</div>
 </footer>
-
 <script src="js/script.js"></script>
 </body>
 </html>
