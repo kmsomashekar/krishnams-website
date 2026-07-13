@@ -252,3 +252,31 @@ transition:.3s
     padding:20px 0 40px;
     text-align:center;
 }
+
+
+/* ===== Leadership Dashboard Gallery Enhancements ===== */
+
+.dashboard-card{
+    padding:1.4rem;
+}
+
+.dashboard-card-title{
+    font-size:2.6rem;
+    color:#fff;
+    text-align:center;
+    line-height:1.2;
+    margin-bottom:0.75rem;
+}
+
+.dashboard-version{
+    text-align:center;
+    color:#9AA8B8;
+    font-size:0.9rem;
+    margin-bottom:1.2rem;
+}
+
+.dashboard-description{
+    font-size:1.08rem;
+    line-height:1.8;
+    margin-bottom:1.4rem;
+}
