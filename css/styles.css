@@ -60,7 +60,7 @@ border:1px solid var(--border);color:#fff;background:transparent
 
 .hero-image-wrapper{
     position:relative;
-    width:700px;
+    width:500px;
     max-width:100%;
     justify-self:center;
 }
