@@ -12,26 +12,29 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" crossorigin="anonymous" href="https://me.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9jaGF0Z3B0LmNvbS9iYWNrZW5kLWFwaS9lc3R1YXJ5L2NvbnRlbnQ_aWQ9ZmlsZV8wMDAwMDAwMDcwODA3MjA2ODA4MTcxMjFiODQ1NjNlMyZmbj1pbmRleF92M18xLmh0bWwmY2Q9YXR0YWNobWVudCZ0cz00OTU1NzgmcD1mcyZjaWQ9MSZzaWc9OWY2NTExMWM4NzhjNjQwZDgzOGJiZThkYjlkOWVkMzFiYmQzNjNkODFmNDdlZDU0NGQ0MzM5YmM4NGUwYzUyMSZ2PTA"/>
 </head>
 <body>
+
+    <a href="#main-content" class="skip-to-content">Skip to main content</a>
 
     <header class="main-header">
         <div class="container header-container">
             <a href="#home" class="logo-area" aria-label="Krishna M S Home">
                 <img src="images/kms-logo.png" alt="KMS Logo" class="nav-logo">
             </a>
-            <button class="mobile-nav-toggle" aria-controls="primary-navigation" aria-expanded="false">
+            <button class="mobile-nav-toggle" aria-controls="primary-navigation" aria-expanded="false" aria-label="Toggle primary navigation navigation menu">
                 <span class="sr-only">Menu</span>
-                <div class="hamburger-bar"></div>
+                <div class="hamburger-bar" aria-hidden="true"></div>
             </button>
-            <nav id="primary-navigation" class="main-navigation">
+            <nav id="primary-navigation" class="main-navigation" aria-label="Main Navigation">
                 <ul class="nav-links">
                     <li><a href="#home" class="nav-link active">Home</a></li>
                     <li><a href="#about" class="nav-link">About</a></li>
                     <li><a href="#experience" class="nav-link">Experience</a></li>
                     <li><a href="#expertise" class="nav-link">Expertise</a></li>
                     <li><a href="#recommendations" class="nav-link">Recommendations</a></li>
-					<li><a href="leadership-dashboards.html" class="nav-link">Leadership Dashboards</a></li>
+                    <li><a href="leadership-dashboards.html" class="nav-link">Leadership Dashboards</a></li>
                     <li><a href="#certifications" class="nav-link">Certifications</a></li>
                     <li><a href="#contact" class="nav-link">Contact</a></li>
                 </ul>
@@ -39,39 +42,31 @@
         </div>
     </header>
 
-    <main>
+    <main id="main-content">
         <section id="home" class="hero-section">
             <div class="container hero-container">
+                <div class="hero-image-wrapper scroll-reveal">
+                    <div class="image-accent-border"></div>
+                    <img src="images/krishna-photo.jpg" alt="Krishna Mulbagal Somashekar" class="hero-image">
+                </div>
                 <div class="hero-content scroll-reveal">
-                    <h1 class="hero-title">Krishna Mulbagal</br> Somashekar</h1>
-                    <h2 class="hero-subtitle">
-                    Enterprise IT, Cybersecurity &<br>
-                    Digital Transformation Leader
-                    </h2>
-					<p class="hero-summary">
-					Technology and Cybersecurity Leader with over 25 years of experience in enterprise IT operations, infrastructure management, cybersecurity governance, and information security.
-                    </p>
-                    <p class="hero-summary">
-                    My focus is on building resilient technology environments, strengthening security governance, and providing executive leadership with meaningful operational and cybersecurity insights that support informed business decisions.
-                    </p>
-                        
-                    </p>
+                    <h1 class="hero-title">Krishna Mulbagal<br>Somashekar</h1>
+                    <h2 class="hero-subtitle">Enterprise IT, Cybersecurity &<br>Digital Transformation Leader</h2>
+                    <p class="hero-summary">Technology and Cybersecurity Leader with over 25 years of experience in enterprise IT operations, infrastructure management, cybersecurity governance, and information security.</p>
+                    <p class="hero-summary">My focus is on building resilient technology environments, strengthening security governance, and providing executive leadership with meaningful operational and cybersecurity insights that support informed business decisions.</p>
                     <div class="hero-actions">
                         <a href="#contact" class="btn btn-primary">Contact Me</a>
-                        <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">LinkedIn Profile</a>
+                        <a href="https://linkedin.com/in/krishnams" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">LinkedIn Profile</a>
                         <a href="documents/resume.pdf" download class="btn btn-tertiary">
-                            <svg class="icon-download" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4M7 10l5 5 5-5M12 15V3"/></svg>
+                            <svg class="icon-download" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4M7 10l5 5 5-5M12 15V3"/></svg>
                             Download Resume
                         </a>
                     </div>
                 </div>
-                <div class="hero-image-wrapper scroll-reveal">
-                    <img src="images/krishna-photo.jpg" alt="Krishna Mulbagal Somashekar" class="hero-image">
-                </div>
             </div>
         </section>
 
-        <section id="about" class="snapshot-section">
+        <section id="about" class="snapshot-section" aria-label="Executive Snapshot">
             <div class="container">
                 <div class="grid-4-col">
                     <div class="snapshot-card scroll-reveal">
@@ -100,10 +95,10 @@
                 <p class="section-subtitle scroll-reveal">Leading enterprise IT, cybersecurity governance, and digital transformation initiatives that strengthened security, operational resilience, and business performance across global organizations.</p>
                 
                 <div class="timeline">
-                    <div class="timeline-item scroll-reveal">
-                        <div class="timeline-marker"></div>
+                    <article class="timeline-item scroll-reveal">
+                        <div class="timeline-marker" aria-hidden="true"></div>
                         <div class="timeline-info">
-                            <span class="timeline-date">2012 — 2025</span>
+                            <span class="timeline-date">2013 — 2025</span>
                             <h3 class="timeline-role">Head of IT</h3>
                             <h4 class="timeline-company">Toradex Systems India Pvt. Ltd.</h4>
                         </div>
@@ -111,16 +106,16 @@
                             <p>Led global IT strategy, enterprise infrastructure, cybersecurity governance, and cloud transformation initiatives supporting worldwide business operations. Partnered with executive leadership to strengthen security, operational resilience, regulatory compliance, and technology-enabled business growth across global locations.</p>
                             <ul class="impact-list">
                                 <li><strong>Enterprise Information Security Governance:</strong> Owned enterprise Information Security Governance supporting 170+ employees across global operations, establishing security policies, governance processes, risk registers, and internal controls aligned with ISO/IEC 27001:2022 and the NIST Cybersecurity Framework.</li>
-                                <li><strong>SO/IEC 27001 Leadership:</strong> Directed the end-to-end implementation of the Information Security Management System (ISMS), including internal audits, management reviews, and certification activities, achieving first-time ISO/IEC 27001:2022 certification with zero major non-conformities.</li>
+                                <li><strong>ISO/IEC 27001 Leadership:</strong> Directed the end-to-end implementation of the Information Security Management System (ISMS), including internal audits, management reviews, and certification activities, achieving first-time ISO/IEC 27001:2022 certification with zero major non-conformities.</li>
                                 <li><strong>Cloud & Enterprise Infrastructure Transformation:</strong> Led modernization initiatives across AWS and Microsoft Azure, improving infrastructure resilience, scalability, and operational efficiency while reducing infrastructure costs by 10%.</li>
                                 <li><strong>Operational Excellence:</strong> Optimized enterprise IT operations, reducing overall IT operating costs by 15%+ while improving service reliability, operational efficiency, and business resilience.</li>
-								<li><strong>Leadership & Collaboration:</strong> Led a high-performing IT team while partnering with executive leadership, business stakeholders, auditors, and global teams to deliver secure, scalable, and business-aligned technology services.</li>
+                                <li><strong>Leadership & Collaboration:</strong> Led a high-performing IT team while partnering with executive leadership, business stakeholders, auditors, and global teams to deliver secure, scalable, and business-aligned technology services.</li>
                             </ul>
                         </div>
-                    </div>
+                    </article>
 
-                    <div class="timeline-item scroll-reveal">
-                        <div class="timeline-marker"></div>
+                    <article class="timeline-item scroll-reveal">
+                        <div class="timeline-marker" aria-hidden="true"></div>
                         <div class="timeline-info">
                             <span class="timeline-date">2010 — 2012</span>
                             <h3 class="timeline-role">Senior Manager — IT</h3>
@@ -133,10 +128,10 @@
                                 <li><strong>ITIL Standardization:</strong> Deployed institutional upgrades matching rigorous ITIL patterns to elevate mean-time-between-failures (MTBF) and infrastructure availability.</li>
                             </ul>
                         </div>
-                    </div>
+                    </article>
 
-                    <div class="timeline-item scroll-reveal">
-                        <div class="timeline-marker"></div>
+                    <article class="timeline-item scroll-reveal">
+                        <div class="timeline-marker" aria-hidden="true"></div>
                         <div class="timeline-info">
                             <span class="timeline-date">2007 — 2010</span>
                             <h3 class="timeline-role">IT Manager</h3>
@@ -149,7 +144,7 @@
                                 <li><strong>Infrastructure Operations:</strong> Enterprise IT Operations: Strengthened enterprise IT operations, end-user support, and infrastructure security for 300+ engineering and business users, improving service reliability and operational efficiency.</li>
                             </ul>
                         </div>
-                    </div>
+                    </article>
                 </div>
             </div>
         </section>
@@ -160,193 +155,103 @@
                 <p class="section-subtitle scroll-reveal">Strategic oversight and architectural depth tailored for corporate security governance.</p>
                 
                 <div class="grid-3-col">
-                    <div class="expertise-card scroll-reveal">
-                        <div class="card-icon">🛡️</div>
+                    <article class="expertise-card scroll-reveal">
+                        <div class="card-icon" aria-hidden="true">🛡️</div>
                         <h3>Cybersecurity Governance</h3>
                         <p>Constructing modern programmatic enterprise defenses aligned strictly with international control matrices and threat modeling.</p>
-                    </div>
-                    <div class="expertise-card scroll-reveal">
-                        <div class="card-icon">🏛️</div>
+                    </article>
+                    <article class="expertise-card scroll-reveal">
+                        <div class="card-icon" aria-hidden="true">🏛️</div>
                         <h3>Enterprise IT Architecture</h3>
                         <p>Bridging complex distributed technical environments with overarching strategic corporate initiatives.</p>
-                    </div>
-                    <div class="expertise-card scroll-reveal">
-                        <div class="card-icon">☁️</div>
+                    </article>
+                    <article class="expertise-card scroll-reveal">
+                        <div class="card-icon" aria-hidden="true">☁️</div>
                         <h3>Cloud Strategy & Security</h3>
                         <p>Orchestrating structural guardrails across public cloud platforms (AWS, Azure) to secure multi-tenant footprints.</p>
-                    </div>
-                    <div class="expertise-card scroll-reveal">
-                        <div class="card-icon">⚖️</div>
+                    </article>
+                    <article class="expertise-card scroll-reveal">
+                        <div class="card-icon" aria-hidden="true">⚖️</div>
                         <h3>Risk Management & GRC</h3>
                         <p>Implementing systemic processes across complex vendor networks to evaluate risk postures and operational exposure.</p>
-                    </div>
-                    <div class="expertise-card scroll-reveal">
-                        <div class="card-icon">📜</div>
+                    </article>
+                    <article class="expertise-card scroll-reveal">
+                        <div class="card-icon" aria-hidden="true">📜</div>
                         <h3>ISO 27001 & NIST Compliance</h3>
                         <p>Translating demanding regulatory controls into daily habits through active control auditing and systemic checks.</p>
-                    </div>
-                    <div class="expertise-card scroll-reveal">
-                        <div class="card-icon">🔄</div>
+                    </article>
+                    <article class="expertise-card scroll-reveal">
+                        <div class="card-icon" aria-hidden="true">🔄</div>
                         <h3>Business Continuity (BCP/DR)</h3>
                         <p>Formulating active mitigation playbooks to guard global computing capacity against service interruptions.</p>
-                    </div>
+                    </article>
                 </div>
             </div>
         </section>
 
         <section id="recommendations" class="leadership-section">
-    <div class="container">
+            <div class="container">
+                <h2 class="section-title scroll-reveal">Professional Recommendations</h2>
+                <p class="section-subtitle scroll-reveal">The following recommendations are from colleagues at Toradex, where I spent more than 12 years leading global IT and cybersecurity initiatives. They represent perspectives from senior leaders, peers, and team members, reflecting the trust, collaboration, and business partnerships built during that journey.</p>
 
-        <h2 class="section-title scroll-reveal">
-            Professional Recommendations
-        </h2>
+                <h3 class="recommendation-category-title scroll-reveal">Executive Leadership</h3>
+                <div class="grid-2-col">
+                    <blockquote class="quote-card scroll-reveal">
+                        <p class="quote-text">"I enjoyed working with Krishna. He took my concerns seriously, kept communication clear, and addressed issues quickly and reliably. Collaborating with him was straightforward, and I always knew where things stood."</p>
+                        <cite class="quote-author">
+                            <span class="author-name">Caroline Oberson</span>
+                            <span class="author-title">Former Chief Financial Officer • Toradex</span>
+                        </cite>
+                    </blockquote>
 
-        <p class="section-subtitle scroll-reveal">
-            The following recommendations are from colleagues at Toradex, where I spent more than 12 years leading global IT and cybersecurity initiatives. They represent perspectives from senior leaders, peers, and team members, reflecting the trust, collaboration, and business partnerships built during that journey.
-        </p>
+                    <blockquote class="quote-card scroll-reveal">
+                        <p class="quote-text">"I had the pleasure of working alongside Krishna for 12 years at Toradex. Throughout this time, Krishna consistently provided great support to me and my teams. His focus on quick support extended to his entire team. He was instrumental in building and shaping our IT infrastructure. Krishna’s collaborative spirit and technical knowledge made a significant impact. I recommend him to any team looking for a committed and passionate IT professional."</p>
+                        <cite class="quote-author">
+                            <span class="author-name">Roman Schnarwiler</span>
+                            <span class="author-title">Vice President, Supply Chain • Toradex</span>
+                        </cite>
+                    </blockquote>
+                </div>
 
-        <h3 class="recommendation-category-title scroll-reveal">
-            Executive Leadership
-        </h3>
+                <h3 class="recommendation-category-title scroll-reveal">Peer Collaboration</h3>
+                <div class="grid-2-col">
+                    <blockquote class="quote-card scroll-reveal">
+                        <p class="quote-text">"I had the privilege of working with Krishna for over 10 years, during which he consistently demonstrated excellent leadership and deep expertise in IT management. With more than 20 years of industry experience, Krishna effectively managed complex IT environments with a strong focus on security. He led initiatives to improve security awareness and ensure compliance with ISO standards and industry best practices. His ability to explain technical concepts clearly while balancing security and business needs was exceptional. I am confident Krishna will bring the same expertise and dedication to his next role."</p>
+                        <cite class="quote-author">
+                            <span class="author-name">Ravindra Reddy</span>
+                            <span class="author-title">Senior Manager, Global Digital Marketing • Toradex</span>
+                        </cite>
+                    </blockquote>
 
-        <div class="grid-2-col">
+                    <blockquote class="quote-card scroll-reveal">
+                        <p class="quote-text">"I had the pleasure of working with Krishna for over 12 years, collaborating across various roles and projects. Throughout this time, he consistently stood out as an exceptional IT Operations leader—goal-oriented, solution-driven, and always pragmatic in his approach. What I admire most about Krishna is his ability to stay focused on what truly matters while keeping the team motivated and aligned. He is a true team player who brings out the best in those around him. I highly recommend Krishna to any organization looking for a strong and reliable IT Operations leader."</p>
+                        <cite class="quote-author">
+                            <span class="author-name">Samuel Bissig</span>
+                            <span class="author-title">DevOps Engineer • Toradex</span>
+                        </cite>
+                    </blockquote>
+                </div>
 
-            <!-- Caroline Oberson -->
+                <h3 class="recommendation-category-title scroll-reveal">Team Leadership</h3>
+                <div class="grid-2-col">
+                    <blockquote class="quote-card scroll-reveal">
+                        <p class="quote-text">"I worked with Krishna while reporting to him as an IT Systems Engineer, and during that time I appreciated his structured and disciplined approach to IT operations. He consistently emphasized process adherence, budget awareness, and accountability, bringing clarity to IT decision-making and asset management. His focus on cost control and compliance ensured that IT operations aligned closely with organizational policies and long-term planning. As a manager, he set clear expectations and encouraged the team to work in a methodical and results-oriented manner. Working under his leadership strengthened my understanding of enterprise IT support, operational efficiency, and professional responsibility. I believe his experience in managing IT environments and maintaining operational discipline would be valuable to any organization seeking a detail-oriented and structured IT leader."</p>
+                        <cite class="quote-author">
+                            <span class="author-name">Basil Benny</span>
+                            <span class="author-title">IT Systems Engineer • Toradex</span>
+                        </cite>
+                    </blockquote>
 
-            <div class="quote-card scroll-reveal">
-                <p class="quote-text">
-                    "I enjoyed working with Krishna. He took my concerns seriously, kept communication clear, and addressed issues quickly and reliably. Collaborating with him was straightforward, and I always knew where things stood."
-                </p>
-
-                <div class="quote-author">
-                    <span class="author-name">
-                        Caroline Oberson
-                    </span>
-
-                    <span class="author-title">
-                        Former Chief Financial Officer • Toradex
-                    </span>
+                    <blockquote class="quote-card scroll-reveal">
+                        <p class="quote-text">"I had the pleasure of working with Krishna during his time as Head of IT at Toradex. Krishna stands out as a leader who combines strong technical expertise with genuine empathy and trust. He fosters collaboration, encourages growth, and leads with integrity, creating an environment where people truly enjoy doing their best work."</p>
+                        <cite class="quote-author">
+                            <span class="author-name">Alessandro Secchi</span>
+                            <span class="author-title">IT Architect • Toradex</span>
+                        </cite>
+                    </blockquote>
                 </div>
             </div>
-
-            <!-- Roman Schnarwiler -->
-
-            <div class="quote-card scroll-reveal">
-                <p class="quote-text">
-                    "I had the pleasure of working alongside Krishna for 12 years at Toradex. Throughout this time, Krishna consistently provided great support to me and my teams. His focus on quick support extended to his entire team. He was instrumental in building and shaping our IT infrastructure. Krishna’s collaborative spirit and technical knowledge made a significant impact. I recommend him to any team looking for a committed and passionate IT professional."
-                </p>
-
-                <div class="quote-author">
-                    <span class="author-name">
-                        Roman Schnarwiler
-                    </span>
-
-                    <span class="author-title">
-                        Vice President, Supply Chain • Toradex
-                    </span>
-                </div>
-            </div>
-
-        </div>
-		<!-- ===================================================== -->
-<!-- Peer Collaboration                                    -->
-<!-- ===================================================== -->
-
-<h3 class="recommendation-category-title scroll-reveal">
-    Peer Collaboration
-</h3>
-
-<div class="grid-2-col">
-
-    <!-- Ravindra Reddy -->
-
-    <div class="quote-card scroll-reveal">
-        <p class="quote-text">
-            "I had the privilege of working with Krishna for over 10 years, during which he consistently demonstrated excellent leadership and deep expertise in IT management. With more than 20 years of industry experience, Krishna effectively managed complex IT environments with a strong focus on security. He led initiatives to improve security awareness and ensure compliance with ISO standards and industry best practices. His ability to explain technical concepts clearly while balancing security and business needs was exceptional. I am confident Krishna will bring the same expertise and dedication to his next role."
-        </p>
-
-        <div class="quote-author">
-            <span class="author-name">
-                Ravindra Reddy
-            </span>
-
-            <span class="author-title">
-                Senior Manager, Global Digital Marketing • Toradex
-            </span>
-        </div>
-    </div>
-
-    <!-- Samuel Bissig -->
-
-    <div class="quote-card scroll-reveal">
-        <p class="quote-text">
-            "I had the pleasure of working with Krishna for over 12 years, collaborating across various roles and projects. Throughout this time, he consistently stood out as an exceptional IT Operations leader—goal-oriented, solution-driven, and always pragmatic in his approach. What I admire most about Krishna is his ability to stay focused on what truly matters while keeping the team motivated and aligned. He is a true team player who brings out the best in those around him. I highly recommend Krishna to any organization looking for a strong and reliable IT Operations leader."
-        </p>
-
-        <div class="quote-author">
-            <span class="author-name">
-                Samuel Bissig
-            </span>
-
-            <span class="author-title">
-                DevOps Engineer • Toradex
-            </span>
-        </div>
-    </div>
-
-</div>
-
-<!-- ===================================================== -->
-<!-- Team Member Recommendations (Coming Next)             -->
-<!-- ===================================================== -->
-        <!-- ===================================================== -->
-        <!-- Peer Recommendations (Coming Next)                    -->
-        <!-- ===================================================== -->
-<h3 class="recommendation-category-title scroll-reveal">
-    Team Leadership
-</h3>
-
-<div class="grid-2-col">
-
-<!-- Basil Benny -->
-
-<div class="quote-card scroll-reveal">
-    <p class="quote-text">
-        "I worked with Krishna while reporting to him as an IT Systems Engineer, and during that time I appreciated his structured and disciplined approach to IT operations. He consistently emphasized process adherence, budget awareness, and accountability, bringing clarity to IT decision-making and asset management. His focus on cost control and compliance ensured that IT operations aligned closely with organizational policies and long-term planning. As a manager, he set clear expectations and encouraged the team to work in a methodical and results-oriented manner. Working under his leadership strengthened my understanding of enterprise IT support, operational efficiency, and professional responsibility. I believe his experience in managing IT environments and maintaining operational discipline would be valuable to any organization seeking a detail-oriented and structured IT leader."
-    </p>
-
-    <div class="quote-author">
-        <span class="author-name">
-            Basil Benny
-        </span>
-
-        <span class="author-title">
-            IT Systems Engineer • Toradex
-        </span>
-    </div>
-</div>
-<div class="quote-card scroll-reveal">
-    <p class="quote-text">
-        "I had the pleasure of working with Krishna during his time as Head of IT at Toradex. Krishna stands out as a leader who combines strong technical expertise with genuine empathy and trust. He fosters collaboration, encourages growth, and leads with integrity, creating an environment where people truly enjoy doing their best work."
-    </p>
-
-    <div class="quote-author">
-        <span class="author-name">
-            Alessandro Secchi
-        </span>
-
-        <span class="author-title">
-            IT Architect • Toradex
-        </span>
-    </div>
-</div>
-        <!-- ===================================================== -->
-        <!-- Team Member Recommendations (Coming Next)             -->
-        <!-- ===================================================== -->
-
-    </div>
-</section>
-                    
+        </section>
 
         <section id="certifications" class="certifications-section">
             <div class="container">
@@ -354,36 +259,36 @@
                 <p class="section-subtitle scroll-reveal">Validated technical mastery and executive governance standards from elite global organizations.</p>
                 
                 <div class="grid-3-col">
-                    <div class="cert-card scroll-reveal">
+                    <article class="cert-card scroll-reveal">
                         <div class="cert-badge">CISM</div>
                         <h3>Certified Information Security Manager</h3>
                         <p class="cert-issuer">ISACA</p>
-                    </div>
-                    <div class="cert-card scroll-reveal">
+                    </article>
+                    <article class="cert-card scroll-reveal">
                         <div class="cert-badge">CCISO</div>
                         <h3>Certified Chief Information Security Officer</h3>
                         <p class="cert-issuer">EC-Council</p>
-                    </div>
-                    <div class="cert-card scroll-reveal">
+                    </article>
+                    <article class="cert-card scroll-reveal">
                         <div class="cert-badge">ISO 27001</div>
                         <h3>ISO/IEC 27001 Lead Auditor</h3>
                         <p class="cert-issuer">BSI / International Bodies</p>
-                    </div>
-                    <div class="cert-card scroll-reveal">
+                    </article>
+                    <article class="cert-card scroll-reveal">
                         <div class="cert-badge">CEH</div>
                         <h3>Certified Ethical Hacker</h3>
                         <p class="cert-issuer">EC-Council</p>
-                    </div>
-                    <div class="cert-card scroll-reveal">
+                    </article>
+                    <article class="cert-card scroll-reveal">
                         <div class="cert-badge">ITIL</div>
                         <h3>ITIL Foundation</h3>
                         <p class="cert-issuer">AXELOS</p>
-                    </div>
-                    <div class="cert-card scroll-reveal">
+                    </article>
+                    <article class="cert-card scroll-reveal">
                         <div class="cert-badge">DRS</div>
                         <h3>IT Disaster Recovery Specialist</h3>
                         <p class="cert-issuer">Professional Frameworks</p>
-                    </div>
+                    </article>
                 </div>
 
                 <div class="tech-stack-wrapper scroll-reveal">
@@ -418,21 +323,21 @@
                             
                             <div class="contact-details">
                                 <a href="mailto:krishna.ms@gmail.com" class="contact-link">
-                                    <svg class="contact-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                    <svg class="contact-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                                     krishna.ms@gmail.com
                                 </a>
                                 <a href="tel:+919880155055" class="contact-link">
-                                    <svg class="contact-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                                    <svg class="contact-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                                     +91 98801 55055
                                 </a>
                                 <span class="contact-link">
-                                    <svg class="contact-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                    <svg class="contact-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                                     Bengaluru, Karnataka, India
                                 </span>
                             </div>
 
                             <div class="contact-cta-buttons">
-                                <a href="https://linkedin.com/krishnams" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Connect on LinkedIn</a>
+                                <a href="https://linkedin.com/in/krishnams" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Connect on LinkedIn</a>
                                 <a href="documents/resume.pdf" download class="btn btn-secondary">Download Executive Profile</a>
                             </div>
                         </div>
