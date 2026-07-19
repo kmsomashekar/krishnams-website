@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.6B (Resume Version API Implementation)
+// Approved Phase: Stage 1 — Task 1.6C Correction (Company Schema Alignment)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router
 // =============================================================================
@@ -42,14 +42,82 @@ export default {
       }
 
       // -------------------------------------------------------------------------
-      // 4. RESTful Route Routing Pipeline: Resume & Resume Version Modules
+      // 4. RESTful Route Routing Pipeline: Resumes, Versions, & Companies
       // -------------------------------------------------------------------------
       
       // Route Base Match Patterns
       const resumeRootPattern = '/api/v1/resumes';
+      const companyRootPattern = '/api/v1/companies';
       const resumeIdRegex = /^\/api\/v1\/resumes\/([^\/]+)$/;
       const versionsRootRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions$/;
       const versionIdRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)$/;
+
+      // --- POST /api/v1/companies (Create Company Target) ---
+      if (pathname === companyRootPattern && method === 'POST') {
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { name, website, location, notes } = body;
+        if (!name || typeof name !== 'string' || name.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'name' is a required non-empty string parameter.", 400, headers);
+        }
+
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        // Execution aligned with schema constraints: removed updated_at property trace
+        await env.DB.prepare(
+          `INSERT INTO companies (id, user_id, name, website, location, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          id, 
+          userId, 
+          name.trim(), 
+          website ? website.trim() : null, 
+          location ? location.trim() : null, 
+          notes ? notes.trim() : null, 
+          now
+        )
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id,
+              name: name.trim(),
+              website: website ? website.trim() : null,
+              location: location ? location.trim() : null,
+              notes: notes ? notes.trim() : null,
+              created_at: now
+            }
+          }),
+          { status: 201, headers }
+        );
+      }
+
+      // --- GET /api/v1/companies (List Tracked Companies) ---
+      if (pathname === companyRootPattern && method === 'GET') {
+        // Selection criteria aligned with schema limits: removed updated_at tracking column
+        const { results } = await env.DB.prepare(
+          `SELECT id, name, website, location, notes, created_at
+           FROM companies
+           WHERE user_id = ?
+           ORDER BY name ASC`
+        )
+        .bind(userId)
+        .all();
+
+        return new Response(
+          JSON.stringify({ success: true, data: { companies: results } }),
+          { status: 200, headers }
+        );
+      }
 
       // --- POST /api/v1/resumes (Create Resume) ---
       if (pathname === resumeRootPattern && method === 'POST') {
@@ -106,7 +174,6 @@ export default {
       if (versionsMatch) {
         const resumeId = versionsMatch[1];
 
-        // Verify parent resume exists and belongs to current DEV_USER_ID
         const parentResume = await env.DB.prepare(
           `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
         )
@@ -133,7 +200,7 @@ export default {
 
           const id = crypto.randomUUID();
           const now = new Date().toISOString();
-          const isActive = 1; // Default to active layout state initialization
+          const isActive = 1;
 
           await env.DB.prepare(
             `INSERT INTO resume_versions (id, resume_id, version_label, target_role, r2_object_key, is_active, created_at)
@@ -183,7 +250,6 @@ export default {
         const resumeId = versionIdMatch[1];
         const versionId = versionIdMatch[2];
 
-        // Verify parent resume ownership context explicitly
         const parentResume = await env.DB.prepare(
           `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
         )
@@ -208,7 +274,6 @@ export default {
             return buildErrorResponse('NOT_FOUND', "The targeted version resource does not exist under this portfolio context.", 404, headers);
           }
 
-          // Fetch explicit historical ATS metric traces if available via a LEFT JOIN scheme or query aggregation
           const { results: atsScores } = await env.DB.prepare(
             `SELECT a.id, a.opportunity_id, a.match_score, a.analyzed_at
              FROM ats_analysis a
