@@ -61,6 +61,10 @@ export default {
       const interviewsRootRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/interviews$/;
       const interviewStatusRegex = /^\/api\/v1\/interviews\/([^\/]+)\/status$/;
 
+      // Additive Phase 1 Route Definitions
+      const interviewsGlobalPattern = '/api/v1/interviews';
+      const interviewIdRegex = /^\/api\/v1\/interviews\/([^\/]+)$/;
+
       // =======================================================================
       // MODULE: INTERVIEWS API
       // =======================================================================
@@ -105,6 +109,220 @@ export default {
 
         return new Response(
           JSON.stringify({ success: true, data: { id: interviewId, status } }),
+          { status: 200, headers }
+        );
+      }
+
+      // --- ADDITIVE NEW ENDPOINT: GET /api/v1/interviews (Global List) ---
+      if (pathname === interviewsGlobalPattern && method === 'GET') {
+        const { results } = await env.DB.prepare(
+          `SELECT 
+             i.id, i.opportunity_id, i.round_number, i.round_title, i.status, i.interview_date, i.interviewer_names, i.created_at,
+             o.id AS opp_id, o.job_title AS opp_job_title, o.status AS opp_status,
+             c.id AS comp_id, c.name AS comp_name
+           FROM interviews i
+           JOIN opportunities o ON i.opportunity_id = o.id
+           LEFT JOIN companies c ON o.company_id = c.id
+           WHERE o.user_id = ?
+           ORDER BY i.interview_date ASC`
+        )
+        .bind(userId)
+        .all();
+
+        const formattedInterviews = results.map(row => ({
+          id: row.id,
+          opportunity_id: row.opportunity_id,
+          round_number: row.round_number,
+          round_title: row.round_title,
+          status: row.status,
+          interview_date: row.interview_date,
+          interviewer_names: row.interviewer_names,
+          created_at: row.created_at,
+          opportunity: {
+            id: row.opp_id,
+            job_title: row.opp_job_title,
+            status: row.opp_status
+          },
+          company: row.comp_id ? {
+            id: row.comp_id,
+            name: row.comp_name
+          } : null
+        }));
+
+        return new Response(
+          JSON.stringify({ success: true, data: { interviews: formattedInterviews } }),
+          { status: 200, headers }
+        );
+      }
+
+      // --- ADDITIVE NEW ENDPOINT: GET /api/v1/interviews/:id (Detail Block) ---
+      const intIdGetMatch = pathname.match(interviewIdRegex);
+      if (intIdGetMatch && !pathname.includes('/status') && method === 'GET') {
+        const interviewId = intIdGetMatch[1];
+
+        const row = await env.DB.prepare(
+          `SELECT 
+             i.id, i.opportunity_id, i.round_number, i.round_title, i.status, i.interview_date, i.interviewer_names, 
+             i.preparation_notes, i.questions_asked, i.feedback_notes, i.created_at,
+             o.id AS opp_id, o.job_title AS opp_job_title, o.status AS opp_status,
+             c.id AS comp_id, c.name AS comp_name
+           FROM interviews i
+           JOIN opportunities o ON i.opportunity_id = o.id
+           LEFT JOIN companies c ON o.company_id = c.id
+           WHERE i.id = ? AND o.user_id = ?`
+        )
+        .bind(interviewId, userId)
+        .first();
+
+        if (!row) {
+          return buildErrorResponse('NOT_FOUND', "The targeted interview does not exist or access rights are restricted.", 404, headers);
+        }
+
+        const formattedDetail = {
+          id: row.id,
+          opportunity_id: row.opportunity_id,
+          round_number: row.round_number,
+          round_title: row.round_title,
+          status: row.status,
+          interview_date: row.interview_date,
+          interviewer_names: row.interviewer_names,
+          preparation_notes: row.preparation_notes,
+          questions_asked: row.questions_asked,
+          feedback_notes: row.feedback_notes,
+          created_at: row.created_at,
+          opportunity: {
+            id: row.opp_id,
+            job_title: row.opp_job_title,
+            status: row.opp_status
+          },
+          company: row.comp_id ? {
+            id: row.comp_id,
+            name: row.comp_name
+          } : null
+        };
+
+        return new Response(
+          JSON.stringify({ success: true, data: formattedDetail }),
+          { status: 200, headers }
+        );
+      }
+
+      // --- ADDITIVE NEW ENDPOINT: PUT /api/v1/interviews/:id (Update Specification) ---
+      const intIdPutMatch = pathname.match(interviewIdRegex);
+      if (intIdPutMatch && !pathname.includes('/status') && method === 'PUT') {
+        const interviewId = intIdPutMatch[1];
+
+        const existingRecord = await env.DB.prepare(
+          `SELECT i.* FROM interviews i
+           JOIN opportunities o ON i.opportunity_id = o.id
+           WHERE i.id = ? AND o.user_id = ?`
+        )
+        .bind(interviewId, userId)
+        .first();
+
+        if (!existingRecord) {
+          return buildErrorResponse('NOT_FOUND', "The targeted interview does not exist or access rights are restricted.", 404, headers);
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        if ('round_number' in body) {
+          if (typeof body.round_number !== 'number' || !Number.isInteger(body.round_number)) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'round_number' must be a valid integer number.", 400, headers);
+          }
+        }
+        if ('round_title' in body) {
+          if (typeof body.round_title !== 'string' || body.round_title.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'round_title' must be a non-empty string parameter.", 400, headers);
+          }
+        }
+        if ('status' in body) {
+          const allowedStatuses = ['SCHEDULED', 'COMPLETED', 'CANCELLED'];
+          if (!allowedStatuses.includes(body.status)) {
+            return buildErrorResponse('INVALID_INPUT', `Invalid status value provided. Allowed values: ${allowedStatuses.join(', ')}`, 400, headers);
+          }
+        }
+        if ('interview_date' in body) {
+          if (typeof body.interview_date !== 'string' || body.interview_date.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'interview_date' must be a non-empty string parameter.", 400, headers);
+          }
+        }
+        if ('interviewer_names' in body && body.interviewer_names !== null) {
+          if (typeof body.interviewer_names !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'interviewer_names' must be a string parameter.", 400, headers);
+          }
+        }
+        if ('preparation_notes' in body && body.preparation_notes !== null) {
+          if (typeof body.preparation_notes !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'preparation_notes' must be a string parameter.", 400, headers);
+          }
+        }
+        if ('questions_asked' in body && body.questions_asked !== null) {
+          if (typeof body.questions_asked !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'questions_asked' must be a string parameter.", 400, headers);
+          }
+        }
+        if ('feedback_notes' in body && body.feedback_notes !== null) {
+          if (typeof body.feedback_notes !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'feedback_notes' must be a string parameter.", 400, headers);
+          }
+        }
+
+        const updatedRoundNumber = 'round_number' in body ? body.round_number : existingRecord.round_number;
+        const updatedRoundTitle = 'round_title' in body ? body.round_title.trim() : existingRecord.round_title;
+        const updatedStatus = 'status' in body ? body.status : existingRecord.status;
+        const updatedInterviewDate = 'interview_date' in body ? body.interview_date.trim() : existingRecord.interview_date;
+        
+        const updatedInterviewerNames = 'interviewer_names' in body 
+          ? (body.interviewer_names && body.interviewer_names.trim().length > 0 ? body.interviewer_names.trim() : null)
+          : existingRecord.interviewer_names;
+
+        const updatedPrepNotes = 'preparation_notes' in body 
+          ? (body.preparation_notes && body.preparation_notes.trim().length > 0 ? body.preparation_notes.trim() : null)
+          : existingRecord.preparation_notes;
+
+        const updatedQuestions = 'questions_asked' in body 
+          ? (body.questions_asked && body.questions_asked.trim().length > 0 ? body.questions_asked.trim() : null)
+          : existingRecord.questions_asked;
+
+        const updatedFeedback = 'feedback_notes' in body 
+          ? (body.feedback_notes && body.feedback_notes.trim().length > 0 ? body.feedback_notes.trim() : null)
+          : existingRecord.feedback_notes;
+
+        await env.DB.prepare(
+          `UPDATE interviews 
+           SET round_number = ?, round_title = ?, status = ?, interview_date = ?, interviewer_names = ?, 
+               preparation_notes = ?, questions_asked = ?, feedback_notes = ?
+           WHERE id = ?`
+        )
+        .bind(
+          updatedRoundNumber, updatedRoundTitle, updatedStatus, updatedInterviewDate, updatedInterviewerNames,
+          updatedPrepNotes, updatedQuestions, updatedFeedback, interviewId
+        )
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id: interviewId,
+              opportunity_id: existingRecord.opportunity_id,
+              round_number: updatedRoundNumber,
+              round_title: updatedRoundTitle,
+              status: updatedStatus,
+              interview_date: updatedInterviewDate,
+              interviewer_names: updatedInterviewerNames || "",
+              preparation_notes: updatedPrepNotes || "",
+              questions_asked: updatedQuestions || null,
+              feedback_notes: updatedFeedback || null,
+              created_at: existingRecord.created_at
+            }
+          }),
           { status: 200, headers }
         );
       }
