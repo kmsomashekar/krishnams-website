@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.6F (ATS Analysis API Implementation)
+// Approved Phase: Stage 1 — Task 1.6G (Interview API Implementation)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router
 // =============================================================================
@@ -58,6 +58,172 @@ export default {
       const opportunityStatusRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/status$/;
       const jobDescriptionRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/job-description$/;
       const atsAnalysisRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/ats-analysis$/;
+      const interviewsRootRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/interviews$/;
+      const interviewStatusRegex = /^\/api\/v1\/interviews\/([^\/]+)\/status$/;
+
+      // =======================================================================
+      // MODULE: INTERVIEWS API
+      // =======================================================================
+      
+      // --- PATCH /api/v1/interviews/:id/status (Update Interview Status) ---
+      const intStatusMatch = pathname.match(interviewStatusRegex);
+      if (intStatusMatch && method === 'PATCH') {
+        const interviewId = intStatusMatch[1];
+        
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { status } = body;
+        const allowedStatuses = ['SCHEDULED', 'COMPLETED', 'CANCELLED'];
+        
+        if (!status || !allowedStatuses.includes(status)) {
+          return buildErrorResponse('INVALID_INPUT', `Invalid status value provided. Allowed values: ${allowedStatuses.join(', ')}`, 400, headers);
+        }
+
+        // Deep visibility and access alignment check via opportunities ownership
+        const interviewCheck = await env.DB.prepare(
+          `SELECT i.id FROM interviews i
+           JOIN opportunities o ON i.opportunity_id = o.id
+           WHERE i.id = ? AND o.user_id = ?`
+        )
+        .bind(interviewId, userId)
+        .first();
+
+        if (!interviewCheck) {
+          return buildErrorResponse('NOT_FOUND', "The targeted interview does not exist or access rights are restricted.", 404, headers);
+        }
+
+        await env.DB.prepare(
+          `UPDATE interviews SET status = ? WHERE id = ?`
+        )
+        .bind(status, interviewId)
+        .run();
+
+        return new Response(
+          JSON.stringify({ success: true, data: { id: interviewId, status } }),
+          { status: 200, headers }
+        );
+      }
+
+      // --- Collection Level Handler for Opportunity Contextual Interviews ---
+      const interviewsMatch = pathname.match(interviewsRootRegex);
+      if (interviewsMatch) {
+        const opportunityId = interviewsMatch[1];
+
+        // Access validation: Check opportunity visibility and ownership scope
+        const opportunity = await env.DB.prepare(
+          `SELECT id FROM opportunities WHERE id = ? AND user_id = ?`
+        )
+        .bind(opportunityId, userId)
+        .first();
+
+        if (!opportunity) {
+          return buildErrorResponse('NOT_FOUND', "The targeted resource does not exist or access rights are restricted.", 404, headers);
+        }
+
+        // --- POST /api/v1/opportunities/:id/interviews (Create Interview) ---
+        if (method === 'POST') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { 
+            round_number, round_title, status, interview_date, 
+            interviewer_names, preparation_notes, questions_asked, feedback_notes 
+          } = body;
+
+          // Structural field check rules
+          if (round_number === undefined || typeof round_number !== 'number' || !Number.isInteger(round_number)) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'round_number' is required and must be an integer.", 400, headers);
+          }
+          if (!round_title || typeof round_title !== 'string' || round_title.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'round_title' is a required non-empty string parameter.", 400, headers);
+          }
+          if (!interview_date || typeof interview_date !== 'string' || interview_date.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'interview_date' is a required string configuration parameter.", 400, headers);
+          }
+
+          // Validate status lifecycle states
+          const finalStatus = status || 'SCHEDULED';
+          const allowedStatuses = ['SCHEDULED', 'COMPLETED', 'CANCELLED'];
+          if (!allowedStatuses.includes(finalStatus)) {
+            return buildErrorResponse('INVALID_INPUT', `Invalid status value provided. Allowed values: ${allowedStatuses.join(', ')}`, 400, headers);
+          }
+
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `INSERT INTO interviews (
+              id, opportunity_id, round_number, round_title, status, interview_date, 
+              interviewer_names, preparation_notes, questions_asked, feedback_notes, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            id, opportunityId, round_number, round_title.trim(), finalStatus, interview_date.trim(),
+            interviewer_names ? interviewer_names.trim() : null,
+            preparation_notes ? preparation_notes.trim() : null,
+            questions_asked ? questions_asked.trim() : null,
+            feedback_notes ? feedback_notes.trim() : null,
+            now
+          )
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id,
+                opportunity_id: opportunityId,
+                round_number,
+                round_title: round_title.trim(),
+                status: finalStatus,
+                interview_date: interview_date.trim(),
+                interviewer_names: interviewer_names ? interviewer_names.trim() : "",
+                preparation_notes: preparation_notes ? preparation_notes.trim() : "",
+                questions_asked: questions_asked ? questions_asked.trim() : null,
+                feedback_notes: feedback_notes ? feedback_notes.trim() : null,
+                created_at: now
+              }
+            }),
+            { status: 201, headers }
+          );
+        }
+
+        // --- GET /api/v1/opportunities/:id/interviews (List Interviews) ---
+        if (method === 'GET') {
+          const { results } = await env.DB.prepare(
+            `SELECT id, round_number, round_title, status, interview_date, interviewer_names
+             FROM interviews
+             WHERE opportunity_id = ?
+             ORDER BY round_number ASC`
+          )
+          .bind(opportunityId)
+          .all();
+
+          // Standardize response text mutations safely
+          const localizedInterviews = results.map(row => ({
+            id: row.id,
+            round_number: row.round_number,
+            round_title: row.round_title,
+            status: row.status,
+            interview_date: row.interview_date,
+            interviewer_names: row.interviewer_names || ""
+          }));
+
+          return new Response(
+            JSON.stringify({ success: true, data: { interviews: localizedInterviews } }),
+            { status: 200, headers }
+          );
+        }
+      }
 
       // =======================================================================
       // MODULE: ATS ANALYSIS API
@@ -66,7 +232,6 @@ export default {
       if (atsMatch) {
         const opportunityId = atsMatch[1];
 
-        // Access validation: Check opportunity visibility and ownership scope
         const opportunity = await env.DB.prepare(
           `SELECT id FROM opportunities WHERE id = ? AND user_id = ?`
         )
@@ -77,7 +242,6 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted opportunity does not exist or access rights are restricted.", 404, headers);
         }
 
-        // --- POST /api/v1/opportunities/:id/ats-analysis (Create ATS Analysis) ---
         if (method === 'POST') {
           let body;
           try {
@@ -88,17 +252,14 @@ export default {
 
           const { resume_version_id, match_score, missing_keywords, skill_gaps, improvement_suggestions } = body;
 
-          // Structural validation rules
           if (!resume_version_id || typeof resume_version_id !== 'string') {
             return buildErrorResponse('INVALID_INPUT', "Field 'resume_version_id' is a required string parameter.", 400, headers);
           }
 
-          // Validate match_score type and domain boundaries [0-100]
           if (match_score === undefined || typeof match_score !== 'number' || !Number.isInteger(match_score) || match_score < 0 || match_score > 100) {
             return buildErrorResponse('INVALID_INPUT', "Field 'match_score' is required and must be an integer between 0 and 100.", 400, headers);
           }
 
-          // Verify targeted resume version exists and belongs to current user scope
           const version = await env.DB.prepare(
             `SELECT rv.id FROM resume_versions rv 
              JOIN resumes r ON rv.resume_id = r.id 
@@ -111,7 +272,6 @@ export default {
             return buildErrorResponse('NOT_FOUND', "The targeted resume version does not exist or access rights are restricted.", 404, headers);
           }
 
-          // Validate optional array structural constraints
           let missingKeywordsText = null;
           let missingKeywordsResponse = [];
           if (missing_keywords !== undefined) {
@@ -164,7 +324,6 @@ export default {
           );
         }
 
-        // --- GET /api/v1/opportunities/:id/ats-analysis (Get Latest ATS Analysis) ---
         if (method === 'GET') {
           const ats = await env.DB.prepare(
             `SELECT id, opportunity_id, resume_version_id, match_score, missing_keywords, skill_gaps, improvement_suggestions, analyzed_at
@@ -179,7 +338,6 @@ export default {
             return buildErrorResponse('NOT_FOUND', "ATS analysis does not exist.", 404, headers);
           }
 
-          // Safe unmarshalling of database-serialized array text formats
           let parsedKeywords = [];
           if (ats.missing_keywords) {
             try {
@@ -491,7 +649,7 @@ export default {
 
       // --- GET /api/v1/opportunities/:id (Get Opportunity Details Dashboard) ---
       const oppIdMatch = pathname.match(opportunityIdRegex);
-      if (oppIdMatch && !pathname.includes('/status') && !pathname.includes('/job-description') && !pathname.includes('/ats-analysis') && method === 'GET') {
+      if (oppIdMatch && !pathname.includes('/status') && !pathname.includes('/job-description') && !pathname.includes('/ats-analysis') && !pathname.includes('/interviews') && method === 'GET') {
         const opportunityId = oppIdMatch[1];
 
         const opportunity = await env.DB.prepare(
@@ -552,7 +710,6 @@ export default {
         .bind(opportunityId)
         .first();
 
-        // Safe JSON parsing requirement integration for Dashboard metrics
         if (atsAnalysis) {
           let parsedKeywords = [];
           if (atsAnalysis.missing_keywords) {
@@ -576,14 +733,24 @@ export default {
           atsAnalysis.skill_gaps = parsedGaps;
         }
 
-        const { results: interviews } = await env.DB.prepare(
-          `SELECT id, opportunity_id, round_title, round_number, interviewer_names, interview_date, status, preparation_notes, questions_asked, feedback_notes
+        // Updated Integration Module mapping for upcoming/past interviews
+        const { results: rawInterviews } = await env.DB.prepare(
+          `SELECT id, round_number, round_title, status, interview_date, interviewer_names
            FROM interviews 
            WHERE opportunity_id = ? 
-           ORDER BY round_number ASC, interview_date ASC`
+           ORDER BY round_number ASC`
         )
         .bind(opportunityId)
         .all();
+
+        const interviews = rawInterviews.map(row => ({
+          id: row.id,
+          round_number: row.round_number,
+          round_title: row.round_title,
+          status: row.status,
+          interview_date: row.interview_date,
+          interviewer_names: row.interviewer_names || ""
+        }));
 
         const dashboardPayload = {
           id: opportunity.id,
@@ -600,7 +767,7 @@ export default {
           resume_version: resumeVersion || null,
           job_description: jobDescription || null,
           ats_analysis: atsAnalysis || null,
-          interviews: interviews || []
+          interviews
         };
 
         return new Response(
