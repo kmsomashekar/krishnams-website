@@ -2,17 +2,22 @@ name = "resume-manager-dev"
 main = "src/index.js"
 compatibility_date = "2026-07-18"
 
+# Static assets configuration mapping directly to the isolated public UI workspace
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
 # Development explicit environment profiles block
 [env.dev]
 vars = { ENVIRONMENT = "development" }
 
-# Database binding placeholder for Cloudflare D1
+# Unchanged database binding placeholder for Cloudflare D1
 [[env.dev.d1_databases]]
 binding = "DB"
 database_name = "resume-manager-dev"
-database_id = "5562c841-e7d3-4246-a3c5-93c878c7f500"
+database_id = "YOUR_DEV_D1_DATABASE_ID_PLACEHOLDER"
 
-# Object Storage binding placeholder for private Cloudflare R2
+# Unchanged object storage binding placeholder for private Cloudflare R2
 [[env.dev.r2_buckets]]
 binding = "BUCKET"
 bucket_name = "resume-manager-dev"
