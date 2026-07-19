@@ -1,60 +1,237 @@
+// =============================================================================
+// File: resume-manager/src/index.js
+// Approved Phase: Stage 1 — Task 1.6A (Resume API Implementation & Correction)
+// Target Platform: Cloudflare Workers + D1 (SQLite)
+// Architecture: Isolated Same-Origin API Router
+// =============================================================================
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const path = url.pathname;
+    const { pathname } = url;
+    const method = request.method.toUpperCase();
 
-    // 1. Preserve /api/v1/health endpoint exactly
-    if (path === "/api/v1/health") {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          data: {
-            status: "healthy",
-            environment: env.ENVIRONMENT || "development",
-            timestamp: new Date().toISOString()
-          }
-        }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json"
-          }
+    // -------------------------------------------------------------------------
+    // 1. CORS & Same-Origin Policy Configuration
+    // -------------------------------------------------------------------------
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+    });
+
+    // -------------------------------------------------------------------------
+    // 2. Phase 1 Development Authentication Context Injection
+    // -------------------------------------------------------------------------
+    const userId = env.DEV_USER_ID || 'dev-user-default-123';
+
+    try {
+      // -------------------------------------------------------------------------
+      // 3. Health Endpoint Pipeline (Preserving Environment Property Context)
+      // -------------------------------------------------------------------------
+      if (pathname === '/api/v1/health' && method === 'GET') {
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            data: { 
+              status: 'healthy', 
+              environment: env.ENVIRONMENT || 'development',
+              timestamp: new Date().toISOString() 
+            } 
+          }),
+          { status: 200, headers }
+        );
+      }
+
+      // -------------------------------------------------------------------------
+      // 4. RESTful Route Routing Pipeline: Resume Module
+      // -------------------------------------------------------------------------
+      
+      // Route Base Match Patterns
+      const resumeRootPattern = '/api/v1/resumes';
+      const resumeIdRegex = /^\/api\/v1\/resumes\/([^\/]+)$/;
+
+      // --- POST /api/v1/resumes (Create Resume) ---
+      if (pathname === resumeRootPattern && method === 'POST') {
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
         }
+
+        const { name, notes } = body;
+        if (!name || typeof name !== 'string' || name.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'name' is a required input property structure.", 400, headers);
+        }
+
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        await env.DB.prepare(
+          `INSERT INTO resumes (id, user_id, name, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .bind(id, userId, name.trim(), notes ? notes.trim() : null, now, now)
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { id, name: name.trim(), notes: notes ? notes.trim() : null, created_at: now, updated_at: now }
+          }),
+          { status: 201, headers }
+        );
+      }
+
+      // --- GET /api/v1/resumes (List Resumes) ---
+      if (pathname === resumeRootPattern && method === 'GET') {
+        const { results } = await env.DB.prepare(
+          `SELECT id, name, notes, created_at, updated_at 
+           FROM resumes 
+           WHERE user_id = ? 
+           ORDER BY created_at DESC`
+        )
+        .bind(userId)
+        .all();
+
+        return new Response(
+          JSON.stringify({ success: true, data: { resumes: results } }),
+          { status: 200, headers }
+        );
+      }
+
+      // --- ID-Targeted Parametric Routes ---
+      const idMatch = pathname.match(resumeIdRegex);
+      if (idMatch) {
+        const resumeId = idMatch[1];
+
+        // --- GET /api/v1/resumes/:id (Get Resume Details) ---
+        if (method === 'GET') {
+          const resume = await env.DB.prepare(
+            `SELECT id, name, notes, created_at, updated_at 
+             FROM resumes 
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(resumeId, userId)
+          .first();
+
+          if (!resume) {
+            return buildErrorResponse('NOT_FOUND', "The targeted resource does not exist or access rights are restricted.", 404, headers);
+          }
+
+          const { results: versions } = await env.DB.prepare(
+            `SELECT id, version_label, target_role, is_active, created_at
+             FROM resume_versions 
+             WHERE resume_id = ? 
+             ORDER BY created_at DESC`
+          )
+          .bind(resumeId)
+          .all();
+
+          resume.versions = versions;
+
+          return new Response(
+            JSON.stringify({ success: true, data: resume }),
+            { status: 200, headers }
+          );
+        }
+
+        // --- PUT /api/v1/resumes/:id (Update Resume) ---
+        if (method === 'PUT') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { name, notes } = body;
+          if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'name' cannot be empty when provided.", 400, headers);
+          }
+
+          const existing = await env.DB.prepare(
+            `SELECT id, name, notes, created_at FROM resumes WHERE id = ? AND user_id = ?`
+          )
+          .bind(resumeId, userId)
+          .first();
+
+          if (!existing) {
+            return buildErrorResponse('NOT_FOUND', "The targeted resource does not exist or access rights are restricted.", 404, headers);
+          }
+
+          const updatedName = name !== undefined ? name.trim() : existing.name;
+          const updatedNotes = notes !== undefined ? (notes ? notes.trim() : null) : existing.notes;
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `UPDATE resumes 
+             SET name = ?, notes = ?, updated_at = ? 
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(updatedName, updatedNotes, now, resumeId, userId)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: { id: resumeId, name: updatedName, notes: updatedNotes, created_at: existing.created_at, updated_at: now }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        // --- DELETE /api/v1/resumes/:id (Delete Resume) ---
+        if (method === 'DELETE') {
+          const existing = await env.DB.prepare(
+            `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
+          )
+          .bind(resumeId, userId)
+          .first();
+
+          if (!existing) {
+            return buildErrorResponse('NOT_FOUND', "The targeted resource does not exist or access rights are restricted.", 404, headers);
+          }
+
+          await env.DB.prepare(`DELETE FROM resumes WHERE id = ? AND user_id = ?`)
+            .bind(resumeId, userId)
+            .run();
+
+          return new Response(
+            JSON.stringify({ success: true, data: { id: resumeId, deleted: true } }),
+            { status: 200, headers }
+          );
+        }
+      }
+
+      // -------------------------------------------------------------------------
+      // 5. Asset Fallback Route Handler
+      // -------------------------------------------------------------------------
+      if (env.ASSETS) {
+        return await env.ASSETS.fetch(request);
+      }
+
+      return buildErrorResponse('NOT_FOUND', "Endpoint or configuration asset layout path could not be located.", 404, headers);
+
+    } catch (error) {
+      return buildErrorResponse(
+        'INTERNAL_SERVER_ERROR',
+        error.message || "An unexpected tracking engine data processing exception was encountered.",
+        500,
+        headers
       );
     }
-
-    // 2. Route UI Assets using the standardized Cloudflare ASSETS binding
-    if (env.ASSETS) {
-      // Serve the frontend shell from the root route
-      if (path === "/") {
-        return env.ASSETS.fetch(new Request(new URL("/index.html", request.url), request));
-      }
-      
-      // Serve explicitly mapped static frontend asset resources
-      if (
-        path === "/app.css" || 
-        path === "/js/api.js" || 
-        path === "/js/app.js"
-      ) {
-        return env.ASSETS.fetch(request);
-      }
-    }
-
-    // 3. Unchanged API response envelope for unmapped endpoints
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: {
-          code: "NOT_FOUND",
-          message: "The requested API endpoint does not exist."
-        }
-      }),
-      {
-        status: 404,
-        headers: {
-          "Content-Type": "application/json"
-        }
-      }
-    );
   }
 };
+
+// -----------------------------------------------------------------------------
+// Global Envelope Error Component Helper Blueprint
+// -----------------------------------------------------------------------------
+function buildErrorResponse(code, message, status, baseHeaders) {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: { code, message }
+    }),
+    { status, headers: baseHeaders }
+  );
+}
