@@ -9,6 +9,7 @@ import Opportunities from './pages/Opportunities.jsx';
 import OpportunityDetail from './pages/OpportunityDetail.jsx';
 import Resumes from './pages/Resumes.jsx';
 import Interviews from './pages/Interviews.jsx';
+import CoverLetters from './pages/CoverLetters.jsx';
 
 export default function App() {
   return (
@@ -30,6 +31,8 @@ export default function App() {
             <Route path="/resumes" element={<Resumes />} />
 
             <Route path="/interviews" element={<Interviews />} />
+
+            <Route path="/cover-letters" element={<CoverLetters />} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>

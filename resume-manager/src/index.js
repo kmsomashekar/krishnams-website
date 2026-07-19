@@ -65,6 +65,251 @@ export default {
       const interviewsGlobalPattern = '/api/v1/interviews';
       const interviewIdRegex = /^\/api\/v1\/interviews\/([^\/]+)$/;
 
+      // Additive Phase 1 Cover Letters Route Definitions
+      const coverLetterRootPattern = '/api/v1/cover-letters';
+      const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
+
+      // =======================================================================
+      // MODULE: COVER LETTERS API
+      // =======================================================================
+
+      // --- GET /api/v1/cover-letters (List Cover Letters) ---
+      if (pathname === coverLetterRootPattern && method === 'GET') {
+        const { results } = await env.DB.prepare(
+          `SELECT cl.id, cl.company_id, cl.title, cl.status, cl.created_at, cl.updated_at,
+                  c.id AS comp_id, c.name AS comp_name
+           FROM cover_letters cl
+           JOIN companies c ON cl.company_id = c.id
+           WHERE cl.user_id = ?
+           ORDER BY cl.updated_at DESC`
+        )
+        .bind(userId)
+        .all();
+
+        const formattedCoverLetters = results.map(row => ({
+          id: row.id,
+          company_id: row.company_id,
+          title: row.title,
+          status: row.status,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          company: {
+            id: row.comp_id,
+            name: row.comp_name
+          }
+        }));
+
+        return new Response(
+          JSON.stringify({ success: true, data: { cover_letters: formattedCoverLetters } }),
+          { status: 200, headers }
+        );
+      }
+
+      // --- POST /api/v1/cover-letters (Create Cover Letter) ---
+      if (pathname === coverLetterRootPattern && method === 'POST') {
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { company_id, title, content, status } = body;
+
+        if (!company_id || typeof company_id !== 'string' || company_id.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'company_id' is a required non-empty string parameter.", 400, headers);
+        }
+        if (!title || typeof title !== 'string' || title.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'title' is a required non-empty string parameter.", 400, headers);
+        }
+        if (content !== undefined && typeof content !== 'string') {
+          return buildErrorResponse('INVALID_INPUT', "Field 'content' must be a valid string configuration parameter.", 400, headers);
+        }
+        
+        const finalStatus = status || 'DRAFT';
+        if (status !== undefined) {
+          if (finalStatus !== 'DRAFT' && finalStatus !== 'FINAL') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'status' must be exactly 'DRAFT' or 'FINAL'.", 400, headers);
+          }
+        }
+
+        const company = await env.DB.prepare(
+          `SELECT id FROM companies WHERE id = ? AND user_id = ?`
+        )
+        .bind(company_id, userId)
+        .first();
+
+        if (!company) {
+          return buildErrorResponse('NOT_FOUND', "The targeted company context does not exist or access rights are restricted.", 404, headers);
+        }
+
+        const existingLetter = await env.DB.prepare(
+          `SELECT id FROM cover_letters WHERE user_id = ? AND company_id = ?`
+        )
+        .bind(userId, company_id)
+        .first();
+
+        if (existingLetter) {
+          return buildErrorResponse('CONFLICT', "A cover letter already exists for this company.", 409, headers);
+        }
+
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const finalContent = content !== undefined ? content : "";
+
+        await env.DB.prepare(
+          `INSERT INTO cover_letters (id, user_id, company_id, title, content, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(id, userId, company_id, title.trim(), finalContent, finalStatus, now, now)
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id,
+              company_id,
+              title: title.trim(),
+              content: finalContent,
+              status: finalStatus,
+              created_at: now,
+              updated_at: now
+            }
+          }),
+          { status: 201, headers }
+        );
+      }
+
+      // --- Id Level Handler for Cover Letters ---
+      const clIdMatch = pathname.match(coverLetterIdRegex);
+      if (clIdMatch) {
+        const coverLetterId = clIdMatch[1];
+
+        // --- GET /api/v1/cover-letters/:id (Get Cover Letter Details) ---
+        if (method === 'GET') {
+          const row = await env.DB.prepare(
+            `SELECT cl.id, cl.company_id, cl.title, cl.content, cl.status, cl.created_at, cl.updated_at,
+                    c.id AS comp_id, c.name AS comp_name
+             FROM cover_letters cl
+             JOIN companies c ON cl.company_id = c.id
+             WHERE cl.id = ? AND cl.user_id = ?`
+          )
+          .bind(coverLetterId, userId)
+          .first();
+
+          if (!row) {
+            return buildErrorResponse('NOT_FOUND', "The targeted cover letter does not exist or access rights are restricted.", 404, headers);
+          }
+
+          const formattedDetail = {
+            id: row.id,
+            company_id: row.company_id,
+            title: row.title,
+            content: row.content,
+            status: row.status,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            company: {
+              id: row.comp_id,
+              name: row.comp_name
+            }
+          };
+
+          return new Response(
+            JSON.stringify({ success: true, data: formattedDetail }),
+            { status: 200, headers }
+          );
+        }
+
+        // --- PUT /api/v1/cover-letters/:id (Update Cover Letter Specification) ---
+        if (method === 'PUT') {
+          const existingRecord = await env.DB.prepare(
+            `SELECT * FROM cover_letters WHERE id = ? AND user_id = ?`
+          )
+          .bind(coverLetterId, userId)
+          .first();
+
+          if (!existingRecord) {
+            return buildErrorResponse('NOT_FOUND', "The targeted cover letter does not exist or access rights are restricted.", 404, headers);
+          }
+
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          if ('title' in body) {
+            if (typeof body.title !== 'string' || body.title.trim().length === 0) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'title' must be a non-empty string parameter.", 400, headers);
+            }
+          }
+          if ('content' in body) {
+            if (typeof body.content !== 'string') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'content' must be a valid string configuration parameter.", 400, headers);
+            }
+          }
+          if ('status' in body) {
+            if (body.status !== 'DRAFT' && body.status !== 'FINAL') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'status' must be exactly 'DRAFT' or 'FINAL'.", 400, headers);
+            }
+          }
+
+          const updatedTitle = 'title' in body ? body.title.trim() : existingRecord.title;
+          const updatedContent = 'content' in body ? body.content : existingRecord.content;
+          const updatedStatus = 'status' in body ? body.status : existingRecord.status;
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `UPDATE cover_letters
+             SET title = ?, content = ?, status = ?, updated_at = ?
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(updatedTitle, updatedContent, updatedStatus, now, coverLetterId, userId)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: coverLetterId,
+                company_id: existingRecord.company_id,
+                title: updatedTitle,
+                content: updatedContent,
+                status: updatedStatus,
+                created_at: existingRecord.created_at,
+                updated_at: now
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        // --- DELETE /api/v1/cover-letters/:id (Delete Cover Letter Specifications) ---
+        if (method === 'DELETE') {
+          const existing = await env.DB.prepare(
+            `SELECT id FROM cover_letters WHERE id = ? AND user_id = ?`
+          )
+          .bind(coverLetterId, userId)
+          .first();
+
+          if (!existing) {
+            return buildErrorResponse('NOT_FOUND', "The targeted cover letter does not exist or access rights are restricted.", 404, headers);
+          }
+
+          await env.DB.prepare(`DELETE FROM cover_letters WHERE id = ? AND user_id = ?`)
+            .bind(coverLetterId, userId)
+            .run();
+
+          return new Response(
+            JSON.stringify({ success: true, data: { id: coverLetterId, deleted: true } }),
+            { status: 200, headers }
+          );
+        }
+      }
+
       // =======================================================================
       // MODULE: INTERVIEWS API
       // =======================================================================
@@ -359,7 +604,7 @@ export default {
 
           // Structural field check rules
           if (round_number === undefined || typeof round_number !== 'number' || !Number.isInteger(round_number)) {
-            return buildErrorResponse('INVALID_INPUT', "Field 'round_number' is required and must be an integer.", 400, headers);
+            return buildErrorResponse('INVALID_INPUT', "Field 'round_number' is a required integer.", 400, headers);
           }
           if (!round_title || typeof round_title !== 'string' || round_title.trim().length === 0) {
             return buildErrorResponse('INVALID_INPUT', "Field 'round_title' is a required non-empty string parameter.", 400, headers);
