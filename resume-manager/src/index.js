@@ -5,6 +5,75 @@
 // Architecture: Isolated Same-Origin API Router
 // =============================================================================
 
+// --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
+const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+
+async function callGemini(message, apiKey) {
+  const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+  const requestBody = {
+    contents: [
+      {
+        parts: [
+          {
+            text: message
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      maxOutputTokens: 100
+    }
+  };
+
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), 20000);
+
+  try {
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
+      },
+      body: JSON.stringify(requestBody),
+      signal: abortController.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return {
+        errorType: 'PROVIDER_ERROR',
+        status: response.status
+      };
+    }
+
+    const responseData = await response.json();
+    const generatedText = responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (typeof generatedText !== 'string') {
+      return { errorType: 'BAD_STRUCTURE' };
+    }
+
+    return { success: true, text: generatedText };
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      return { errorType: 'TIMEOUT' };
+    }
+    return { errorType: 'NETWORK_FAILURE' };
+  }
+}
+
+async function callAIProvider(message, env) {
+  if (!env.GEMINI_API_KEY) {
+    return { errorType: 'MISSING_KEY' };
+  }
+  return await callGemini(message, env.GEMINI_API_KEY);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -71,6 +140,65 @@ export default {
       // Additive Phase 1 Cover Letters Route Definitions
       const coverLetterRootPattern = '/api/v1/cover-letters';
       const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
+
+      // =======================================================================
+      // MODULE: GEMINI AI FOUNDATION TESTING ROUTE
+      // =======================================================================
+      if (pathname === '/api/v1/ai/test') {
+        if (method !== 'POST') {
+          return buildErrorResponse('METHOD_NOT_ALLOWED', "Method not supported for this test channel layout.", 405, headers);
+        }
+
+        if (!env.GEMINI_API_KEY) {
+          return buildErrorResponse('INTERNAL_ERROR', "The target private artificial intelligence API key layout binding is currently unconfigured.", 500, headers);
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        if (!body || typeof body.message !== 'string') {
+          return buildErrorResponse('INVALID_INPUT', "The 'message' property is required and must be a valid text string.", 400, headers);
+        }
+
+        const cleanMessage = body.message.trim();
+        if (cleanMessage.length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "The prompt payload 'message' structure cannot be empty.", 400, headers);
+        }
+
+        if (cleanMessage.length > 1000) {
+          return buildErrorResponse('INVALID_INPUT', "The prompt length cannot exceed 1000 configuration characters.", 400, headers);
+        }
+
+        const aiResult = await callAIProvider(cleanMessage, env);
+
+        if (aiResult.success) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                provider: "gemini",
+                model: GEMINI_MODEL,
+                message: aiResult.text
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        if (aiResult.errorType === 'TIMEOUT') {
+          return buildErrorResponse('AI_PROVIDER_TIMEOUT', "Upstream interface connection execution limits timed out.", 504, headers);
+        }
+
+        if (aiResult.errorType === 'MISSING_KEY') {
+          return buildErrorResponse('INTERNAL_ERROR', "The target private artificial intelligence API key layout binding is currently unconfigured.", 500, headers);
+        }
+
+        return buildErrorResponse('AI_PROVIDER_ERROR', "An upstream remote error was encountered within the provider connection loops.", 502, headers);
+      }
 
       // =======================================================================
       // MODULE: PRIVATE R2 RESUME FILE STORAGE API
@@ -909,7 +1037,7 @@ export default {
             return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
           }
 
-          const { resume_version_id, match_score, missing_keywords, skill_gaps, improvement_suggestions } = body;
+          const { resume_version_id, match_score, missing_keywords, skill_gaps, improvement_suggestions = body } = body;
 
           if (!resume_version_id || typeof resume_version_id !== 'string') {
             return buildErrorResponse('INVALID_INPUT', "Field 'resume_version_id' is a required string parameter.", 400, headers);
