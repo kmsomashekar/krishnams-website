@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.6E Minor Fix (Parse extracted_skills)
+// Approved Phase: Stage 1 — Task 1.6F (ATS Analysis API Implementation)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router
 // =============================================================================
@@ -57,13 +57,14 @@ export default {
       const opportunityIdRegex = /^\/api\/v1\/opportunities\/([^\/]+)$/;
       const opportunityStatusRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/status$/;
       const jobDescriptionRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/job-description$/;
+      const atsAnalysisRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/ats-analysis$/;
 
       // =======================================================================
-      // MODULE: JOB DESCRIPTION API
+      // MODULE: ATS ANALYSIS API
       // =======================================================================
-      const jdMatch = pathname.match(jobDescriptionRegex);
-      if (jdMatch) {
-        const opportunityId = jdMatch[1];
+      const atsMatch = pathname.match(atsAnalysisRegex);
+      if (atsMatch) {
+        const opportunityId = atsMatch[1];
 
         // Access validation: Check opportunity visibility and ownership scope
         const opportunity = await env.DB.prepare(
@@ -76,7 +77,163 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted opportunity does not exist or access rights are restricted.", 404, headers);
         }
 
-        // --- POST /api/v1/opportunities/:id/job-description (Create Job Description) ---
+        // --- POST /api/v1/opportunities/:id/ats-analysis (Create ATS Analysis) ---
+        if (method === 'POST') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { resume_version_id, match_score, missing_keywords, skill_gaps, improvement_suggestions } = body;
+
+          // Structural validation rules
+          if (!resume_version_id || typeof resume_version_id !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'resume_version_id' is a required string parameter.", 400, headers);
+          }
+
+          // Validate match_score type and domain boundaries [0-100]
+          if (match_score === undefined || typeof match_score !== 'number' || !Number.isInteger(match_score) || match_score < 0 || match_score > 100) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'match_score' is required and must be an integer between 0 and 100.", 400, headers);
+          }
+
+          // Verify targeted resume version exists and belongs to current user scope
+          const version = await env.DB.prepare(
+            `SELECT rv.id FROM resume_versions rv 
+             JOIN resumes r ON rv.resume_id = r.id 
+             WHERE rv.id = ? AND r.user_id = ?`
+          )
+          .bind(resume_version_id, userId)
+          .first();
+
+          if (!version) {
+            return buildErrorResponse('NOT_FOUND', "The targeted resume version does not exist or access rights are restricted.", 404, headers);
+          }
+
+          // Validate optional array structural constraints
+          let missingKeywordsText = null;
+          let missingKeywordsResponse = [];
+          if (missing_keywords !== undefined) {
+            if (!Array.isArray(missing_keywords)) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'missing_keywords' must be a valid array.", 400, headers);
+            }
+            missingKeywordsText = JSON.stringify(missing_keywords);
+            missingKeywordsResponse = missing_keywords;
+          }
+
+          let skillGapsText = null;
+          let skillGapsResponse = [];
+          if (skill_gaps !== undefined) {
+            if (!Array.isArray(skill_gaps)) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'skill_gaps' must be a valid array.", 400, headers);
+            }
+            skillGapsText = JSON.stringify(skill_gaps);
+            skillGapsResponse = skill_gaps;
+          }
+
+          if (improvement_suggestions !== undefined && typeof improvement_suggestions !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'improvement_suggestions' must be a string.", 400, headers);
+          }
+
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `INSERT INTO ats_analysis (id, opportunity_id, resume_version_id, match_score, missing_keywords, skill_gaps, improvement_suggestions, analyzed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(id, opportunityId, resume_version_id, match_score, missingKeywordsText, skillGapsText, improvement_suggestions || null, now)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id,
+                opportunity_id: opportunityId,
+                resume_version_id,
+                match_score,
+                missing_keywords: missingKeywordsResponse,
+                skill_gaps: skillGapsResponse,
+                improvement_suggestions: improvement_suggestions || "",
+                analyzed_at: now
+              }
+            }),
+            { status: 201, headers }
+          );
+        }
+
+        // --- GET /api/v1/opportunities/:id/ats-analysis (Get Latest ATS Analysis) ---
+        if (method === 'GET') {
+          const ats = await env.DB.prepare(
+            `SELECT id, opportunity_id, resume_version_id, match_score, missing_keywords, skill_gaps, improvement_suggestions, analyzed_at
+             FROM ats_analysis
+             WHERE opportunity_id = ?
+             ORDER BY analyzed_at DESC LIMIT 1`
+          )
+          .bind(opportunityId)
+          .first();
+
+          if (!ats) {
+            return buildErrorResponse('NOT_FOUND', "ATS analysis does not exist.", 404, headers);
+          }
+
+          // Safe unmarshalling of database-serialized array text formats
+          let parsedKeywords = [];
+          if (ats.missing_keywords) {
+            try {
+              parsedKeywords = JSON.parse(ats.missing_keywords);
+            } catch (e) {
+              parsedKeywords = [];
+            }
+          }
+
+          let parsedGaps = [];
+          if (ats.skill_gaps) {
+            try {
+              parsedGaps = JSON.parse(ats.skill_gaps);
+            } catch (e) {
+              parsedGaps = [];
+            }
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: ats.id,
+                opportunity_id: ats.opportunity_id,
+                resume_version_id: ats.resume_version_id,
+                match_score: ats.match_score,
+                missing_keywords: parsedKeywords,
+                skill_gaps: parsedGaps,
+                improvement_suggestions: ats.improvement_suggestions || "",
+                analyzed_at: ats.analyzed_at
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+      }
+
+      // =======================================================================
+      // MODULE: JOB DESCRIPTION API
+      // =======================================================================
+      const jdMatch = pathname.match(jobDescriptionRegex);
+      if (jdMatch) {
+        const opportunityId = jdMatch[1];
+
+        const opportunity = await env.DB.prepare(
+          `SELECT id FROM opportunities WHERE id = ? AND user_id = ?`
+        )
+        .bind(opportunityId, userId)
+        .first();
+
+        if (!opportunity) {
+          return buildErrorResponse('NOT_FOUND', "The targeted opportunity does not exist or access rights are restricted.", 404, headers);
+        }
+
         if (method === 'POST') {
           let body;
           try {
@@ -87,12 +244,10 @@ export default {
 
           const { raw_text, extracted_skills } = body;
 
-          // Structural field type checking
           if (!raw_text || typeof raw_text !== 'string' || raw_text.trim().length === 0) {
             return buildErrorResponse('INVALID_INPUT', "Field 'raw_text' is a required non-empty string parameter.", 400, headers);
           }
 
-          // Enforce 1:1 relationship constraints
           const existingJd = await env.DB.prepare(
             `SELECT id FROM job_descriptions WHERE opportunity_id = ?`
           )
@@ -103,7 +258,6 @@ export default {
             return buildErrorResponse('CONFLICT', "Job description already exists for this opportunity.", 409, headers);
           }
 
-          // Serialize array field parameters if supplied safely
           let skillsText = null;
           let skillsResponse = [];
           if (extracted_skills !== undefined) {
@@ -139,7 +293,6 @@ export default {
           );
         }
 
-        // --- GET /api/v1/opportunities/:id/job-description (Get Job Description) ---
         if (method === 'GET') {
           const jd = await env.DB.prepare(
             `SELECT id, opportunity_id, raw_text, extracted_skills, created_at
@@ -153,7 +306,6 @@ export default {
             return buildErrorResponse('NOT_FOUND', "Job description does not exist.", 404, headers);
           }
 
-          // Safe parsing of the serialized text field parameter
           let parsedSkills = [];
           if (jd.extracted_skills) {
             try {
@@ -339,7 +491,7 @@ export default {
 
       // --- GET /api/v1/opportunities/:id (Get Opportunity Details Dashboard) ---
       const oppIdMatch = pathname.match(opportunityIdRegex);
-      if (oppIdMatch && !pathname.includes('/status') && method === 'GET') {
+      if (oppIdMatch && !pathname.includes('/status') && !pathname.includes('/job-description') && !pathname.includes('/ats-analysis') && method === 'GET') {
         const opportunityId = oppIdMatch[1];
 
         const opportunity = await env.DB.prepare(
@@ -379,7 +531,6 @@ export default {
         .bind(opportunityId)
         .first();
 
-        // Safe JSON parsing handling for extracted_skills within the dashboard data aggregation step
         if (jobDescription) {
           let parsedSkills = [];
           if (jobDescription.extracted_skills) {
@@ -392,16 +543,37 @@ export default {
           jobDescription.extracted_skills = parsedSkills;
         }
 
-        let atsAnalysis = null;
-        if (opportunity.resume_version_id) {
-          atsAnalysis = await env.DB.prepare(
-            `SELECT id, resume_version_id, opportunity_id, match_score, missing_keywords, skill_gaps, improvement_suggestions, analyzed_at
-             FROM ats_analysis 
-             WHERE opportunity_id = ? AND resume_version_id = ? 
-             ORDER BY analyzed_at DESC LIMIT 1`
-          )
-          .bind(opportunityId, opportunity.resume_version_id)
-          .first();
+        let atsAnalysis = await env.DB.prepare(
+          `SELECT id, resume_version_id, opportunity_id, match_score, missing_keywords, skill_gaps, improvement_suggestions, analyzed_at
+           FROM ats_analysis 
+           WHERE opportunity_id = ?
+           ORDER BY analyzed_at DESC LIMIT 1`
+        )
+        .bind(opportunityId)
+        .first();
+
+        // Safe JSON parsing requirement integration for Dashboard metrics
+        if (atsAnalysis) {
+          let parsedKeywords = [];
+          if (atsAnalysis.missing_keywords) {
+            try {
+              parsedKeywords = JSON.parse(atsAnalysis.missing_keywords);
+            } catch (e) {
+              parsedKeywords = [];
+            }
+          }
+
+          let parsedGaps = [];
+          if (atsAnalysis.skill_gaps) {
+            try {
+              parsedGaps = JSON.parse(atsAnalysis.skill_gaps);
+            } catch (e) {
+              parsedGaps = [];
+            }
+          }
+
+          atsAnalysis.missing_keywords = parsedKeywords;
+          atsAnalysis.skill_gaps = parsedGaps;
         }
 
         const { results: interviews } = await env.DB.prepare(
