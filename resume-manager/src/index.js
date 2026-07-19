@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.6A (Resume API Implementation & Correction)
+// Approved Phase: Stage 1 — Task 1.6B (Resume Version API Implementation)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router
 // =============================================================================
@@ -42,12 +42,14 @@ export default {
       }
 
       // -------------------------------------------------------------------------
-      // 4. RESTful Route Routing Pipeline: Resume Module
+      // 4. RESTful Route Routing Pipeline: Resume & Resume Version Modules
       // -------------------------------------------------------------------------
       
       // Route Base Match Patterns
       const resumeRootPattern = '/api/v1/resumes';
       const resumeIdRegex = /^\/api\/v1\/resumes\/([^\/]+)$/;
+      const versionsRootRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions$/;
+      const versionIdRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)$/;
 
       // --- POST /api/v1/resumes (Create Resume) ---
       if (pathname === resumeRootPattern && method === 'POST') {
@@ -99,9 +101,135 @@ export default {
         );
       }
 
-      // --- ID-Targeted Parametric Routes ---
+      // --- Resume Version Collection Routes (POST / GET list) ---
+      const versionsMatch = pathname.match(versionsRootRegex);
+      if (versionsMatch) {
+        const resumeId = versionsMatch[1];
+
+        // Verify parent resume exists and belongs to current DEV_USER_ID
+        const parentResume = await env.DB.prepare(
+          `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
+        )
+        .bind(resumeId, userId)
+        .first();
+
+        if (!parentResume) {
+          return buildErrorResponse('NOT_FOUND', "The targeted parent resume does not exist or access rights are restricted.", 404, headers);
+        }
+
+        // --- POST /api/v1/resumes/:resume_id/versions (Create Resume Version) ---
+        if (method === 'POST') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { version_label, target_role, r2_object_key } = body;
+          if (!version_label || typeof version_label !== 'string' || version_label.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'version_label' is a required non-empty string.", 400, headers);
+          }
+
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
+          const isActive = 1; // Default to active layout state initialization
+
+          await env.DB.prepare(
+            `INSERT INTO resume_versions (id, resume_id, version_label, target_role, r2_object_key, is_active, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(id, resumeId, version_label.trim(), target_role ? target_role.trim() : null, r2_object_key ? r2_object_key.trim() : null, isActive, now)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id,
+                resume_id: resumeId,
+                version_label: version_label.trim(),
+                target_role: target_role ? target_role.trim() : null,
+                r2_object_key: r2_object_key ? r2_object_key.trim() : null,
+                is_active: isActive,
+                created_at: now
+              }
+            }),
+            { status: 201, headers }
+          );
+        }
+
+        // --- GET /api/v1/resumes/:resume_id/versions (List Resume Versions) ---
+        if (method === 'GET') {
+          const { results } = await env.DB.prepare(
+            `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at
+             FROM resume_versions
+             WHERE resume_id = ?
+             ORDER BY created_at DESC`
+          )
+          .bind(resumeId)
+          .all();
+
+          return new Response(
+            JSON.stringify({ success: true, data: { versions: results } }),
+            { status: 200, headers }
+          );
+        }
+      }
+
+      // --- Individual Resume Version Detail Route ---
+      const versionIdMatch = pathname.match(versionIdRegex);
+      if (versionIdMatch) {
+        const resumeId = versionIdMatch[1];
+        const versionId = versionIdMatch[2];
+
+        // Verify parent resume ownership context explicitly
+        const parentResume = await env.DB.prepare(
+          `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
+        )
+        .bind(resumeId, userId)
+        .first();
+
+        if (!parentResume) {
+          return buildErrorResponse('NOT_FOUND', "The targeted parent resume does not exist or access rights are restricted.", 404, headers);
+        }
+
+        // --- GET /api/v1/resumes/:resume_id/versions/:id (Get Resume Version Details) ---
+        if (method === 'GET') {
+          const version = await env.DB.prepare(
+            `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at
+             FROM resume_versions
+             WHERE id = ? AND resume_id = ?`
+          )
+          .bind(versionId, resumeId)
+          .first();
+
+          if (!version) {
+            return buildErrorResponse('NOT_FOUND', "The targeted version resource does not exist under this portfolio context.", 404, headers);
+          }
+
+          // Fetch explicit historical ATS metric traces if available via a LEFT JOIN scheme or query aggregation
+          const { results: atsScores } = await env.DB.prepare(
+            `SELECT a.id, a.opportunity_id, a.match_score, a.analyzed_at
+             FROM ats_analysis a
+             WHERE a.resume_version_id = ?
+             ORDER BY a.analyzed_at DESC`
+          )
+          .bind(versionId)
+          .all();
+
+          version.historical_ats_scores = atsScores || [];
+
+          return new Response(
+            JSON.stringify({ success: true, data: version }),
+            { status: 200, headers }
+          );
+        }
+      }
+
+      // --- ID-Targeted Parametric Routes (Core Resumes) ---
       const idMatch = pathname.match(resumeIdRegex);
-      if (idMatch) {
+      if (idMatch && !pathname.includes('/versions')) {
         const resumeId = idMatch[1];
 
         // --- GET /api/v1/resumes/:id (Get Resume Details) ---
