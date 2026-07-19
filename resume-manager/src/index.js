@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.6D Minor Fix (Resume Details Query Typo)
+// Approved Phase: Stage 1 — Task 1.6E Minor Fix (Parse extracted_skills)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router
 // =============================================================================
@@ -56,6 +56,128 @@ export default {
       
       const opportunityIdRegex = /^\/api\/v1\/opportunities\/([^\/]+)$/;
       const opportunityStatusRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/status$/;
+      const jobDescriptionRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/job-description$/;
+
+      // =======================================================================
+      // MODULE: JOB DESCRIPTION API
+      // =======================================================================
+      const jdMatch = pathname.match(jobDescriptionRegex);
+      if (jdMatch) {
+        const opportunityId = jdMatch[1];
+
+        // Access validation: Check opportunity visibility and ownership scope
+        const opportunity = await env.DB.prepare(
+          `SELECT id FROM opportunities WHERE id = ? AND user_id = ?`
+        )
+        .bind(opportunityId, userId)
+        .first();
+
+        if (!opportunity) {
+          return buildErrorResponse('NOT_FOUND', "The targeted opportunity does not exist or access rights are restricted.", 404, headers);
+        }
+
+        // --- POST /api/v1/opportunities/:id/job-description (Create Job Description) ---
+        if (method === 'POST') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { raw_text, extracted_skills } = body;
+
+          // Structural field type checking
+          if (!raw_text || typeof raw_text !== 'string' || raw_text.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'raw_text' is a required non-empty string parameter.", 400, headers);
+          }
+
+          // Enforce 1:1 relationship constraints
+          const existingJd = await env.DB.prepare(
+            `SELECT id FROM job_descriptions WHERE opportunity_id = ?`
+          )
+          .bind(opportunityId)
+          .first();
+
+          if (existingJd) {
+            return buildErrorResponse('CONFLICT', "Job description already exists for this opportunity.", 409, headers);
+          }
+
+          // Serialize array field parameters if supplied safely
+          let skillsText = null;
+          let skillsResponse = [];
+          if (extracted_skills !== undefined) {
+            if (!Array.isArray(extracted_skills)) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'extracted_skills' must be a valid array.", 400, headers);
+            }
+            skillsText = JSON.stringify(extracted_skills);
+            skillsResponse = extracted_skills;
+          }
+
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `INSERT INTO job_descriptions (id, opportunity_id, raw_text, extracted_skills, created_at)
+             VALUES (?, ?, ?, ?, ?)`
+          )
+          .bind(id, opportunityId, raw_text.trim(), skillsText, now)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id,
+                opportunity_id: opportunityId,
+                raw_text: raw_text.trim(),
+                extracted_skills: skillsResponse,
+                created_at: now
+              }
+            }),
+            { status: 201, headers }
+          );
+        }
+
+        // --- GET /api/v1/opportunities/:id/job-description (Get Job Description) ---
+        if (method === 'GET') {
+          const jd = await env.DB.prepare(
+            `SELECT id, opportunity_id, raw_text, extracted_skills, created_at
+             FROM job_descriptions
+             WHERE opportunity_id = ?`
+          )
+          .bind(opportunityId)
+          .first();
+
+          if (!jd) {
+            return buildErrorResponse('NOT_FOUND', "Job description does not exist.", 404, headers);
+          }
+
+          // Safe parsing of the serialized text field parameter
+          let parsedSkills = [];
+          if (jd.extracted_skills) {
+            try {
+              parsedSkills = JSON.parse(jd.extracted_skills);
+            } catch (e) {
+              parsedSkills = [];
+            }
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: jd.id,
+                opportunity_id: jd.opportunity_id,
+                raw_text: jd.raw_text,
+                extracted_skills: parsedSkills,
+                created_at: jd.created_at
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+      }
 
       // =======================================================================
       // MODULE: OPPORTUNITIES API
@@ -75,7 +197,6 @@ export default {
           application_url, date_identified, date_applied, notes 
         } = body;
 
-        // Basic structural validations
         if (!company_id || typeof company_id !== 'string') {
           return buildErrorResponse('INVALID_INPUT', "Field 'company_id' is a required string parameter.", 400, headers);
         }
@@ -83,13 +204,11 @@ export default {
           return buildErrorResponse('INVALID_INPUT', "Field 'job_title' is a required non-empty string.", 400, headers);
         }
 
-        // Validate priority bounds (1-5)
         const parsedPriority = priority !== undefined ? parseInt(priority, 10) : 3;
         if (isNaN(parsedPriority) || parsedPriority < 1 || parsedPriority > 5) {
           return buildErrorResponse('INVALID_INPUT', "Priority must be an integer between 1 and 5.", 400, headers);
         }
 
-        // Simple ISO Date Format Validation (YYYY-MM-DD)
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
         if (date_identified && !dateRegex.test(date_identified)) {
           return buildErrorResponse('INVALID_INPUT', "Field 'date_identified' must use YYYY-MM-DD format.", 400, headers);
@@ -98,7 +217,6 @@ export default {
           return buildErrorResponse('INVALID_INPUT', "Field 'date_applied' must use YYYY-MM-DD format.", 400, headers);
         }
 
-        // Verify company ownership context
         const company = await env.DB.prepare(
           `SELECT id FROM companies WHERE id = ? AND user_id = ?`
         )
@@ -109,7 +227,6 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted company context does not exist or access rights are restricted.", 404, headers);
         }
 
-        // Verify resume version existence if provided
         if (resume_version_id) {
           const version = await env.DB.prepare(
             `SELECT rv.id FROM resume_versions rv 
@@ -225,7 +342,6 @@ export default {
       if (oppIdMatch && !pathname.includes('/status') && method === 'GET') {
         const opportunityId = oppIdMatch[1];
 
-        // Fetch primary opportunity asset record row mapping metrics context
         const opportunity = await env.DB.prepare(
           `SELECT id, company_id, resume_version_id, job_title, status, priority, 
                   application_url, date_identified, date_applied, notes, created_at, updated_at
@@ -239,14 +355,12 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted opportunity portfolio tracking context does not exist.", 404, headers);
         }
 
-        // Fetch company data trace
         const company = await env.DB.prepare(
           `SELECT id, name, website, location, notes FROM companies WHERE id = ?`
         )
         .bind(opportunity.company_id)
         .first();
 
-        // Fetch resume version traces if targeted record link binds exist
         let resumeVersion = null;
         if (opportunity.resume_version_id) {
           resumeVersion = await env.DB.prepare(
@@ -256,7 +370,6 @@ export default {
           .first();
         }
 
-        // Fetch latest linked Job Description record - Updated Schema Fields
         const jobDescription = await env.DB.prepare(
           `SELECT id, opportunity_id, raw_text, extracted_skills, created_at
            FROM job_descriptions 
@@ -266,7 +379,19 @@ export default {
         .bind(opportunityId)
         .first();
 
-        // Fetch latest calculated ATS metric context - Updated Schema Fields
+        // Safe JSON parsing handling for extracted_skills within the dashboard data aggregation step
+        if (jobDescription) {
+          let parsedSkills = [];
+          if (jobDescription.extracted_skills) {
+            try {
+              parsedSkills = JSON.parse(jobDescription.extracted_skills);
+            } catch (e) {
+              parsedSkills = [];
+            }
+          }
+          jobDescription.extracted_skills = parsedSkills;
+        }
+
         let atsAnalysis = null;
         if (opportunity.resume_version_id) {
           atsAnalysis = await env.DB.prepare(
@@ -279,7 +404,6 @@ export default {
           .first();
         }
 
-        // Fetch collections array for upcoming scheduled interviews - Updated Schema Fields
         const { results: interviews } = await env.DB.prepare(
           `SELECT id, opportunity_id, round_title, round_number, interviewer_names, interview_date, status, preparation_notes, questions_asked, feedback_notes
            FROM interviews 
@@ -289,7 +413,6 @@ export default {
         .bind(opportunityId)
         .all();
 
-        // Package combined structural layout payload
         const dashboardPayload = {
           id: opportunity.id,
           job_title: opportunity.job_title,
@@ -318,7 +441,6 @@ export default {
       // MODULE: COMPANIES API
       // =======================================================================
 
-      // --- POST /api/v1/companies (Create Company Target) ---
       if (pathname === companyRootPattern && method === 'POST') {
         let body;
         try {
@@ -351,7 +473,6 @@ export default {
         );
       }
 
-      // --- GET /api/v1/companies (List Tracked Companies) ---
       if (pathname === companyRootPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
           `SELECT id, name, website, location, notes, created_at
@@ -372,7 +493,6 @@ export default {
       // MODULE: RESUMES & VERSIONS API
       // =======================================================================
 
-      // --- POST /api/v1/resumes (Create Resume) ---
       if (pathname === resumeRootPattern && method === 'POST') {
         let body;
         try {
@@ -405,7 +525,6 @@ export default {
         );
       }
 
-      // --- GET /api/v1/resumes (List Resumes) ---
       if (pathname === resumeRootPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
           `SELECT id, name, notes, created_at, updated_at 
@@ -422,7 +541,6 @@ export default {
         );
       }
 
-      // --- Resume Version Collection Routes (POST / GET list) ---
       const versionsMatch = pathname.match(versionsRootRegex);
       if (versionsMatch) {
         const resumeId = versionsMatch[1];
@@ -437,7 +555,6 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted parent resume does not exist or access rights are restricted.", 404, headers);
         }
 
-        // --- POST /api/v1/resumes/:resume_id/versions (Create Resume Version) ---
         if (method === 'POST') {
           let body;
           try {
@@ -471,7 +588,6 @@ export default {
           );
         }
 
-        // --- GET /api/v1/resumes/:resume_id/versions (List Resume Versions) ---
         if (method === 'GET') {
           const { results } = await env.DB.prepare(
             `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at
@@ -489,7 +605,6 @@ export default {
         }
       }
 
-      // --- Individual Resume Version Detail Route ---
       const versionIdMatch = pathname.match(versionIdRegex);
       if (versionIdMatch) {
         const resumeId = versionIdMatch[1];
@@ -505,7 +620,6 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted parent resume does not exist or access rights are restricted.", 404, headers);
         }
 
-        // --- GET /api/v1/resumes/:resume_id/versions/:id (Get Resume Version Details) ---
         if (method === 'GET') {
           const version = await env.DB.prepare(
             `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at
@@ -537,12 +651,10 @@ export default {
         }
       }
 
-      // --- ID-Targeted Parametric Routes (Core Resumes) ---
       const idMatch = pathname.match(resumeIdRegex);
       if (idMatch && !pathname.includes('/versions')) {
         const resumeId = idMatch[1];
 
-        // --- GET /api/v1/resumes/:id (Get Resume Details) ---
         if (method === 'GET') {
           const resume = await env.DB.prepare(
             `SELECT id, name, notes, created_at, updated_at 
@@ -568,12 +680,11 @@ export default {
           resume.versions = versions;
 
           return new Response(
-            JSON.stringify({ success: true, data: resume }),
+            JSON.stringify({ success: true, data: { ...resume } }),
             { status: 200, headers }
           );
         }
 
-        // --- PUT /api/v1/resumes/:id (Update Resume) ---
         if (method === 'PUT') {
           let body;
           try {
@@ -618,7 +729,6 @@ export default {
           );
         }
 
-        // --- DELETE /api/v1/resumes/:id (Delete Resume) ---
         if (method === 'DELETE') {
           const existing = await env.DB.prepare(
             `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
