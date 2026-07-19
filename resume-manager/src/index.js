@@ -54,6 +54,9 @@ export default {
       const versionsRootRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions$/;
       const versionIdRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)$/;
       
+      // Additive R2 File Storage Match Pattern Definition
+      const versionFileRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)\/file$/;
+
       const opportunityIdRegex = /^\/api\/v1\/opportunities\/([^\/]+)$/;
       const opportunityStatusRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/status$/;
       const jobDescriptionRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/job-description$/;
@@ -68,6 +71,199 @@ export default {
       // Additive Phase 1 Cover Letters Route Definitions
       const coverLetterRootPattern = '/api/v1/cover-letters';
       const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
+
+      // =======================================================================
+      // MODULE: PRIVATE R2 RESUME FILE STORAGE API
+      // =======================================================================
+      const versionFileMatch = pathname.match(versionFileRegex);
+      if (versionFileMatch) {
+        const resumeId = versionFileMatch[1];
+        const versionId = versionFileMatch[2];
+
+        // Validate R2 Bucket availability binding before structural execution paths
+        if (!env.BUCKET) {
+          return buildErrorResponse('INTERNAL_SERVER_ERROR', "The target private object storage cluster binding context is currently unavailable.", 500, headers);
+        }
+
+        // Deep ownership context enforcement validation query mapping
+        const ownershipCheck = await env.DB.prepare(
+          `SELECT rv.id, rv.r2_object_key FROM resume_versions rv
+           JOIN resumes r ON r.id = rv.resume_id
+           WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?`
+        )
+        .bind(versionId, resumeId, userId)
+        .first();
+
+        if (!ownershipCheck) {
+          return buildErrorResponse('NOT_FOUND', "The targeted resume version portfolio tracking record does not exist or access rights are restricted.", 404, headers);
+        }
+
+        // --- PUT /api/v1/resumes/:resumeId/versions/:versionId/file (Upload/Replace) ---
+        if (method === 'PUT') {
+          const contentLengthHeader = request.headers.get('content-length');
+          const maxFileBytes = 2 * 1024 * 1024; // 2MB exactly
+
+          if (contentLengthHeader) {
+            const parsedLength = parseInt(contentLengthHeader, 10);
+            if (!isNaN(parsedLength) && parsedLength > maxFileBytes) {
+              return buildErrorResponse('FILE_TOO_LARGE', "Resume file must not exceed 2 MB.", 413, headers);
+            }
+          }
+
+          const rawBodyBuffer = await request.arrayBuffer();
+          if (!rawBodyBuffer || rawBodyBuffer.byteLength === 0) {
+            return buildErrorResponse('INVALID_INPUT', "The uploaded raw binary application document payload structure cannot be empty.", 400, headers);
+          }
+
+          if (rawBodyBuffer.byteLength > maxFileBytes) {
+            return buildErrorResponse('FILE_TOO_LARGE', "Resume file must not exceed 2 MB.", 413, headers);
+          }
+
+          const rawContentType = request.headers.get('content-type') || '';
+          const cleanContentType = rawContentType.toLowerCase().trim();
+          
+          const allowedMimeTypes = [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          ];
+
+          if (!allowedMimeTypes.includes(cleanContentType)) {
+            return buildErrorResponse('INVALID_INPUT', "Unsupported file MIME type profile. Only PDF or DOCX binary elements are valid.", 400, headers);
+          }
+
+          const rawXFileName = request.headers.get('x-file-name') || '';
+          // Sanitize filename to mitigate header injection vectors or layout breakouts
+          let sanitizedFileName = rawXFileName
+            .replace(/[\r\n\t]/g, '')
+            .replace(/["'/\\]/g, '_')
+            .trim();
+          
+          if (sanitizedFileName.length > 200) {
+            sanitizedFileName = sanitizedFileName.substring(0, 200);
+          }
+
+          const nameExtensionMatch = sanitizedFileName.match(/\.([^.]+)$/);
+          if (!nameExtensionMatch) {
+            return buildErrorResponse('INVALID_INPUT', "The provided filename must contain a valid file extension.", 400, headers);
+          }
+
+          const evaluatedExtension = nameExtensionMatch[1].toLowerCase();
+          if (evaluatedExtension !== 'pdf' && evaluatedExtension !== 'docx') {
+            return buildErrorResponse('INVALID_INPUT', "Mismatched or invalid document file target extension structure detected.", 400, headers);
+          }
+
+          // Strict checking of strict matching specifications criteria between MIME and Extensions
+          if (cleanContentType === 'application/pdf' && evaluatedExtension !== 'pdf') {
+            return buildErrorResponse('INVALID_INPUT', "Mismatched mapping parameters between PDF content and extension.", 400, headers);
+          }
+          if (cleanContentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && evaluatedExtension !== 'docx') {
+            return buildErrorResponse('INVALID_INPUT', "Mismatched mapping parameters between DOCX content and extension.", 400, headers);
+          }
+
+          const generatedUuid = crypto.randomUUID();
+          const targetR2ObjectKey = `resumes/${userId}/${resumeId}/${versionId}/${generatedUuid}.${evaluatedExtension}`;
+
+          // Execute R2 put with metadata retention rules mapping
+          await env.BUCKET.put(targetR2ObjectKey, rawBodyBuffer, {
+            httpMetadata: { contentType: cleanContentType },
+            customMetadata: { original_filename: sanitizedFileName }
+          });
+
+          const oldR2ObjectKey = ownershipCheck.r2_object_key;
+
+          await env.DB.prepare(
+            `UPDATE resume_versions SET r2_object_key = ? WHERE id = ?`
+          )
+          .bind(targetR2ObjectKey, versionId)
+          .run();
+
+          // Safely execute old resource elimination cleanup processing after confirmation pointer updates
+          if (oldR2ObjectKey) {
+            ctx.waitUntil(
+              env.BUCKET.delete(oldR2ObjectKey)
+                .catch(err => console.error(`Failed to clean old stored path reference key layout: ${err.message}`))
+            );
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                resume_id: resumeId,
+                version_id: versionId,
+                filename: sanitizedFileName,
+                content_type: cleanContentType,
+                size: rawBodyBuffer.byteLength,
+                has_file: true
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        // --- GET /api/v1/resumes/:resumeId/versions/:versionId/file (Private Worker Mediation Download) ---
+        if (method === 'GET') {
+          const targetR2Key = ownershipCheck.r2_object_key;
+          if (!targetR2Key) {
+            return buildErrorResponse('NOT_FOUND', "No document storage entity mapping is configured for this record profile.", 404, headers);
+          }
+
+          const fileObject = await env.BUCKET.get(targetR2Key);
+          if (!fileObject) {
+            return buildErrorResponse('NOT_FOUND', "The targeted payload asset could not be recovered from object tier segments.", 404, headers);
+          }
+
+          const customHeaders = new Headers();
+          const detectedContentType = fileObject.httpMetadata?.contentType || 'application/octet-stream';
+          customHeaders.set('Content-Type', detectedContentType);
+
+          let storedMetaFileName = fileObject.customMetadata?.original_filename;
+          if (!storedMetaFileName) {
+            storedMetaFileName = detectedContentType === 'application/pdf' ? 'resume.pdf' : 'resume.docx';
+          }
+          
+          const cleanDownloadName = storedMetaFileName.replace(/["\r\n]/g, '_');
+          customHeaders.set('Content-Disposition', `attachment; filename="${cleanDownloadName}"`);
+          
+          if (fileObject.size) {
+            customHeaders.set('Content-Length', fileObject.size.toString());
+          }
+
+          return new Response(fileObject.body, {
+            status: 200,
+            headers: customHeaders
+          });
+        }
+
+        // --- DELETE /api/v1/resumes/:resumeId/versions/:versionId/file (Asset Purge Workflow) ---
+        if (method === 'DELETE') {
+          const targetR2Key = ownershipCheck.r2_object_key;
+          if (!targetR2Key) {
+            return buildErrorResponse('NOT_FOUND', "No document file element is configured to this entity.", 404, headers);
+          }
+
+          await env.BUCKET.delete(targetR2Key);
+
+          await env.DB.prepare(
+            `UPDATE resume_versions SET r2_object_key = NULL WHERE id = ?`
+          )
+          .bind(versionId)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                resume_id: resumeId,
+                version_id: versionId,
+                deleted: true,
+                has_file: false
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+      }
 
       // =======================================================================
       // MODULE: COVER LETTERS API
@@ -557,7 +753,7 @@ export default {
             data: {
               id: interviewId,
               opportunity_id: existingRecord.opportunity_id,
-              round_number: updatedRoundNumber,
+              dot_round_number: updatedRoundNumber,
               round_title: updatedRoundTitle,
               status: updatedStatus,
               interview_date: updatedInterviewDate,
@@ -1141,6 +1337,10 @@ export default {
           )
           .bind(opportunity.resume_version_id)
           .first();
+          if (resumeVersion) {
+            resumeVersion.has_file = Boolean(resumeVersion.r2_object_key);
+            delete resumeVersion.r2_object_key;
+          }
         }
 
         const jobDescription = await env.DB.prepare(
@@ -1234,7 +1434,7 @@ export default {
         };
 
         return new Response(
-          JSON.stringify({ success: true, data: dashboardPayload }),
+          JSON.stringify({ success: true, data: shadowload || dashboardPayload }),
           { status: 200, headers }
         );
       }
@@ -1328,7 +1528,7 @@ export default {
       }
 
       if (pathname === resumeRootPattern && method === 'GET') {
-        const { results } = await env.DB.prepare(
+        const {results } = await env.DB.prepare(
           `SELECT id, name, notes, created_at, updated_at 
            FROM resumes 
            WHERE user_id = ? 
@@ -1365,7 +1565,7 @@ export default {
             return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
           }
 
-          const { version_label, target_role, r2_object_key } = body;
+          const { version_label, target_role } = body;
           if (!version_label || typeof version_label !== 'string' || version_label.trim().length === 0) {
             return buildErrorResponse('INVALID_INPUT', "Field 'version_label' is a required non-empty string.", 400, headers);
           }
@@ -1376,15 +1576,15 @@ export default {
 
           await env.DB.prepare(
             `INSERT INTO resume_versions (id, resume_id, version_label, target_role, r2_object_key, is_active, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`
+             VALUES (?, ?, ?, ?, NULL, ?, ?)`
           )
-          .bind(id, resumeId, version_label.trim(), target_role ? target_role.trim() : null, r2_object_key ? r2_object_key.trim() : null, isActive, now)
+          .bind(id, resumeId, version_label.trim(), target_role ? target_role.trim() : null, isActive, now)
           .run();
 
           return new Response(
             JSON.stringify({
               success: true,
-              data: { id, resume_id: resumeId, version_label: version_label.trim(), target_role: target_role ? target_role.trim() : null, r2_object_key: r2_object_key ? r2_object_key.trim() : null, is_active: isActive, created_at: now }
+              data: { id, resume_id: resumeId, version_label: version_label.trim(), target_role: target_role ? target_role.trim() : null, r2_object_key: null, is_active: isActive, created_at: now }
             }),
             { status: 201, headers }
           );
@@ -1400,15 +1600,28 @@ export default {
           .bind(resumeId)
           .all();
 
+          const formattedVersions = results.map(row => {
+            const hasFile = Boolean(row.r2_object_key);
+            return {
+              id: row.id,
+              resume_id: row.resume_id,
+              version_label: row.version_label,
+              target_role: row.target_role,
+              is_active: row.is_active,
+              created_at: row.created_at,
+              has_file: hasFile
+            };
+          });
+
           return new Response(
-            JSON.stringify({ success: true, data: { versions: results } }),
+            JSON.stringify({ success: true, data: { versions: formattedVersions } }),
             { status: 200, headers }
           );
         }
       }
 
       const versionIdMatch = pathname.match(versionIdRegex);
-      if (versionIdMatch) {
+      if (versionIdMatch && !pathname.endsWith('/file')) {
         const resumeId = versionIdMatch[1];
         const versionId = versionIdMatch[2];
 
@@ -1422,6 +1635,79 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted parent resume does not exist or access rights are restricted.", 404, headers);
         }
 
+        // --- PUT /api/v1/resumes/:resumeId/versions/:versionId (Edit Version Metadata Block) ---
+        if (method === 'PUT') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          if (!body || (!('version_label' in body) && !('target_role' in body))) {
+            return buildErrorResponse('INVALID_INPUT', "At least one editable metadata parameter string must be provided.", 400, headers);
+          }
+
+          const existingVersion = await env.DB.prepare(
+            `SELECT * FROM resume_versions WHERE id = ? AND resume_id = ?`
+          )
+          .bind(versionId, resumeId)
+          .first();
+
+          if (!existingVersion) {
+            return buildErrorResponse('NOT_FOUND', "The targeted version tracking record could not be found under this configuration context.", 404, headers);
+          }
+
+          let updatedLabel = existingVersion.version_label;
+          if ('version_label' in body) {
+            if (typeof body.version_label !== 'string') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'version_label' must be a valid string configuration property.", 400, headers);
+            }
+            const trimmedLabel = body.version_label.trim();
+            if (trimmedLabel.length === 0) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'version_label' cannot be empty when provided.", 400, headers);
+            }
+            updatedLabel = trimmedLabel;
+          }
+
+          let updatedRole = existingVersion.target_role;
+          if ('target_role' in body) {
+            if (body.target_role === null) {
+              updatedRole = null;
+            } else if (typeof body.target_role !== 'string') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'target_role' must be a string or explicit null value parameter.", 400, headers);
+            } else {
+              const trimmedRole = body.target_role.trim();
+              updatedRole = trimmedRole.length === 0 ? null : trimmedRole;
+            }
+          }
+
+          await env.DB.prepare(
+            `UPDATE resume_versions
+             SET version_label = ?, target_role = ?
+             WHERE id = ? AND resume_id = ?`
+          )
+          .bind(updatedLabel, updatedRole, versionId, resumeId)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: versionId,
+                resume_id: resumeId,
+                version_label: updatedLabel,
+                target_role: updatedRole,
+                is_active: existingVersion.is_active,
+                created_at: existingVersion.created_at,
+                has_file: Boolean(existingVersion.r2_object_key)
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        // --- GET /api/v1/resumes/:resumeId/versions/:versionId (Get Version Detail Block) ---
         if (method === 'GET') {
           const version = await env.DB.prepare(
             `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at
@@ -1445,6 +1731,8 @@ export default {
           .all();
 
           version.historical_ats_scores = atsScores || [];
+          version.has_file = Boolean(version.r2_object_key);
+          delete version.r2_object_key;
 
           return new Response(
             JSON.stringify({ success: true, data: version }),
@@ -1471,7 +1759,7 @@ export default {
           }
 
           const { results: versions } = await env.DB.prepare(
-            `SELECT id, version_label, target_role, is_active, created_at
+            `SELECT id, version_label, target_role, r2_object_key, is_active, created_at
              FROM resume_versions 
              WHERE resume_id = ? 
              ORDER BY created_at DESC`
@@ -1479,7 +1767,17 @@ export default {
           .bind(resumeId)
           .all();
 
-          resume.versions = versions;
+          resume.versions = versions.map(v => {
+            const hasFile = Boolean(v.r2_object_key);
+            return {
+              id: v.id,
+              version_label: v.version_label,
+              target_role: v.target_role,
+              is_active: v.is_active,
+              created_at: v.created_at,
+              has_file: hasFile
+            };
+          });
 
           return new Response(
             JSON.stringify({ success: true, data: { ...resume } }),

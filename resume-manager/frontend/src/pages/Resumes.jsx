@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // --- DATE FORMATTING UTILITIES ---
@@ -81,8 +81,25 @@ async function createResumeVersion({ resumeId, payload }) {
   return handleResponse(res, 'Failed to create resume version.');
 }
 
+async function updateResumeVersion({ resumeId, versionId, payload }) {
+  const res = await fetch(`/api/v1/resumes/${resumeId}/versions/${versionId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to update resume version.');
+}
+
+async function deleteResumeVersionFile({ resumeId, versionId }) {
+  const res = await fetch(`/api/v1/resumes/${resumeId}/versions/${versionId}/file`, {
+    method: 'DELETE'
+  });
+  return handleResponse(res, 'Failed to delete resume file.');
+}
+
 export default function Resumes() {
   const queryClient = useQueryClient();
+  const fileInputRef = useRef(null);
 
   // --- SELECTION & SEARCH STATE ---
   const [selectedResumeId, setSelectedResumeId] = useState(null);
@@ -93,10 +110,17 @@ export default function Resumes() {
   const [isAddResumeOpen, setIsAddResumeOpen] = useState(false);
   const [isEditResumeOpen, setIsEditResumeOpen] = useState(false);
   const [isAddVersionOpen, setIsAddVersionOpen] = useState(false);
+  const [isEditVersionOpen, setIsEditVersionOpen] = useState(false);
   const [isVersionDetailsOpen, setIsVersionDetailsOpen] = useState(false);
   
   const [modalError, setModalError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  
+  // File upload state modifiers
+  const [fileActionError, setFileActionError] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [targetUploadVersionId, setTargetUploadVersionId] = useState(null);
+  const [isReplaceAction, setIsReplaceAction] = useState(false);
 
   // --- FORM STATES ---
   const [resumeForm, setResumeForm] = useState({ name: '', notes: '' });
@@ -186,6 +210,31 @@ export default function Resumes() {
     }
   });
 
+  const updateVersionMutation = useMutation({
+    mutationFn: updateResumeVersion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['resume-details', selectedResumeId] });
+      queryClient.invalidateQueries({ queryKey: ['resume-version-details', selectedResumeId, selectedVersionId] });
+      setIsEditVersionOpen(false);
+      showSuccessFeedback('Resume version updated successfully.');
+    },
+    onError: (err) => {
+      setModalError(err.message);
+    }
+  });
+
+  const deleteFileMutation = useMutation({
+    mutationFn: deleteResumeVersionFile,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['resume-details', selectedResumeId] });
+      queryClient.invalidateQueries({ queryKey: ['resume-version-details', selectedResumeId, selectedVersionId] });
+      showSuccessFeedback('Resume file deleted successfully.');
+    },
+    onError: (err) => {
+      setFileActionError(err.message);
+    }
+  });
+
   // --- ACTION HELPERS ---
   const showSuccessFeedback = (msg) => {
     setSuccessMessage(msg);
@@ -214,8 +263,19 @@ export default function Resumes() {
     setIsAddVersionOpen(true);
   };
 
+  const handleOpenEditVersion = (version) => {
+    setSelectedVersionId(version.id);
+    setVersionForm({
+      version_label: version.version_label || '',
+      target_role: version.target_role || ''
+    });
+    setModalError(null);
+    setIsEditVersionOpen(true);
+  };
+
   const handleOpenVersionDetails = (versionId) => {
     setSelectedVersionId(versionId);
+    setFileActionError(null);
     setIsVersionDetailsOpen(true);
   };
 
@@ -269,6 +329,176 @@ export default function Resumes() {
     });
   };
 
+  const handleVersionUpdateSubmit = (e) => {
+    e.preventDefault();
+    setModalError(null);
+    if (!versionForm.version_label.trim()) {
+      setModalError('Version Label is required.');
+      return;
+    }
+
+    updateVersionMutation.mutate({
+      resumeId: selectedResumeId,
+      versionId: selectedVersionId,
+      payload: {
+        version_label: versionForm.version_label.trim(),
+        target_role: versionForm.target_role.trim() || null
+      }
+    });
+  };
+
+  // --- BINARY FILE OPERATION PIPELINES ---
+  const handleTriggerUpload = (versionId) => {
+    setTargetUploadVersionId(versionId);
+    setIsReplaceAction(false);
+    setFileActionError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleTriggerReplace = (versionId) => {
+    setTargetUploadVersionId(versionId);
+    setIsReplaceAction(true);
+    setFileActionError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileActionError(null);
+
+    // Client-side validations
+    if (file.size === 0) {
+      setFileActionError('Selected file structure cannot be empty.');
+      return;
+    }
+
+    const allowedExtensions = ['.pdf', '.docx'];
+    const fileNameLower = file.name.toLowerCase();
+    const hasAllowedExt = allowedExtensions.some(ext => fileNameLower.endsWith(ext));
+    if (!hasAllowedExt) {
+      setFileActionError('Only PDF and DOCX files are allowed.');
+      return;
+    }
+
+    const allowedMimeTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+    if (!allowedMimeTypes.includes(file.type)) {
+      setFileActionError('Only PDF and DOCX files are allowed.');
+      return;
+    }
+
+    if (fileNameLower.endsWith('.pdf') && file.type !== 'application/pdf') {
+      setFileActionError('Selected file type does not match its extension.');
+      return;
+    }
+    if (fileNameLower.endsWith('.docx') && file.type !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      setFileActionError('Selected file type does not match its extension.');
+      return;
+    }
+
+    const maxFileBytes = 2 * 1024 * 1024; // 2MB exactly
+    if (file.size > maxFileBytes) {
+      setFileActionError('Resume file must not exceed 2 MB.');
+      return;
+    }
+
+    // Deferred confirmation prompt after selection/validation for the replace operation
+    if (isReplaceAction) {
+      const confirmed = window.confirm('Replace the existing resume file with the selected file?');
+      if (!confirmed) {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setTargetUploadVersionId(null);
+        setIsReplaceAction(false);
+        return;
+      }
+    }
+
+    setIsUploading(true);
+    try {
+      const uploadUrl = `/api/v1/resumes/${selectedResumeId}/versions/${targetUploadVersionId}/file`;
+      const res = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type,
+          'X-File-Name': file.name
+        },
+        body: file
+      });
+
+      await handleResponse(res, 'Failed to complete binary upload processing routines.');
+      
+      queryClient.invalidateQueries({ queryKey: ['resume-details', selectedResumeId] });
+      queryClient.invalidateQueries({ queryKey: ['resume-version-details', selectedResumeId, targetUploadVersionId] });
+      showSuccessFeedback('Resume file processed successfully.');
+    } catch (err) {
+      setFileActionError(err.message);
+    } finally {
+      setIsUploading(false);
+      setTargetUploadVersionId(null);
+      setIsReplaceAction(false);
+    }
+  };
+
+  const handleDownloadFile = async (versionId) => {
+    setFileActionError(null);
+    try {
+      const downloadUrl = `/api/v1/resumes/${selectedResumeId}/versions/${versionId}/file`;
+      const response = await fetch(downloadUrl, { method: 'GET' });
+
+      if (!response.ok) {
+        let errorMsg = 'Failed to download binary tracking entity asset.';
+        try {
+          const errBody = await response.json();
+          if (errBody?.error?.message) errorMsg = errBody.error.message;
+        } catch (_) {}
+        throw new Error(errorMsg);
+      }
+
+      const blob = await response.blob();
+      
+      let derivedFileName = 'resume.pdf';
+      if (blob.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        derivedFileName = 'resume.docx';
+      }
+
+      const contentDisposition = response.headers.get('Content-Disposition');
+      if (contentDisposition) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          derivedFileName = matches[1].replace(/['"]/g, '');
+        }
+      }
+
+      const tempObjUrl = URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.href = tempObjUrl;
+      downloadAnchor.download = derivedFileName;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      
+      document.body.removeChild(downloadAnchor);
+      URL.revokeObjectURL(tempObjUrl);
+    } catch (err) {
+      alert(`Download failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteFileClick = (versionId) => {
+    if (window.confirm('Delete this stored resume file? The Resume Version itself will not be deleted.')) {
+      deleteFileMutation.mutate({ resumeId: selectedResumeId, versionId });
+    }
+  };
+
   // --- FILTERED COMPUTATIONS ---
   const filteredResumes = resumesList.filter((res) => {
     const matchName = (res.name || '').toLowerCase().includes(search.toLowerCase());
@@ -276,7 +506,6 @@ export default function Resumes() {
     return matchName || matchNotes;
   });
 
-  // Basic Metrics Calculation based on current list state
   const totalResumes = resumesList.length;
 
   if (isListLoading) {
@@ -299,6 +528,15 @@ export default function Resumes() {
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Hidden File Input Selector Wrapper */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        style={{ display: 'none' }}
+        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      />
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -317,6 +555,13 @@ export default function Resumes() {
       {successMessage && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-md text-sm shadow-sm">
           {successMessage}
+        </div>
+      )}
+
+      {/* Generic Context Action Errors Block */}
+      {fileActionError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-md text-xs font-semibold shadow-sm">
+          {fileActionError}
         </div>
       )}
 
@@ -469,9 +714,12 @@ export default function Resumes() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {resumeDetail.versions.map((ver) => {
                       const isActiveVersion = ver.is_active === 1 || ver.is_active === true;
+                      const hasLinkedFile = ver.has_file === true || ver.has_file === 1;
+                      const currentUploadActive = isUploading && targetUploadVersionId === ver.id;
+
                       return (
-                        <div key={ver.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between space-y-3">
-                          <div className="space-y-1">
+                        <div key={ver.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-between space-y-4">
+                          <div className="space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <h4 className="font-bold text-slate-900 text-sm truncate">{ver.version_label}</h4>
                               <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase border shrink-0 ${
@@ -482,21 +730,78 @@ export default function Resumes() {
                                 {isActiveVersion ? 'Active' : 'Inactive'}
                               </span>
                             </div>
-                            <div>
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Target Role</span>
-                              <span className="text-slate-700 font-semibold text-xs block truncate">{ver.target_role || '—'}</span>
+                            
+                            <div className="grid grid-cols-2 gap-2 border-t border-slate-200/50 pt-2">
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Target Role</span>
+                                <span className="text-slate-700 font-semibold text-xs block truncate">{ver.target_role || '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Storage Status</span>
+                                <span className={`inline-flex items-center text-[10px] font-bold mt-0.5 ${hasLinkedFile ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${hasLinkedFile ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                                  {hasLinkedFile ? 'File: Available' : 'File: Not uploaded'}
+                                </span>
+                              </div>
                             </div>
                           </div>
 
-                          <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                            <span>Added: {formatDate(ver.created_at)}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenVersionDetails(ver.id)}
-                              className="text-indigo-600 hover:text-indigo-500 font-bold underline"
-                            >
-                              View Details
-                            </button>
+                          {/* Level 2 Sub-Actions Layout Controls */}
+                          <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-2 items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              {!hasLinkedFile ? (
+                                <button
+                                  type="button"
+                                  disabled={isUploading}
+                                  onClick={() => handleTriggerUpload(ver.id)}
+                                  className="text-[10px] font-bold px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-indigo-600 transition-colors disabled:opacity-50"
+                                >
+                                  {currentUploadActive && !isReplaceAction ? 'Uploading...' : 'Upload File'}
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadFile(ver.id)}
+                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-700 transition-colors"
+                                  >
+                                    Download
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isUploading}
+                                    onClick={() => handleTriggerReplace(ver.id)}
+                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-600 transition-colors disabled:opacity-50"
+                                  >
+                                    {currentUploadActive && isReplaceAction ? 'Uploading...' : 'Replace'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteFileClick(ver.id)}
+                                    className="text-[10px] font-bold px-2 py-1 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded text-rose-600 transition-colors"
+                                  >
+                                    Delete File
+                                  </button>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="flex items-center space-x-2 ml-auto">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditVersion(ver)}
+                                className="text-slate-600 hover:text-slate-900 font-bold text-[10px] border-r border-slate-200 pr-2"
+                              >
+                                Edit Version
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenVersionDetails(ver.id)}
+                                className="text-indigo-600 hover:text-indigo-500 font-bold text-[10px] underline"
+                              >
+                                View Details
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -716,6 +1021,73 @@ export default function Resumes() {
         </div>
       )}
 
+      {/* MODAL 5: EDIT VERSION CONTAINER */}
+      {isEditVersionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-xl shadow-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-150 bg-slate-50 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-slate-900">Edit Version</h3>
+              <button
+                type="button"
+                onClick={() => { if (!updateVersionMutation.isPending) setIsEditVersionOpen(false); }}
+                disabled={updateVersionMutation.isPending}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm disabled:opacity-40"
+              >
+                ✕
+              </button>
+            </div>
+
+            {modalError && (
+              <div className="mx-5 mt-4 bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded text-xs font-semibold">
+                {modalError}
+              </div>
+            )}
+
+            <form onSubmit={handleVersionUpdateSubmit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Version Label *</label>
+                <input
+                  type="text"
+                  required
+                  disabled={updateVersionMutation.isPending}
+                  value={versionForm.version_label}
+                  onChange={(e) => setVersionForm({ ...versionForm, version_label: e.target.value })}
+                  className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Target Role</label>
+                <input
+                  type="text"
+                  disabled={updateVersionMutation.isPending}
+                  value={versionForm.target_role}
+                  onChange={(e) => setVersionForm({ ...versionForm, target_role: e.target.value })}
+                  className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-150 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditVersionOpen(false)}
+                  disabled={updateVersionMutation.isPending}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateVersionMutation.isPending}
+                  className="px-4 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-60"
+                >
+                  {updateVersionMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL 4: VERSION DETAILS EXPANDED DIALOG PANEL WITH ATS HISTORY */}
       {isVersionDetailsOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -766,8 +1138,9 @@ export default function Resumes() {
                     </div>
                     <div className="sm:col-span-2 pt-2 border-t border-slate-200/60">
                       <span className="block font-bold text-slate-400 uppercase tracking-wider">File Status</span>
-                      <span className="text-slate-700 font-semibold block mt-0.5">
-                        {versionDetail.r2_object_key ? 'Resume file linked' : 'No resume file linked'}
+                      <span className={`inline-flex items-center text-xs font-semibold mt-1 ${versionDetail.has_file ? 'text-emerald-600' : 'text-slate-500'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${versionDetail.has_file ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                        {versionDetail.has_file ? 'Resume file linked' : 'No resume file linked'}
                       </span>
                     </div>
                   </div>

@@ -16,7 +16,7 @@ export default function MobileNav() {
           }
         >
           <span className="truncate max-w-[72px]">
-            {item.name === 'Opportunities' ? 'Jobs' : item.name}
+            {item.name === 'Opportunities' ? 'Jobs' : item.name === 'Cover Letters' ? 'Letters' : item.name}
           </span>
         </NavLink>
       ))}

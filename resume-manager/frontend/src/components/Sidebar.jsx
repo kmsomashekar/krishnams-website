@@ -5,7 +5,8 @@ export const navigationItems = [
   { name: 'Dashboard', path: '/dashboard' },
   { name: 'Opportunities', path: '/opportunities' },
   { name: 'Resumes', path: '/resumes' },
-  { name: 'Interviews', path: '/interviews' }
+  { name: 'Interviews', path: '/interviews' },
+  { name: 'Cover Letters', path: '/cover-letters' }
 ];
 
 export default function Sidebar() {
