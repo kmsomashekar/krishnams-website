@@ -716,7 +716,7 @@ export default {
 
         const updatedRoundNumber = 'round_number' in body ? body.round_number : existingRecord.round_number;
         const updatedRoundTitle = 'round_title' in body ? body.round_title.trim() : existingRecord.round_title;
-        const updatedStatus = 'status' in body ? body.status : existingRecord.status;
+        const updated_status = 'status' in body ? body.status : existingRecord.status;
         const updatedInterviewDate = 'interview_date' in body ? body.interview_date.trim() : existingRecord.interview_date;
         
         const updatedInterviewerNames = 'interviewer_names' in body 
@@ -742,7 +742,7 @@ export default {
            WHERE id = ?`
         )
         .bind(
-          updatedRoundNumber, updatedRoundTitle, updatedStatus, updatedInterviewDate, updatedInterviewerNames,
+          updatedRoundNumber, updatedRoundTitle, updated_status, updatedInterviewDate, updatedInterviewerNames,
           updatedPrepNotes, updatedQuestions, updatedFeedback, interviewId
         )
         .run();
@@ -755,7 +755,7 @@ export default {
               opportunity_id: existingRecord.opportunity_id,
               dot_round_number: updatedRoundNumber,
               round_title: updatedRoundTitle,
-              status: updatedStatus,
+              status: updated_status,
               interview_date: updatedInterviewDate,
               interviewer_names: updatedInterviewerNames || "",
               preparation_notes: updatedPrepNotes || "",
@@ -1434,7 +1434,7 @@ export default {
         };
 
         return new Response(
-          JSON.stringify({ success: true, data: shadowload || dashboardPayload }),
+          JSON.stringify({ success: true, data: dashboardPayload }),
           { status: 200, headers }
         );
       }
@@ -1528,7 +1528,7 @@ export default {
       }
 
       if (pathname === resumeRootPattern && method === 'GET') {
-        const {results } = await env.DB.prepare(
+        const { results } = await env.DB.prepare(
           `SELECT id, name, notes, created_at, updated_at 
            FROM resumes 
            WHERE user_id = ? 
@@ -1575,8 +1575,8 @@ export default {
           const isActive = 1;
 
           await env.DB.prepare(
-            `INSERT INTO resume_versions (id, resume_id, version_label, target_role, r2_object_key, is_active, created_at)
-             VALUES (?, ?, ?, ?, NULL, ?, ?)`
+            `INSERT INTO resume_versions (id, resume_id, version_label, target_role, r2_object_key, is_active, created_at, ai_context)
+             VALUES (?, ?, ?, ?, NULL, ?, ?, NULL)`
           )
           .bind(id, resumeId, version_label.trim(), target_role ? target_role.trim() : null, isActive, now)
           .run();
@@ -1584,7 +1584,7 @@ export default {
           return new Response(
             JSON.stringify({
               success: true,
-              data: { id, resume_id: resumeId, version_label: version_label.trim(), target_role: target_role ? target_role.trim() : null, r2_object_key: null, is_active: isActive, created_at: now }
+              data: { id, resume_id: resumeId, version_label: version_label.trim(), target_role: target_role ? target_role.trim() : null, r2_object_key: null, is_active: isActive, created_at: now, has_ai_context: false }
             }),
             { status: 201, headers }
           );
@@ -1592,7 +1592,7 @@ export default {
 
         if (method === 'GET') {
           const { results } = await env.DB.prepare(
-            `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at
+            `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at, ai_context
              FROM resume_versions
              WHERE resume_id = ?
              ORDER BY created_at DESC`
@@ -1602,6 +1602,7 @@ export default {
 
           const formattedVersions = results.map(row => {
             const hasFile = Boolean(row.r2_object_key);
+            const hasAiContext = Boolean(row.ai_context && row.ai_context.trim().length > 0);
             return {
               id: row.id,
               resume_id: row.resume_id,
@@ -1609,7 +1610,8 @@ export default {
               target_role: row.target_role,
               is_active: row.is_active,
               created_at: row.created_at,
-              has_file: hasFile
+              has_file: hasFile,
+              has_ai_context: hasAiContext
             };
           });
 
@@ -1644,7 +1646,7 @@ export default {
             return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
           }
 
-          if (!body || (!('version_label' in body) && !('target_role' in body))) {
+          if (!body || (!('version_label' in body) && !('target_role' in body) && !('ai_context' in body))) {
             return buildErrorResponse('INVALID_INPUT', "At least one editable metadata parameter string must be provided.", 400, headers);
           }
 
@@ -1682,13 +1684,30 @@ export default {
             }
           }
 
+          let updatedAiContext = existingVersion.ai_context;
+          if ('ai_context' in body) {
+            if (body.ai_context === null) {
+              updatedAiContext = null;
+            } else if (typeof body.ai_context !== 'string') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'ai_context' must be a string or explicit null value parameter.", 400, headers);
+            } else {
+              const trimmedCtx = body.ai_context.trim();
+              if (trimmedCtx.length > 100000) {
+                return buildErrorResponse('INVALID_INPUT', "AI Context must not exceed 100,000 characters.", 400, headers);
+              }
+              updatedAiContext = trimmedCtx.length === 0 ? null : trimmedCtx;
+            }
+          }
+
           await env.DB.prepare(
             `UPDATE resume_versions
-             SET version_label = ?, target_role = ?
+             SET version_label = ?, target_role = ?, ai_context = ?
              WHERE id = ? AND resume_id = ?`
           )
-          .bind(updatedLabel, updatedRole, versionId, resumeId)
+          .bind(updatedLabel, updatedRole, updatedAiContext, versionId, resumeId)
           .run();
+
+          const hasAiContext = Boolean(updatedAiContext && updatedAiContext.length > 0);
 
           return new Response(
             JSON.stringify({
@@ -1700,7 +1719,8 @@ export default {
                 target_role: updatedRole,
                 is_active: existingVersion.is_active,
                 created_at: existingVersion.created_at,
-                has_file: Boolean(existingVersion.r2_object_key)
+                has_file: Boolean(existingVersion.r2_object_key),
+                has_ai_context: hasAiContext
               }
             }),
             { status: 200, headers }
@@ -1710,7 +1730,7 @@ export default {
         // --- GET /api/v1/resumes/:resumeId/versions/:versionId (Get Version Detail Block) ---
         if (method === 'GET') {
           const version = await env.DB.prepare(
-            `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at
+            `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at, ai_context
              FROM resume_versions
              WHERE id = ? AND resume_id = ?`
           )
@@ -1759,7 +1779,7 @@ export default {
           }
 
           const { results: versions } = await env.DB.prepare(
-            `SELECT id, version_label, target_role, r2_object_key, is_active, created_at
+            `SELECT id, version_label, target_role, r2_object_key, is_active, created_at, ai_context
              FROM resume_versions 
              WHERE resume_id = ? 
              ORDER BY created_at DESC`
@@ -1769,13 +1789,15 @@ export default {
 
           resume.versions = versions.map(v => {
             const hasFile = Boolean(v.r2_object_key);
+            const hasAiContext = Boolean(v.ai_context && v.ai_context.trim().length > 0);
             return {
               id: v.id,
               version_label: v.version_label,
               target_role: v.target_role,
               is_active: v.is_active,
               created_at: v.created_at,
-              has_file: hasFile
+              has_file: hasFile,
+              has_ai_context: hasAiContext
             };
           });
 

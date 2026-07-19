@@ -111,6 +111,7 @@ export default function Resumes() {
   const [isEditResumeOpen, setIsEditResumeOpen] = useState(false);
   const [isAddVersionOpen, setIsAddVersionOpen] = useState(false);
   const [isEditVersionOpen, setIsEditVersionOpen] = useState(false);
+  const [isEditAiContextOpen, setIsEditAiContextOpen] = useState(false);
   const [isVersionDetailsOpen, setIsVersionDetailsOpen] = useState(false);
   
   const [modalError, setModalError] = useState(null);
@@ -125,6 +126,7 @@ export default function Resumes() {
   // --- FORM STATES ---
   const [resumeForm, setResumeForm] = useState({ name: '', notes: '' });
   const [versionForm, setVersionForm] = useState({ version_label: '', target_role: '' });
+  const [aiContextForm, setAiContextForm] = useState({ version_label: '', ai_context: '' });
 
   // --- DATA QUERIES ---
   const {
@@ -165,8 +167,18 @@ export default function Resumes() {
   } = useQuery({
     queryKey: ['resume-version-details', selectedResumeId, selectedVersionId],
     queryFn: () => fetchVersionDetail({ resumeId: selectedResumeId, versionId: selectedVersionId }),
-    enabled: !!selectedResumeId && !!selectedVersionId && isVersionDetailsOpen
+    enabled: !!selectedResumeId && !!selectedVersionId && (isVersionDetailsOpen || isEditAiContextOpen)
   });
+
+  // Prepopulate AI Context field once explicit details load
+  useEffect(() => {
+    if (versionDetail && isEditAiContextOpen) {
+      setAiContextForm({
+        version_label: versionDetail.version_label || '',
+        ai_context: versionDetail.ai_context || ''
+      });
+    }
+  }, [versionDetail, isEditAiContextOpen]);
 
   // --- DATA MUTATIONS ---
   const createResumeMutation = useMutation({
@@ -216,7 +228,21 @@ export default function Resumes() {
       queryClient.invalidateQueries({ queryKey: ['resume-details', selectedResumeId] });
       queryClient.invalidateQueries({ queryKey: ['resume-version-details', selectedResumeId, selectedVersionId] });
       setIsEditVersionOpen(false);
+      setIsEditAiContextOpen(false);
       showSuccessFeedback('Resume version updated successfully.');
+    },
+    onError: (err) => {
+      setModalError(err.message);
+    }
+  });
+
+  const saveAiContextMutation = useMutation({
+    mutationFn: updateResumeVersion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['resume-details', selectedResumeId] });
+      queryClient.invalidateQueries({ queryKey: ['resume-version-details', selectedResumeId, selectedVersionId] });
+      setIsEditAiContextOpen(false);
+      showSuccessFeedback('AI Context saved successfully.');
     },
     onError: (err) => {
       setModalError(err.message);
@@ -271,6 +297,16 @@ export default function Resumes() {
     });
     setModalError(null);
     setIsEditVersionOpen(true);
+  };
+
+  const handleOpenEditAiContext = (version) => {
+    setSelectedVersionId(version.id);
+    setAiContextForm({
+      version_label: version.version_label || '',
+      ai_context: ''
+    });
+    setModalError(null);
+    setIsEditAiContextOpen(true);
   };
 
   const handleOpenVersionDetails = (versionId) => {
@@ -343,6 +379,25 @@ export default function Resumes() {
       payload: {
         version_label: versionForm.version_label.trim(),
         target_role: versionForm.target_role.trim() || null
+      }
+    });
+  };
+
+  const handleAiContextUpdateSubmit = (e) => {
+    e.preventDefault();
+    setModalError(null);
+
+    const trimmedCtx = aiContextForm.ai_context.trim();
+    if (trimmedCtx.length > 100000) {
+      setModalError('AI Context content limit cannot exceed 100,000 characters.');
+      return;
+    }
+
+    saveAiContextMutation.mutate({
+      resumeId: selectedResumeId,
+      versionId: selectedVersionId,
+      payload: {
+        ai_context: trimmedCtx.length === 0 ? null : trimmedCtx
       }
     });
   };
@@ -622,7 +677,6 @@ export default function Resumes() {
                     )}
                     <div className="mt-3 pt-2.5 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400 font-medium">
                       <span>Added: {formatDate(res.created_at)}</span>
-                      <span>Updated: {formatDate(res.updated_at)}</span>
                     </div>
                   </div>
                 );
@@ -657,7 +711,6 @@ export default function Resumes() {
                     <h2 className="text-xl font-bold text-slate-900 tracking-tight">{resumeDetail.name}</h2>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400 font-medium pt-0.5">
                       <div><span className="font-bold text-slate-300">Created:</span> {formatDate(resumeDetail.created_at)}</div>
-                      <div><span className="font-bold text-slate-300">Last Updated:</span> {formatDate(resumeDetail.updated_at)}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -715,6 +768,7 @@ export default function Resumes() {
                     {resumeDetail.versions.map((ver) => {
                       const isActiveVersion = ver.is_active === 1 || ver.is_active === true;
                       const hasLinkedFile = ver.has_file === true || ver.has_file === 1;
+                      const hasAiContext = ver.has_ai_context === true || ver.has_ai_context === 1;
                       const currentUploadActive = isUploading && targetUploadVersionId === ver.id;
 
                       return (
@@ -736,12 +790,21 @@ export default function Resumes() {
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Target Role</span>
                                 <span className="text-slate-700 font-semibold text-xs block truncate">{ver.target_role || '—'}</span>
                               </div>
-                              <div>
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Storage Status</span>
-                                <span className={`inline-flex items-center text-[10px] font-bold mt-0.5 ${hasLinkedFile ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${hasLinkedFile ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
-                                  {hasLinkedFile ? 'File: Available' : 'File: Not uploaded'}
-                                </span>
+                              <div className="space-y-1">
+                                <div>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Storage Status</span>
+                                  <span className={`inline-flex items-center text-[10px] font-bold mt-0.5 ${hasLinkedFile ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${hasLinkedFile ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                                    {hasLinkedFile ? 'File: Available' : 'File: Not uploaded'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">AI Integration</span>
+                                  <span className={`inline-flex items-center text-[10px] font-bold ${hasAiContext ? 'text-indigo-600' : 'text-slate-500'}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${hasAiContext ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
+                                    {hasAiContext ? 'AI Context: Ready' : 'AI Context: Not Added'}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -790,14 +853,21 @@ export default function Resumes() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditVersion(ver)}
-                                className="text-slate-600 hover:text-slate-900 font-bold text-[10px] border-r border-slate-200 pr-2"
+                                className="text-slate-600 hover:text-slate-900 font-bold text-[10px] border-r border-slate-200 pr-2 text-right"
                               >
                                 Edit Version
                               </button>
                               <button
                                 type="button"
+                                onClick={() => handleOpenEditAiContext(ver)}
+                                className="text-indigo-600 hover:text-indigo-900 font-bold text-[10px] border-r border-slate-200 pr-2 text-right"
+                              >
+                                Edit AI Context
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => handleOpenVersionDetails(ver.id)}
-                                className="text-indigo-600 hover:text-indigo-500 font-bold text-[10px] underline"
+                                className="text-indigo-600 hover:text-indigo-500 font-bold text-[10px] underline text-right"
                               >
                                 View Details
                               </button>
@@ -1088,6 +1158,81 @@ export default function Resumes() {
         </div>
       )}
 
+      {/* MODAL 6: EDIT AI CONTEXT CONTAINER */}
+      {isEditAiContextOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-2xl rounded-xl shadow-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-150 bg-slate-50 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Edit AI Context</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Version: {aiContextForm.version_label}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!saveAiContextMutation.isPending) setIsEditAiContextOpen(false); }}
+                disabled={saveAiContextMutation.isPending}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm disabled:opacity-40"
+              >
+                ✕
+              </button>
+            </div>
+
+            {modalError && (
+              <div className="mx-5 mt-4 bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded text-xs font-semibold">
+                {modalError}
+              </div>
+            )}
+
+            {isVersionLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 space-y-2">
+                <div className="w-6 h-6 border-2 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                <p className="text-slate-500 text-xs font-medium">Fetching secure version context...</p>
+              </div>
+            ) : (
+              <form onSubmit={handleAiContextUpdateSubmit} className="p-5 space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">AI-Readable Resume Context</label>
+                    <span className={`text-[10px] font-bold ${aiContextForm.ai_context.trim().length > 100000 ? 'text-rose-600' : 'text-slate-400'}`}>
+                      {aiContextForm.ai_context.trim().length.toLocaleString()} / 100,000 characters
+                    </span>
+                  </div>
+                  <textarea
+                    rows="12"
+                    disabled={saveAiContextMutation.isPending}
+                    placeholder="Paste full plain-text raw resume content transcript maps here..."
+                    value={aiContextForm.ai_context}
+                    onChange={(e) => setAiContextForm({ ...aiContextForm, ai_context: e.target.value })}
+                    className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-mono focus:outline-indigo-500 disabled:bg-slate-50"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                    Paste or edit the plain-text resume content used for AI job analysis.
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-150 flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditAiContextOpen(false)}
+                    disabled={saveAiContextMutation.isPending}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saveAiContextMutation.isPending || aiContextForm.ai_context.trim().length > 100000}
+                    className="px-4 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-60"
+                  >
+                    {saveAiContextMutation.isPending ? 'Saving...' : 'Save AI Context'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* MODAL 4: VERSION DETAILS EXPANDED DIALOG PANEL WITH ATS HISTORY */}
       {isVersionDetailsOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -1136,12 +1281,19 @@ export default function Resumes() {
                       <span className="block font-bold text-slate-400 uppercase tracking-wider">Created</span>
                       <span className="text-slate-600 text-sm">{formatDate(versionDetail.created_at)}</span>
                     </div>
-                    <div className="sm:col-span-2 pt-2 border-t border-slate-200/60">
-                      <span className="block font-bold text-slate-400 uppercase tracking-wider">File Status</span>
-                      <span className={`inline-flex items-center text-xs font-semibold mt-1 ${versionDetail.has_file ? 'text-emerald-600' : 'text-slate-500'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${versionDetail.has_file ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
-                        {versionDetail.has_file ? 'Resume file linked' : 'No resume file linked'}
-                      </span>
+                    <div className="sm:col-span-2 pt-2 border-t border-slate-200/60 flex flex-col space-y-1">
+                      <div>
+                        <span className="font-bold text-slate-400 uppercase tracking-wider mr-2">File Status:</span>
+                        <span className={`inline-flex items-center text-xs font-semibold ${versionDetail.has_file ? 'text-emerald-600' : 'text-slate-500'}`}>
+                          {versionDetail.has_file ? 'Resume file linked' : 'No resume file linked'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-400 uppercase tracking-wider mr-2">AI Integration:</span>
+                        <span className={`inline-flex items-center text-xs font-semibold ${versionDetail.ai_context ? 'text-indigo-600' : 'text-slate-500'}`}>
+                          {versionDetail.ai_context ? 'AI Context Transcript Configured' : 'No AI Context Profile Added'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -1171,7 +1323,7 @@ export default function Resumes() {
                                   {score.match_score}%
                                 </td>
                                 <td className="py-2.5 px-3 text-slate-600">
-                                  {formatDateTime(score.analyzed_at)}
+                                  {formatDate(score.analyzed_at)}
                                 </td>
                                 <td className="py-2.5 px-3 text-right text-slate-400 font-mono text-[10px] truncate max-w-[140px]">
                                   {score.opportunity_id || '—'}
