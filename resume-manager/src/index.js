@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.11E-A (Hardened AI Test Endpoint)
+// Approved Phase: Stage 1 — Task 1.11E-B (Admin User Management APIs Integration)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions & TOTP
 // =============================================================================
@@ -514,7 +514,7 @@ async function getAuthenticatedUser(request, env) {
   const nowISO = new Date().toISOString();
 
   const sessionRecord = await env.DB.prepare(
-    `SELECT s.user_id, s.expires_at, u.id, u.email, u.role, u.status 
+    `SELECT s.user_id, s.expires_at, u.id, u.email, u.role, u.status, u.is_owner 
      FROM sessions s 
      JOIN users u ON s.user_id = u.id 
      WHERE s.token_hash = ?`
@@ -536,7 +536,8 @@ async function getAuthenticatedUser(request, env) {
   return {
     id: sessionRecord.id,
     email: sessionRecord.email,
-    role: sessionRecord.role
+    role: sessionRecord.role,
+    is_owner: sessionRecord.is_owner
   };
 }
 
@@ -937,8 +938,8 @@ export default {
 
         try {
           await env.DB.prepare(
-            `INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
-             VALUES (?, ?, ?, 'ADMIN', 'ACTIVE', ?, ?)`
+            `INSERT INTO users (id, email, password_hash, role, status, is_owner, created_at, updated_at)
+             VALUES (?, ?, ?, 'ADMIN', 'ACTIVE', 1, ?, ?)`
           )
           .bind('dev-user-default-123', normalizedEmail, passwordHash, now, now)
           .run();
@@ -952,7 +953,8 @@ export default {
             data: {
               id: 'dev-user-default-123',
               email: normalizedEmail,
-              role: 'ADMIN'
+              role: 'ADMIN',
+              is_owner: true
             }
           }),
           { status: 201, headers }
@@ -975,7 +977,7 @@ export default {
 
         const normalizedEmail = email.trim().toLowerCase();
         const user = await env.DB.prepare(
-          `SELECT id, email, password_hash, role, status FROM users WHERE email = ?`
+          `SELECT id, email, password_hash, role, status, is_owner FROM users WHERE email = ?`
         )
         .bind(normalizedEmail)
         .first();
@@ -1017,7 +1019,8 @@ export default {
               user: {
                 id: user.id,
                 email: user.email,
-                role: user.role
+                role: user.role,
+                is_owner: Boolean(user.is_owner)
               }
             }
           }),
@@ -1045,7 +1048,12 @@ export default {
             success: true,
             data: {
               authenticated: true,
-              user: sessionUser
+              user: {
+                id: sessionUser.id,
+                email: sessionUser.email,
+                role: sessionUser.role,
+                is_owner: Boolean(sessionUser.is_owner)
+              }
             }
           }),
           { status: 200, headers }
@@ -1282,6 +1290,267 @@ export default {
           }),
           { status: 200, headers }
         );
+      }
+
+      // =======================================================================
+      // MODULE: ADMIN USER MANAGEMENT APIs (Task 1.11E-B)
+      // =======================================================================
+
+      // GET /api/v1/admin/users
+      if (pathname === '/api/v1/admin/users' && method === 'GET') {
+        if (!sessionUser || sessionUser.role !== 'ADMIN') {
+          return buildErrorResponse('FORBIDDEN', "Admin authorization required.", 403, headers);
+        }
+
+        const { results } = await env.DB.prepare(
+          `SELECT u.id, u.display_name, u.email, u.role, u.status, u.is_owner, u.created_at, u.updated_at,
+                  CASE WHEN t.is_verified = 1 THEN 1 ELSE 0 END AS totp_enabled
+           FROM users u
+           LEFT JOIN totp_secrets t ON u.id = t.user_id AND t.is_verified = 1
+           ORDER BY u.created_at ASC`
+        ).all();
+
+        const formattedUsers = results.map(row => ({
+          id: row.id,
+          display_name: row.display_name,
+          email: row.email,
+          role: row.role,
+          status: row.status,
+          is_owner: Boolean(row.is_owner),
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          totp_enabled: Boolean(row.totp_enabled)
+        }));
+
+        return new Response(
+          JSON.stringify({ success: true, data: { users: formattedUsers } }),
+          { status: 200, headers }
+        );
+      }
+
+      // POST /api/v1/admin/users
+      if (pathname === '/api/v1/admin/users' && method === 'POST') {
+        if (!sessionUser || sessionUser.role !== 'ADMIN') {
+          return buildErrorResponse('FORBIDDEN', "Admin authorization required.", 403, headers);
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { display_name, email, role, temporary_password } = body;
+
+        if (!display_name || typeof display_name !== 'string' || display_name.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'display_name' is required.", 400, headers);
+        }
+        if (!email || typeof email !== 'string' || email.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'email' is required.", 400, headers);
+        }
+        if (!role || (role !== 'ADMIN' && role !== 'USER')) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'role' must be either 'ADMIN' or 'USER'.", 400, headers);
+        }
+        if (!temporary_password || typeof temporary_password !== 'string' || temporary_password.length < 12) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'temporary_password' is required and must be at least 12 characters.", 400, headers);
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const passwordHash = await hashPassword(temporary_password);
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        try {
+          await env.DB.prepare(
+            `INSERT INTO users (id, display_name, email, password_hash, role, status, is_owner, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'ACTIVE', 0, ?, ?)`
+          )
+          .bind(id, display_name.trim(), normalizedEmail, passwordHash, role, now, now)
+          .run();
+        } catch (dbErr) {
+          return buildErrorResponse('CONFLICT', "Failed to create user. Email may already be registered.", 409, headers);
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id,
+              display_name: display_name.trim(),
+              email: normalizedEmail,
+              role,
+              status: 'ACTIVE',
+              is_owner: false,
+              created_at: now
+            }
+          }),
+          { status: 201, headers }
+        );
+      }
+
+      // User-specific Admin Endpoints: /api/v1/admin/users/:id routes
+      const adminUserIdRegex = /^\/api\/v1\/admin\/users\/([^\/]+)(?:\/(status|reset-password))?$/;
+      const adminUserMatch = pathname.match(adminUserIdRegex);
+      if (adminUserMatch) {
+        const targetUserId = adminUserMatch[1];
+        const action = adminUserMatch[2];
+
+        if (!sessionUser || sessionUser.role !== 'ADMIN') {
+          return buildErrorResponse('FORBIDDEN', "Admin authorization required.", 403, headers);
+        }
+
+        const targetUser = await env.DB.prepare(`SELECT * FROM users WHERE id = ?`).bind(targetUserId).first();
+        if (!targetUser) {
+          return buildErrorResponse('NOT_FOUND', "Target user not found.", 404, headers);
+        }
+
+        // PATCH /api/v1/admin/users/:id/status
+        if (action === 'status' && method === 'PATCH') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { status } = body;
+          if (status !== 'ACTIVE' && status !== 'DISABLED') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'status' must be 'ACTIVE' or 'DISABLED'.", 400, headers);
+          }
+
+          if (targetUser.is_owner === 1 && status === 'DISABLED') {
+            return buildErrorResponse('CONFLICT', "Protected system owner cannot be deactivated.", 409, headers);
+          }
+
+          if (status === 'DISABLED' && targetUser.role === 'ADMIN' && targetUser.status === 'ACTIVE') {
+            const activeAdminCount = await env.DB.prepare(
+              `SELECT COUNT(*) as count FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE'`
+            ).first();
+            if (activeAdminCount && activeAdminCount.count <= 1) {
+              return buildErrorResponse('CONFLICT', "Operation denied: Cannot deactivate the last active administrator.", 409, headers);
+            }
+          }
+
+          const now = new Date().toISOString();
+          await env.DB.prepare(`UPDATE users SET status = ?, updated_at = ? WHERE id = ?`)
+            .bind(status, now, targetUserId)
+            .run();
+
+          if (status === 'DISABLED') {
+            await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(targetUserId).run().catch(() => {});
+          }
+
+          return new Response(
+            JSON.stringify({ success: true, data: { id: targetUserId, status, updated_at: now } }),
+            { status: 200, headers }
+          );
+        }
+
+        // POST /api/v1/admin/users/:id/reset-password
+        if (action === 'reset-password' && method === 'POST') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { temporary_password } = body;
+          if (!temporary_password || typeof temporary_password !== 'string' || temporary_password.length < 12) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'temporary_password' is required and must be at least 12 characters.", 400, headers);
+          }
+
+          if (targetUser.is_owner === 1) {
+            return buildErrorResponse('CONFLICT', "The protected system owner password cannot be reset through User Management.", 409, headers);
+          }
+
+          const newPasswordHash = await hashPassword(temporary_password);
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`)
+            .bind(newPasswordHash, now, targetUserId)
+            .run();
+
+          await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(targetUserId).run().catch(() => {});
+
+          return new Response(
+            JSON.stringify({ success: true, data: { id: targetUserId, password_reset: true, updated_at: now } }),
+            { status: 200, headers }
+          );
+        }
+
+        // PUT /api/v1/admin/users/:id (General Profile/Role Update)
+        if (!action && method === 'PUT') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { display_name, email, role, status } = body;
+
+          if (display_name !== undefined && (typeof display_name !== 'string' || display_name.trim().length === 0)) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'display_name' cannot be empty.", 400, headers);
+          }
+          if (email !== undefined && (typeof email !== 'string' || email.trim().length === 0)) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'email' cannot be empty.", 400, headers);
+          }
+          if (role !== undefined && role !== 'ADMIN' && role !== 'USER') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'role' must be 'ADMIN' or 'USER'.", 400, headers);
+          }
+          if (status !== undefined && status !== 'ACTIVE' && status !== 'DISABLED') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'status' must be 'ACTIVE' or 'DISABLED'.", 400, headers);
+          }
+
+          if (targetUser.is_owner === 1) {
+            if ((status !== undefined && status === 'DISABLED') || (role !== undefined && role !== 'ADMIN')) {
+              return buildErrorResponse('CONFLICT', "Protected system owner cannot be deactivated or demoted.", 409, headers);
+            }
+          }
+
+          if (((status !== undefined && status === 'DISABLED') || (role !== undefined && role !== 'ADMIN')) && targetUser.role === 'ADMIN' && targetUser.status === 'ACTIVE') {
+            const activeAdminCount = await env.DB.prepare(
+              `SELECT COUNT(*) as count FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE'`
+            ).first();
+            if (activeAdminCount && activeAdminCount.count <= 1) {
+              return buildErrorResponse('CONFLICT', "Operation denied: The system must retain at least one active administrator.", 409, headers);
+            }
+          }
+
+          const updatedDisplayName = display_name !== undefined ? display_name.trim() : targetUser.display_name;
+          const updatedEmail = email !== undefined ? email.trim().toLowerCase() : targetUser.email;
+          const updatedRole = role !== undefined ? role : targetUser.role;
+          const updatedStatus = status !== undefined ? status : targetUser.status;
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `UPDATE users SET display_name = ?, email = ?, role = ?, status = ?, updated_at = ? WHERE id = ?`
+          )
+          .bind(updatedDisplayName, updatedEmail, updatedRole, updatedStatus, now, targetUserId)
+          .run();
+
+          if (updatedStatus === 'DISABLED') {
+            await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(targetUserId).run().catch(() => {});
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: targetUserId,
+                display_name: updatedDisplayName,
+                email: updatedEmail,
+                role: updatedRole,
+                status: updatedStatus,
+                is_owner: Boolean(targetUser.is_owner),
+                updated_at: now
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
       }
 
       // -------------------------------------------------------------------------
