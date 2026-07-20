@@ -9,18 +9,6 @@ function formatDate(dateInput) {
   return date.toLocaleDateString(undefined, { dateStyle: 'medium' });
 }
 
-function formatDateTime(dateInput) {
-  if (!dateInput) return '—';
-  const date = new Date(dateInput);
-  if (isNaN(date.getTime())) return '—';
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
-
 // --- SINGLE-PASS API RESPONSE PARSER ---
 async function handleResponse(res, defaultErrorText) {
   let body = null;
@@ -123,6 +111,11 @@ export default function Resumes() {
   const [targetUploadVersionId, setTargetUploadVersionId] = useState(null);
   const [isReplaceAction, setIsReplaceAction] = useState(false);
 
+  // AI Generation local operation states
+  const [isGeneratingAiContext, setIsGeneratingAiContext] = useState(false);
+  // Explicit initialization guard to handle safe initialization flow state checks
+  const [hasInitializedAiContext, setHasInitializedAiContext] = useState(false);
+
   // --- FORM STATES ---
   const [resumeForm, setResumeForm] = useState({ name: '', notes: '' });
   const [versionForm, setVersionForm] = useState({ version_label: '', target_role: '' });
@@ -170,15 +163,16 @@ export default function Resumes() {
     enabled: !!selectedResumeId && !!selectedVersionId && (isVersionDetailsOpen || isEditAiContextOpen)
   });
 
-  // Prepopulate AI Context field once explicit details load
+  // Prepopulate AI Context field exactly once when data matches initialized conditions
   useEffect(() => {
-    if (versionDetail && isEditAiContextOpen) {
+    if (versionDetail && isEditAiContextOpen && !hasInitializedAiContext) {
       setAiContextForm({
         version_label: versionDetail.version_label || '',
         ai_context: versionDetail.ai_context || ''
       });
+      setHasInitializedAiContext(true);
     }
-  }, [versionDetail, isEditAiContextOpen]);
+  }, [versionDetail, isEditAiContextOpen, hasInitializedAiContext]);
 
   // --- DATA MUTATIONS ---
   const createResumeMutation = useMutation({
@@ -301,6 +295,7 @@ export default function Resumes() {
 
   const handleOpenEditAiContext = (version) => {
     setSelectedVersionId(version.id);
+    setHasInitializedAiContext(false);
     setAiContextForm({
       version_label: version.version_label || '',
       ai_context: ''
@@ -400,6 +395,44 @@ export default function Resumes() {
         ai_context: trimmedCtx.length === 0 ? null : trimmedCtx
       }
     });
+  };
+
+  // --- AI CONTEXT GENERATION PIPELINE ---
+  const handleGenerateAiContextFromResume = async () => {
+    setModalError(null);
+
+    if (!versionDetail?.has_file) {
+      setModalError('Upload a resume file before generating AI Context.');
+      return;
+    }
+
+    if (aiContextForm.ai_context.trim().length > 0) {
+      const confirmed = window.confirm(
+        "This will replace the text currently shown in the editor with a newly generated draft. Your saved AI Context will not change unless you click Save. Continue?"
+      );
+      if (!confirmed) return;
+    }
+
+    setIsGeneratingAiContext(true);
+    try {
+      const generateUrl = `/api/v1/resumes/${selectedResumeId}/versions/${selectedVersionId}/ai-context/generate`;
+      const res = await fetch(generateUrl, {
+        method: 'POST'
+      });
+
+      const responseData = await handleResponse(res, 'Failed to parse AI Context generation request.');
+      
+      setAiContextForm(prev => ({
+        ...prev,
+        ai_context: responseData?.ai_context_draft || ''
+      }));
+      
+      showSuccessFeedback('AI Context draft generated. Review or edit it, then click Save to keep it.');
+    } catch (err) {
+      setModalError(err.message || 'AI Context generation is temporarily unavailable. Please try again.');
+    } finally {
+      setIsGeneratingAiContext(false);
+    }
   };
 
   // --- BINARY FILE OPERATION PIPELINES ---
@@ -1169,8 +1202,8 @@ export default function Resumes() {
               </div>
               <button
                 type="button"
-                onClick={() => { if (!saveAiContextMutation.isPending) setIsEditAiContextOpen(false); }}
-                disabled={saveAiContextMutation.isPending}
+                onClick={() => { if (!saveAiContextMutation.isPending || isGeneratingAiContext) setIsEditAiContextOpen(false); }}
+                disabled={saveAiContextMutation.isPending || isGeneratingAiContext}
                 className="text-slate-400 hover:text-slate-600 font-bold text-sm disabled:opacity-40"
               >
                 ✕
@@ -1189,45 +1222,63 @@ export default function Resumes() {
                 <p className="text-slate-500 text-xs font-medium">Fetching secure version context...</p>
               </div>
             ) : (
-              <form onSubmit={handleAiContextUpdateSubmit} className="p-5 space-y-4">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">AI-Readable Resume Context</label>
-                    <span className={`text-[10px] font-bold ${aiContextForm.ai_context.trim().length > 100000 ? 'text-rose-600' : 'text-slate-400'}`}>
-                      {aiContextForm.ai_context.trim().length.toLocaleString()} / 100,000 characters
-                    </span>
+              <div className="p-5 space-y-4 text-xs">
+                {/* AI Context Automation Generation Bar */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-700 block">Automated Drafting</span>
+                    <span className="text-slate-400 text-[11px] block">Extract a structured base context using the processed document.</span>
                   </div>
-                  <textarea
-                    rows="12"
-                    disabled={saveAiContextMutation.isPending}
-                    placeholder="Paste full plain-text raw resume content transcript maps here..."
-                    value={aiContextForm.ai_context}
-                    onChange={(e) => setAiContextForm({ ...aiContextForm, ai_context: e.target.value })}
-                    className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-mono focus:outline-indigo-500 disabled:bg-slate-50"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1 font-medium">
-                    Paste or edit the plain-text resume content used for AI job analysis.
-                  </p>
-                </div>
-
-                <div className="pt-3 border-t border-slate-150 flex justify-end space-x-2">
                   <button
                     type="button"
-                    onClick={() => setIsEditAiContextOpen(false)}
-                    disabled={saveAiContextMutation.isPending}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    disabled={isGeneratingAiContext || !versionDetail?.has_file}
+                    onClick={handleGenerateAiContextFromResume}
+                    className="px-3 py-1.5 text-[11px] font-bold text-indigo-600 bg-white border border-indigo-200 rounded hover:bg-indigo-50/40 shadow-sm transition-colors disabled:opacity-50 shrink-0 self-stretch sm:self-auto text-center"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saveAiContextMutation.isPending || aiContextForm.ai_context.trim().length > 100000}
-                    className="px-4 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-60"
-                  >
-                    {saveAiContextMutation.isPending ? 'Saving...' : 'Save AI Context'}
+                    {isGeneratingAiContext ? 'Analyzing resume...' : 'Generate from Resume'}
                   </button>
                 </div>
-              </form>
+
+                <form onSubmit={handleAiContextUpdateSubmit} className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">AI-Readable Resume Context</label>
+                      <span className={`text-[10px] font-bold ${aiContextForm.ai_context.trim().length > 100000 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        {aiContextForm.ai_context.trim().length.toLocaleString()} / 100,000 characters
+                      </span>
+                    </div>
+                    <textarea
+                      rows="12"
+                      disabled={saveAiContextMutation.isPending || isGeneratingAiContext}
+                      placeholder="Paste full plain-text raw resume content transcript maps here..."
+                      value={aiContextForm.ai_context}
+                      onChange={(e) => setAiContextForm({ ...aiContextForm, ai_context: e.target.value })}
+                      className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-mono focus:outline-indigo-500 disabled:bg-slate-50"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1 font-medium">
+                      Paste or edit the plain-text resume content used for AI job analysis.
+                    </p>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-150 flex justify-end space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditAiContextOpen(false)}
+                      disabled={saveAiContextMutation.isPending || isGeneratingAiContext}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saveAiContextMutation.isPending || isGeneratingAiContext || aiContextForm.ai_context.trim().length > 100000}
+                      className="px-4 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-60"
+                    >
+                      {saveAiContextMutation.isPending ? 'Saving...' : 'Save AI Context'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             )}
           </div>
         </div>
@@ -1322,7 +1373,7 @@ export default function Resumes() {
                                 <td className="py-2.5 px-3 text-indigo-600 font-extrabold text-sm">
                                   {score.match_score}%
                                 </td>
-                                <td className="py-2.5 px-3 text-slate-600">
+                                <td className="py-2.5 px-3">
                                   {formatDate(score.analyzed_at)}
                                 </td>
                                 <td className="py-2.5 px-3 text-right text-slate-400 font-mono text-[10px] truncate max-w-[140px]">
