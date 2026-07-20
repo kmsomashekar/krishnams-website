@@ -38,6 +38,29 @@ export function AuthProvider({ children }) {
     if (!response.ok || !json.success) {
       throw new Error(json.error?.message || 'Login failed');
     }
+    
+    // Check if MFA challenge is required
+    if (json.data && json.data.mfa_required) {
+      return json.data;
+    }
+
+    if (json.data && json.data.user) {
+      setUser(json.data.user);
+    }
+    return json.data;
+  };
+
+  const verifyMfa = async (challenge, code) => {
+    const response = await fetch('/api/v1/auth/mfa/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ challenge, code })
+    });
+    const json = await response.json();
+    if (!response.ok || !json.success) {
+      throw new Error(json.error?.message || 'MFA verification failed');
+    }
     if (json.data && json.data.user) {
       setUser(json.data.user);
     }
@@ -62,6 +85,7 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!user,
     loading,
     login,
+    verifyMfa,
     logout
   };
 

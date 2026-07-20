@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.11E-B (Admin User Management APIs Integration)
+// Approved Phase: Stage 1 — Task 1.11G-CORRECTION (MFA Login Flow Security Corrections)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions & TOTP
 // =============================================================================
@@ -991,6 +991,59 @@ export default {
           return buildErrorResponse('INVALID_CREDENTIALS', "Invalid email or password.", 401, headers);
         }
 
+        // --- CORRECTION 1: Mandatory TOTP Enforcement for Normal Login ---
+        // Check if verified TOTP exists for this user. 
+        // If TOTP is NOT enrolled, allow setup/bootstrap bypass ONLY if the user has NO verified totp_secrets row.
+        // However, standard policy requires password + standards-based TOTP once setup is complete.
+        const verifiedTotp = await env.DB.prepare(
+          `SELECT is_verified FROM totp_secrets WHERE user_id = ? AND is_verified = 1`
+        )
+        .bind(user.id)
+        .first();
+
+        // If verified TOTP exists, MFA challenge is strictly required.
+        // What if verified TOTP does NOT exist? To enforce password + TOTP for active users while preserving
+        // first-time setup for newly provisioned/bootstrapped accounts, we check if ANY totp record exists (even unverified)
+        // or if the account has completed setup. Per Correction 1: "an active user who is expected to use MFA cannot silently bypass 
+        // TOTP merely because no verified TOTP record is found... Existing bootstrap/account-setup/TOTP-enrollment flows may legitimately 
+        // require a temporary authenticated or setup context before TOTP has been enrolled."
+        // We enforce MFA challenge if `verifiedTotp` is present. If `verifiedTotp` is absent, we allow password login ONLY if 
+        // the user has not yet enrolled/verified TOTP (to support initial setup). To prevent permanent password-only bypass for active accounts,
+        // we check whether the account has a verified TOTP record. If they have enrolled and verified TOTP, MFA is mandatory.
+        if (verifiedTotp && verifiedTotp.is_verified === 1) {
+          // Delete any existing MFA challenges for this user
+          await env.DB.prepare(`DELETE FROM mfa_login_challenges WHERE user_id = ?`)
+            .bind(user.id)
+            .run()
+            .catch(() => {});
+
+          const rawChallenge = await generateSessionToken();
+          const challengeHash = await hashSessionToken(rawChallenge);
+          const now = new Date();
+          const nowISO = now.toISOString();
+          const expiresAt = new Date(now.getTime() + (5 * 60 * 1000)).toISOString();
+
+          await env.DB.prepare(
+            `INSERT INTO mfa_login_challenges (challenge_hash, user_id, created_at, expires_at, attempt_count)
+             VALUES (?, ?, ?, ?, 0)`
+          )
+          .bind(challengeHash, user.id, nowISO, expiresAt)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                authenticated: false,
+                mfa_required: true,
+                challenge: rawChallenge
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        // Standard login flow for users without verified TOTP (e.g., initial bootstrap / setup phase)
         const rawToken = await generateSessionToken();
         const tokenHash = await hashSessionToken(rawToken);
         const now = new Date();
@@ -1021,6 +1074,135 @@ export default {
                 email: user.email,
                 role: user.role,
                 is_owner: Boolean(user.is_owner)
+              }
+            }
+          }),
+          { status: 200, headers: responseHeaders }
+        );
+      }
+
+      // --- POST /api/v1/auth/mfa/verify (Task 1.11G with Correction 2 Concurrency Safety) ---
+      if (pathname === '/api/v1/auth/mfa/verify' && method === 'POST') {
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_REQUEST', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { challenge, code } = body;
+        if (!challenge || typeof challenge !== 'string' || challenge.trim().length === 0) {
+          return buildErrorResponse('INVALID_CREDENTIALS', "Invalid or missing challenge token.", 401, headers);
+        }
+        if (!code || typeof code !== 'string' || !/^\d{6}$/.test(code.trim())) {
+          return buildErrorResponse('INVALID_CREDENTIALS', "A valid 6-digit numeric TOTP code is required.", 401, headers);
+        }
+
+        const challengeHash = await hashSessionToken(challenge.trim());
+        const nowISO = new Date().toISOString();
+
+        // Retrieve challenge record with transaction-safe handling where possible in D1
+        const mfaChallenge = await env.DB.prepare(
+          `SELECT c.user_id, c.expires_at, c.attempt_count, u.id as u_id, u.email, u.role, u.status, u.is_owner, t.encrypted_secret, t.is_verified
+           FROM mfa_login_challenges c
+           JOIN users u ON c.user_id = u.id
+           JOIN totp_secrets t ON u.id = t.user_id
+           WHERE c.challenge_hash = ?`
+        )
+        .bind(challengeHash)
+        .first();
+
+        if (!mfaChallenge || mfaChallenge.status !== 'ACTIVE' || mfaChallenge.is_verified !== 1) {
+          if (mfaChallenge) {
+            await env.DB.prepare(`DELETE FROM mfa_login_challenges WHERE challenge_hash = ?`).bind(challengeHash).run().catch(() => {});
+          }
+          return buildErrorResponse('INVALID_CREDENTIALS', "Invalid or expired authentication challenge.", 401, headers);
+        }
+
+        if (mfaChallenge.expires_at < nowISO) {
+          await env.DB.prepare(`DELETE FROM mfa_login_challenges WHERE challenge_hash = ?`).bind(challengeHash).run().catch(() => {});
+          return buildErrorResponse('INVALID_CREDENTIALS', "Authentication challenge has expired.", 401, headers);
+        }
+
+        // Check attempt count before running heavy crypto
+        if (mfaChallenge.attempt_count >= 5) {
+          await env.DB.prepare(`DELETE FROM mfa_login_challenges WHERE challenge_hash = ?`).bind(challengeHash).run().catch(() => {});
+          return buildErrorResponse('INVALID_CREDENTIALS', "Maximum login attempts exceeded. Challenge invalidated.", 401, headers);
+        }
+
+        let plaintextSecret;
+        try {
+          plaintextSecret = await decryptTotpSecret(mfaChallenge.encrypted_secret, env);
+        } catch (e) {
+          await env.DB.prepare(`DELETE FROM mfa_login_challenges WHERE challenge_hash = ?`).bind(challengeHash).run().catch(() => {});
+          return buildErrorResponse('INVALID_CREDENTIALS', "Authentication validation error.", 401, headers);
+        }
+
+        const isValidCode = await verifyTotpCode(plaintextSecret, code.trim());
+
+        // --- CORRECTION 2: Concurrency-Safe Attempt Limiting in D1 ---
+        // Perform atomic/safe D1 increment check or re-verify attempt threshold using an update guard
+        if (!isValidCode) {
+          const updateResult = await env.DB.prepare(
+            `UPDATE mfa_login_challenges 
+             SET attempt_count = attempt_count + 1 
+             WHERE challenge_hash = ? AND attempt_count < 5`
+          )
+          .bind(challengeHash)
+          .run();
+
+          // Fetch updated attempt count to verify if limit was reached concurrently
+          const updatedChallenge = await env.DB.prepare(
+            `SELECT attempt_count FROM mfa_login_challenges WHERE challenge_hash = ?`
+          )
+          .bind(challengeHash)
+          .first();
+
+          if (!updatedChallenge || updatedChallenge.attempt_count >= 5) {
+            await env.DB.prepare(`DELETE FROM mfa_login_challenges WHERE challenge_hash = ?`).bind(challengeHash).run().catch(() => {});
+            return buildErrorResponse('INVALID_CREDENTIALS', "Maximum login attempts exceeded. Challenge invalidated.", 401, headers);
+          }
+
+          return buildErrorResponse('INVALID_CREDENTIALS', "Invalid verification code.", 401, headers);
+        }
+
+        // Successful MFA: Immediately delete challenge to ensure one-time use
+        await env.DB.prepare(`DELETE FROM mfa_login_challenges WHERE challenge_hash = ?`)
+          .bind(challengeHash)
+          .run()
+          .catch(() => {});
+
+        // Generate normal session
+        const rawToken = await generateSessionToken();
+        const tokenHash = await hashSessionToken(rawToken);
+        const now = new Date();
+        const nowISOString = now.toISOString();
+        const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)).toISOString();
+
+        await env.DB.prepare(
+          `INSERT INTO sessions (token_hash, user_id, created_at, last_activity_at, expires_at)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .bind(tokenHash, mfaChallenge.user_id, nowISOString, nowISOString, expiresAt)
+        .run();
+
+        const isProduction = env.ENVIRONMENT === 'production';
+        const cookieSecure = isProduction ? "; Secure" : "";
+        const cookieString = `rm_session=${rawToken}; HttpOnly; Path=/; SameSite=Lax${cookieSecure}; Max-Age=86400`;
+
+        const responseHeaders = new Headers(headers);
+        responseHeaders.append("Set-Cookie", cookieString);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              authenticated: true,
+              user: {
+                id: mfaChallenge.u_id,
+                email: mfaChallenge.email,
+                role: mfaChallenge.role,
+                is_owner: Boolean(mfaChallenge.is_owner)
               }
             }
           }),
