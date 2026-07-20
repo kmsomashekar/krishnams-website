@@ -1,6 +1,6 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.11D (TOTP / Microsoft Authenticator Foundation)
+// Approved Phase: Stage 1 — Task 1.11E-A (Hardened AI Test Endpoint)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
 // Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions & TOTP
 // =============================================================================
@@ -843,6 +843,67 @@ export default {
       // --- TASK 1.11C & 1.11D AUTHENTICATION & TOTP ENDPOINTS ---
       // =======================================================================
 
+      // --- POST /api/v1/ai/test (Task 1.11E-A Hardened) ---
+      if (pathname === '/api/v1/ai/test') {
+        if (!sessionUser) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+
+        if (method !== 'POST') {
+          return buildErrorResponse('METHOD_NOT_ALLOWED', "Method not supported for this test channel layout.", 405, headers);
+        }
+
+        if (!env.GEMINI_API_KEY) {
+          return buildErrorResponse('INTERNAL_ERROR', "The target private artificial intelligence API key layout binding is currently unconfigured.", 500, headers);
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        if (!body || typeof body.message !== 'string') {
+          return buildErrorResponse('INVALID_INPUT', "The 'message' property is required and must be a valid text string.", 400, headers);
+        }
+
+        const cleanMessage = body.message.trim();
+        if (cleanMessage.length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "The prompt payload 'message' structure cannot be empty.", 400, headers);
+        }
+
+        if (cleanMessage.length > 1000) {
+          return buildErrorResponse('INVALID_INPUT', "The prompt length cannot exceed 1000 configuration characters.", 400, headers);
+        }
+
+        const aiResult = await callAIProvider(cleanMessage, env);
+
+        if (aiResult.success) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                provider: "gemini",
+                model: GEMINI_MODEL,
+                message: aiResult.text
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        if (aiResult.errorType === 'TIMEOUT') {
+          return buildErrorResponse('AI_PROVIDER_TIMEOUT', "Upstream interface connection execution limits timed out.", 504, headers);
+        }
+
+        if (aiResult.errorType === 'MISSING_KEY') {
+          return buildErrorResponse('INTERNAL_ERROR', "The target private artificial intelligence API key layout binding is currently unconfigured.", 500, headers);
+        }
+
+        return buildErrorResponse('AI_PROVIDER_ERROR', "An upstream remote error was encountered within the provider connection loops.", 502, headers);
+      }
+
       // --- POST /api/v1/auth/bootstrap-owner ---
       if (pathname === '/api/v1/auth/bootstrap-owner' && method === 'POST') {
         const bootstrapSecretHeader = request.headers.get("X-Bootstrap-Secret");
@@ -1253,65 +1314,6 @@ export default {
 
       if (!userId) {
         return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
-      }
-
-      // =======================================================================
-      // MODULE: GEMINI AI FOUNDATION TESTING ROUTE
-      // =======================================================================
-      if (pathname === '/api/v1/ai/test') {
-        if (method !== 'POST') {
-          return buildErrorResponse('METHOD_NOT_ALLOWED', "Method not supported for this test channel layout.", 405, headers);
-        }
-
-        if (!env.GEMINI_API_KEY) {
-          return buildErrorResponse('INTERNAL_ERROR', "The target private artificial intelligence API key layout binding is currently unconfigured.", 500, headers);
-        }
-
-        let body;
-        try {
-          body = await request.json();
-        } catch (e) {
-          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
-        }
-
-        if (!body || typeof body.message !== 'string') {
-          return buildErrorResponse('INVALID_INPUT', "The 'message' property is required and must be a valid text string.", 400, headers);
-        }
-
-        const cleanMessage = body.message.trim();
-        if (cleanMessage.length === 0) {
-          return buildErrorResponse('INVALID_INPUT', "The prompt payload 'message' structure cannot be empty.", 400, headers);
-        }
-
-        if (cleanMessage.length > 1000) {
-          return buildErrorResponse('INVALID_INPUT', "The prompt length cannot exceed 1000 configuration characters.", 400, headers);
-        }
-
-        const aiResult = await callAIProvider(cleanMessage, env);
-
-        if (aiResult.success) {
-          return new Response(
-            JSON.stringify({
-              success: true,
-              data: {
-                provider: "gemini",
-                model: GEMINI_MODEL,
-                message: aiResult.text
-              }
-            }),
-            { status: 200, headers }
-          );
-        }
-
-        if (aiResult.errorType === 'TIMEOUT') {
-          return buildErrorResponse('AI_PROVIDER_TIMEOUT', "Upstream interface connection execution limits timed out.", 504, headers);
-        }
-
-        if (aiResult.errorType === 'MISSING_KEY') {
-          return buildErrorResponse('INTERNAL_ERROR', "The target private artificial intelligence API key layout binding is currently unconfigured.", 500, headers);
-        }
-
-        return buildErrorResponse('AI_PROVIDER_ERROR', "An upstream remote error was encountered within the provider connection loops.", 502, headers);
       }
 
       // =======================================================================
