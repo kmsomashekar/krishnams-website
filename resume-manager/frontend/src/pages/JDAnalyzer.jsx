@@ -39,6 +39,15 @@ async function runJDAnalysis(payload) {
   return handleResponse(res, 'Failed to analyze job description.');
 }
 
+async function runJDChat(payload) {
+  const res = await fetch('/api/v1/jd-analyzer/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to retrieve AI advice.');
+}
+
 export default function JDAnalyzer() {
   // --- FORM STATES ---
   const [selectedResumeId, setSelectedResumeId] = useState('');
@@ -52,6 +61,11 @@ export default function JDAnalyzer() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [validationError, setValidationError] = useState(null);
   const [serverError, setServerError] = useState(null);
+
+  // --- CHAT CONVERSATION STATES ---
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatQuestion, setChatQuestion] = useState('');
+  const [chatError, setChatError] = useState(null);
 
   // --- BASE QUERIES ---
   const { data: resumesData, isLoading: isResumesLoading } = useQuery({
@@ -89,6 +103,40 @@ export default function JDAnalyzer() {
     }
   }, [versionsList]);
 
+  // --- FORM MODIFICATION TRIPPERS (CLEARING STALE ANALYSIS/CHAT) ---
+  const handleResumeChange = (e) => {
+    setSelectedResumeId(e.target.value);
+    setSelectedVersionId('');
+    setAnalysisResult(null);
+    setChatMessages([]);
+    setChatQuestion('');
+    setChatError(null);
+    setValidationError(null);
+    setServerError(null);
+  };
+
+  const handleVersionChange = (e) => {
+    setSelectedVersionId(e.target.value);
+    setAnalysisResult(null);
+    setChatMessages([]);
+    setChatQuestion('');
+    setChatError(null);
+    setValidationError(null);
+    setServerError(null);
+  };
+
+  const handleJdTextChange = (e) => {
+    setJdText(e.target.value);
+    if (analysisResult) {
+      setAnalysisResult(null);
+      setChatMessages([]);
+      setChatQuestion('');
+      setChatError(null);
+      setValidationError(null);
+      setServerError(null);
+    }
+  };
+
   // --- RESET HANDLER ---
   const handleClearAnalysis = () => {
     setAnalysisResult(null);
@@ -98,18 +146,48 @@ export default function JDAnalyzer() {
     setJobTitle('');
     setJdUrl('');
     setJdText('');
+    setChatMessages([]);
+    setChatQuestion('');
+    setChatError(null);
   };
 
-  // --- MUTATION RUNNER ---
+  // --- STRUCTURED ANALYSIS MUTATION ---
   const analyzeMutation = useMutation({
     mutationFn: runJDAnalysis,
     onSuccess: (data) => {
-      setAnalysisResult(data.analysis);
+      setAnalysisResult(data);
       setServerError(null);
+      setChatMessages([]);
+      setChatQuestion('');
+      setChatError(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
     onError: (err) => {
       setServerError(err.message || 'AI Fit Assessment is temporarily unavailable. Please try again.');
+    }
+  });
+
+  // --- CONVERSATIONAL CHAT MUTATION ---
+  const chatMutation = useMutation({
+    mutationFn: runJDChat,
+    onSuccess: (data, variables) => {
+      const serverResponse = data.response;
+      setChatMessages((prev) => [
+        ...prev,
+        { role: 'user', content: variables.question },
+        {
+          role: 'assistant',
+          content: serverResponse.answer,
+          evidence_status: serverResponse.evidence_status,
+          supporting_evidence: serverResponse.supporting_evidence || [],
+          caution: serverResponse.caution || null
+        }
+      ]);
+      setChatQuestion('');
+      setChatError(null);
+    },
+    onError: (err) => {
+      setChatError(err.message || 'The AI Fit Advisor failed to process your question. Please try again.');
     }
   });
 
@@ -139,6 +217,48 @@ export default function JDAnalyzer() {
       job_title: jobTitle.trim() || undefined,
       jd_url: jdUrl.trim() || undefined
     });
+  };
+
+  // --- SEND CHAT QUESTION ACTION ENGINE ---
+  const executeAskQuestion = (questionText) => {
+    if (chatMutation.isPending || analyzeMutation.isPending) return;
+    setChatError(null);
+
+    const cleanQuestion = questionText.trim();
+    if (!cleanQuestion) return;
+
+    if (cleanQuestion.length > 5000) {
+      setChatError('Your question exceeds the maximum validation limit of 5,000 characters.');
+      return;
+    }
+
+    // Limit tracking exchanges block to 10 rounds maximum (20 total system historical messages)
+    const userMessageCount = chatMessages.filter(m => m.role === 'user').length;
+    if (userMessageCount >= 10) {
+      setChatError('Conversation limit reached for this analysis. Clear the workspace to start a new analysis.');
+      return;
+    }
+
+    // Map conversation array payload cleanly for backend contract expectations
+    const historicalPayload = chatMessages.map(({ role, content }) => ({ role, content }));
+
+    chatMutation.mutate({
+      resume_id: selectedResumeId,
+      version_id: selectedVersionId,
+      jd_text: jdText.trim(),
+      analysis: analysisResult.analysis,
+      messages: historicalPayload,
+      question: cleanMessageForPayload(cleanQuestion)
+    });
+  };
+
+  const handleChatSubmit = (e) => {
+    e.preventDefault();
+    executeAskQuestion(chatQuestion);
+  };
+
+  const cleanMessageForPayload = (text) => {
+    return text.trim();
   };
 
   // --- FORMATTING TRANSLATIONS ---
@@ -177,6 +297,37 @@ export default function JDAnalyzer() {
       default: return 'bg-slate-50 text-slate-500';
     }
   };
+
+  const getEvidenceStatusLabel = (status) => {
+    switch (status) {
+      case 'DEMONSTRATED': return 'Demonstrated';
+      case 'TRANSFERABLE': return 'Transferable';
+      case 'GAP': return 'Gap / Not Evidenced';
+      case 'MIXED': return 'Mixed Evidence';
+      default: return status || 'Unknown';
+    }
+  };
+
+  const getEvidenceStatusClass = (status) => {
+    switch (status) {
+      case 'DEMONSTRATED': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'TRANSFERABLE': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'GAP': return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'MIXED': return 'bg-slate-100 text-slate-700 border-slate-300';
+      default: return 'bg-slate-50 text-slate-600 border-slate-200';
+    }
+  };
+
+  // --- CHAT CONVENIENCE SUGGESTION CHIPS CONTROLS ---
+  const quickQuestions = [
+    { label: 'Biggest risks?', query: 'What are my biggest risks or weaknesses for this role?' },
+    { label: 'Which gaps matter most?', query: 'Which gaps are most likely to matter in the hiring decision?' },
+    { label: 'Interview focus?', query: 'What should I emphasize most if I get an interview for this role?' },
+    { label: 'What should I avoid claiming?', query: 'Based on my saved Resume AI Context, what should I avoid claiming for this role?' }
+  ];
+
+  const totalUserMessages = chatMessages.filter(m => m.role === 'user').length;
+  const isConversationLimitReached = totalUserMessages >= 10;
 
   return (
     <div className="space-y-6 pb-12">
@@ -217,12 +368,9 @@ export default function JDAnalyzer() {
                 Select Resume *
               </label>
               <select
-                disabled={isResumesLoading || analyzeMutation.isPending}
+                disabled={isResumesLoading || analyzeMutation.isPending || chatMutation.isPending}
                 value={selectedResumeId}
-                onChange={(e) => {
-                  setSelectedResumeId(e.target.value);
-                  setSelectedVersionId('');
-                }}
+                onChange={handleResumeChange}
                 className="w-full rounded border border-slate-300 px-3 py-2 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
               >
                 <option value="">-- Choose Resume --</option>
@@ -237,9 +385,9 @@ export default function JDAnalyzer() {
                 Select Version *
               </label>
               <select
-                disabled={isVersionsLoading || !selectedResumeId || analyzeMutation.isPending}
+                disabled={isVersionsLoading || !selectedResumeId || analyzeMutation.isPending || chatMutation.isPending}
                 value={selectedVersionId}
-                onChange={(e) => setSelectedVersionId(e.target.value)}
+                onChange={handleVersionChange}
                 className="w-full rounded border border-slate-300 px-3 py-2 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
               >
                 <option value="">-- Choose Target Version --</option>
@@ -259,7 +407,7 @@ export default function JDAnalyzer() {
                 <input
                   type="text"
                   placeholder="e.g. Acme Corp"
-                  disabled={analyzeMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending}
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -273,7 +421,7 @@ export default function JDAnalyzer() {
                 <input
                   type="text"
                   placeholder="e.g. Senior Security Director"
-                  disabled={analyzeMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending}
                   value={jobTitle}
                   onChange={(e) => setJobTitle(e.target.value)}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -287,7 +435,7 @@ export default function JDAnalyzer() {
                 <input
                   type="url"
                   placeholder="https://jobs.example.com/spec"
-                  disabled={analyzeMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending}
                   value={jdUrl}
                   onChange={(e) => setJdUrl(e.target.value)}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -308,9 +456,9 @@ export default function JDAnalyzer() {
                 rows="10"
                 required
                 placeholder="Paste the complete job description here..."
-                disabled={analyzeMutation.isPending}
+                disabled={analyzeMutation.isPending || chatMutation.isPending}
                 value={jdText}
-                onChange={(e) => setJdText(e.target.value)}
+                onChange={handleJdTextChange}
                 maxLength={100000}
                 className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-sans focus:outline-indigo-500 resize-y disabled:bg-slate-50"
               />
@@ -319,17 +467,17 @@ export default function JDAnalyzer() {
             <div className="pt-2 flex flex-col space-y-2">
               <button
                 type="submit"
-                disabled={analyzeMutation.isPending}
+                disabled={analyzeMutation.isPending || chatMutation.isPending}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-60"
               >
                 {analyzeMutation.isPending ? 'Analyzing JD...' : 'Analyze JD'}
               </button>
               
-              {(analysisResult || jdText || company || jobTitle || jdUrl) && (
+              {(analysisResult || jdText || company || jobTitle || jdUrl || chatMessages.length > 0) && (
                 <button
                   type="button"
                   onClick={handleClearAnalysis}
-                  disabled={analyzeMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending}
                   className="w-full px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   Clear Workspace
@@ -339,7 +487,7 @@ export default function JDAnalyzer() {
           </form>
         </div>
 
-        {/* Right Side: Active Analysis Target Displays */}
+        {/* Right Side: Active Analysis Target Displays & Follow-up Conversations */}
         <div className="lg:col-span-2 space-y-6">
           {analyzeMutation.isPending && (
             <div className="bg-white border border-slate-200 rounded-xl p-12 text-center shadow-sm flex flex-col items-center justify-center space-y-3">
@@ -360,27 +508,27 @@ export default function JDAnalyzer() {
           {analysisResult && !analyzeMutation.isPending && (
             <div className="space-y-6">
               
-              {/* Core Match Overview Assessment */}
+              {/* Core Match Overview Assessment Block */}
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
                 <div className="text-center sm:text-left space-y-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">AI-Estimated Match</span>
                   <span className="text-4xl font-extrabold text-slate-900 tracking-tight block">
-                    {analysisResult.match_score}%
+                    {analysisResult.analysis.match_score}%
                   </span>
                   <span className="text-[10px] text-slate-400 block font-medium">AI-Estimated Match</span>
                 </div>
                 
                 <div className="text-center space-y-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Recommendation</span>
-                  <span className={`inline-block px-3 py-1 text-xs font-bold tracking-wider uppercase border rounded ${getRecommendationClass(analysisResult.recommendation)}`}>
-                    {getRecommendationLabel(analysisResult.recommendation)}
+                  <span className={`inline-block px-3 py-1 text-xs font-bold tracking-wider uppercase border rounded ${getRecommendationClass(analysisResult.analysis.recommendation)}`}>
+                    {getRecommendationLabel(analysisResult.analysis.recommendation)}
                   </span>
                 </div>
 
                 <div className="sm:border-l sm:border-slate-100 sm:pl-6 space-y-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Summary</span>
                   <p className="text-slate-700 text-xs leading-relaxed font-medium">
-                    {analysisResult.summary}
+                    {analysisResult.analysis.summary}
                   </p>
                 </div>
               </div>
@@ -390,11 +538,11 @@ export default function JDAnalyzer() {
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-1.5 text-emerald-700">
                   Strong Matches
                 </h3>
-                {!analysisResult.strong_matches || analysisResult.strong_matches.length === 0 ? (
+                {!analysisResult.analysis.strong_matches || analysisResult.analysis.strong_matches.length === 0 ? (
                   <p className="text-slate-400 text-xs italic">No significant strong matches identified.</p>
                 ) : (
                   <div className="space-y-3">
-                    {analysisResult.strong_matches.map((item, idx) => (
+                    {analysisResult.analysis.strong_matches.map((item, idx) => (
                       <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium space-y-1">
                         <span className="text-slate-900 font-bold block">{item.requirement}</span>
                         <p className="text-slate-600"><span className="font-bold text-slate-400 mr-1">Evidence:</span>{item.evidence}</p>
@@ -410,11 +558,11 @@ export default function JDAnalyzer() {
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-1.5 text-indigo-700">
                   Partial & Transferable Matches
                 </h3>
-                {!analysisResult.partial_matches || analysisResult.partial_matches.length === 0 ? (
+                {!analysisResult.analysis.partial_matches || analysisResult.analysis.partial_matches.length === 0 ? (
                   <p className="text-slate-400 text-xs italic">No partial or transferable matches identified.</p>
                 ) : (
                   <div className="space-y-3">
-                    {analysisResult.partial_matches.map((item, idx) => (
+                    {analysisResult.analysis.partial_matches.map((item, idx) => (
                       <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium space-y-1.5">
                         <span className="text-slate-900 font-bold block">{item.requirement}</span>
                         <div className="space-y-0.5 text-slate-600 text-[11px]">
@@ -438,13 +586,13 @@ export default function JDAnalyzer() {
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-1.5 text-amber-700">
                   Potential Gaps
                 </h3>
-                {!analysisResult.gaps || analysisResult.gaps.length === 0 ? (
+                {!analysisResult.analysis.gaps || analysisResult.analysis.gaps.length === 0 ? (
                   <p className="text-slate-500 text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-100 p-2.5 rounded-lg">
                     No significant gaps identified.
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {analysisResult.gaps.map((item, idx) => (
+                    {analysisResult.analysis.gaps.map((item, idx) => (
                       <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                         <div className="space-y-1 flex-1">
                           <span className="text-slate-900 font-bold block">{item.requirement}</span>
@@ -459,16 +607,16 @@ export default function JDAnalyzer() {
                 )}
               </div>
 
-              {/* Resume Opportunities */}
+              {/* Resume Opportunities Section */}
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-1.5 text-slate-700">
                   Resume Opportunities
                 </h3>
-                {!analysisResult.resume_opportunities || analysisResult.resume_opportunities.length === 0 ? (
+                {!analysisResult.analysis.resume_opportunities || analysisResult.analysis.resume_opportunities.length === 0 ? (
                   <p className="text-slate-400 text-xs italic">No specific optimization opportunities identified.</p>
                 ) : (
                   <div className="space-y-3">
-                    {analysisResult.resume_opportunities.map((item, idx) => (
+                    {analysisResult.analysis.resume_opportunities.map((item, idx) => (
                       <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium space-y-1">
                         <span className="text-slate-900 font-bold block text-[11px] text-indigo-900">Area: {item.area}</span>
                         <p className="text-slate-700"><span className="font-bold text-slate-400 mr-1">Suggestion:</span>{item.suggestion}</p>
@@ -476,6 +624,149 @@ export default function JDAnalyzer() {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+
+              {/* =======================================================
+                  MODULE: WORKSPACE CONVERSATIONAL INTERFACE (CHAT WORKSPACE)
+                  ======================================================= */}
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
+                <div className="border-b border-slate-100 pb-2">
+                  <h3 className="text-sm font-bold text-slate-900 tracking-tight">Ask About This Role</h3>
+                  <p className="text-slate-500 text-[11px] font-medium mt-0.5">
+                    Ask follow-up questions about your fit, gaps, positioning, or interview focus.
+                  </p>
+                </div>
+
+                {/* Local Conversation Thread Frame */}
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                  {chatMessages.length === 0 && !chatMutation.isPending && (
+                    <p className="text-slate-400 text-xs font-medium italic py-2">
+                      Ask about blockers, transferable experience, interview positioning, or what not to claim.
+                    </p>
+                  )}
+
+                  {chatMessages.map((msg, idx) => {
+                    const isUser = msg.role === 'user';
+                    return (
+                      <div key={idx} className={`flex flex-col space-y-1.5 max-w-[85%] ${isUser ? 'ml-auto items-end' : 'mr-auto items-start'}`}>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          {isUser ? 'You' : 'JD / Resume Fit Advisor'}
+                        </span>
+                        <div className={`p-3 rounded-lg border text-xs font-medium leading-relaxed whitespace-pre-wrap ${
+                          isUser 
+                            ? 'bg-indigo-600 border-indigo-700 text-white' 
+                            : 'bg-slate-50 border-slate-200 text-slate-800'
+                        }`}>
+                          {msg.content}
+                        </div>
+
+                        {/* Advisor Metadata Attachment Display Context (Evidence, Badges & Cautions) */}
+                        {!isUser && (
+                          <div className="w-full space-y-2 mt-1.5 pl-1">
+                            {msg.evidence_status && (
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Capability Status:</span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border uppercase ${getEvidenceStatusClass(msg.evidence_status)}`}>
+                                  {getEvidenceStatusLabel(msg.evidence_status)}
+                                </span>
+                              </div>
+                            )}
+
+                            {Array.isArray(msg.supporting_evidence) && msg.supporting_evidence.length > 0 && (
+                              <div className="bg-slate-100/60 border border-slate-200 rounded p-2 text-[11px] text-slate-700 w-full">
+                                <span className="font-bold text-[10px] uppercase tracking-wider text-slate-400 block mb-1">Supporting Evidence</span>
+                                <ul className="list-disc list-inside space-y-0.5">
+                                  {msg.supporting_evidence.map((item, eIdx) => (
+                                    <li key={eIdx} className="font-medium text-slate-600">{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {msg.caution && (
+                              <div className="bg-amber-50 border border-amber-200 rounded p-2 text-[11px] text-amber-900 w-full font-medium">
+                                <span className="font-bold text-[10px] uppercase tracking-wider text-amber-500 block mb-0.5">Important Caution</span>
+                                {msg.caution}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Active Response Loading View */}
+                  {chatMutation.isPending && (
+                    <div className="flex flex-col space-y-1 items-start max-w-[80%]">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider animate-pulse">
+                        JD / Resume Fit Advisor
+                      </span>
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs font-semibold text-slate-500 tracking-wide flex items-center space-x-2">
+                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        <span className="pl-1">Thinking...</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Local Chat Operation Action Error Display */}
+                {chatError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded text-xs font-semibold shadow-sm">
+                    {chatError}
+                  </div>
+                )}
+
+                {/* Quick Question Suggestion Chips Deck */}
+                <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Suggested Questions</span>
+                  <div className="flex flex-wrap gap-2">
+                    {quickQuestions.map((chip, qIdx) => (
+                      <button
+                        key={qIdx}
+                        type="button"
+                        disabled={chatMutation.isPending || isConversationLimitReached}
+                        onClick={() => executeAskQuestion(chip.query)}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-slate-50 border border-slate-300 rounded-full hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition-all text-slate-600 disabled:opacity-40 disabled:hover:bg-slate-50 disabled:hover:border-slate-300 disabled:hover:text-slate-600"
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Chat Input Parameter Interface Controls Form */}
+                <form onSubmit={handleChatSubmit} className="pt-2 flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      aria-label="Ask follow-up question"
+                      placeholder={isConversationLimitReached ? "Conversation limit reached for this session." : "Type a follow-up question about your fit..."}
+                      disabled={chatMutation.isPending || isConversationLimitReached}
+                      value={chatQuestion}
+                      onChange={(e) => setChatQuestion(e.target.value)}
+                      maxLength={5000}
+                      className="w-full rounded border border-slate-300 pl-3 pr-16 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                    />
+                    <span className="absolute right-3 top-2.5 text-[9px] font-bold text-slate-400">
+                      {chatQuestion.length.toLocaleString()} / 5,000
+                    </span>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={chatMutation.isPending || !chatQuestion.trim() || isConversationLimitReached}
+                    className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    Ask AI
+                  </button>
+                </form>
+
+                {isConversationLimitReached && (
+                  <p className="text-[11px] text-amber-600 font-semibold italic text-center">
+                    Conversation limit reached for this analysis. Clear the workspace to start a new analysis.
+                  </p>
                 )}
               </div>
 
