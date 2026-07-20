@@ -1,8 +1,8 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.6G (Interview API Implementation)
+// Approved Phase: Stage 1 — Task 1.11C (Owner Provisioning + Password Auth + Sessions)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
-// Architecture: Isolated Same-Origin API Router
+// Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions
 // =============================================================================
 
 // --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
@@ -302,7 +302,6 @@ async function callAIProviderWithJDChat(aiContext, jdText, initialAnalysis, mess
     "  \"caution\": \"<Optional specific warning string if the user is trying to make unverified claims or if severe gaps exist, otherwise null>\"\n" +
     "}";
 
-  // Build the unified chat block structure mapping historical variables
   let contextPrompt = 
     `### CANDIDATE SAVED AI CONTEXT (TRUTH SOURCE):\n${aiContext}\n\n` +
     `### JOB DESCRIPTION:\n${jdText}\n\n` +
@@ -343,7 +342,7 @@ async function callAIProviderWithJDChat(aiContext, jdText, initialAnalysis, mess
   };
 
   const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), 45000); // Strict 45-second workspace limit
+  const timeoutId = setTimeout(() => abortController.abort(), 45000);
 
   try {
     const response = await fetch(targetUrl, {
@@ -383,6 +382,225 @@ async function callAIProviderWithJDChat(aiContext, jdText, initialAnalysis, mess
   }
 }
 
+// =============================================================================
+// --- TASK 1.11C CRYPTOGRAPHIC & AUTHENTICATION UTILITIES ---
+// =============================================================================
+
+async function hashPassword(password, saltHex = null) {
+  const enc = new TextEncoder();
+  let salt;
+  if (saltHex) {
+    salt = new Uint8Array(saltHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  } else {
+    salt = crypto.getRandomValues(new Uint8Array(16));
+  }
+
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits"]
+  );
+
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    256
+  );
+
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const saltArray = Array.from(salt);
+  const saltHexOut = saltArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return `pbkdf2_sha256$100000$${saltHexOut}$${hashHex}`;
+}
+
+async function verifyPassword(password, storedHash) {
+  try {
+    if (typeof storedHash !== 'string') return false;
+    const parts = storedHash.split('$');
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') {
+      return false;
+    }
+    const iterations = parseInt(parts[1], 10);
+    if (isNaN(iterations) || iterations < 10000 || iterations > 1000000) {
+      return false;
+    }
+    const saltHex = parts[2];
+    if (!saltHex || saltHex.length !== 32 || !/^[0-9a-fA-F]+$/.test(saltHex)) {
+      return false;
+    }
+    const expectedHashHex = parts[3];
+    if (!expectedHashHex || expectedHashHex.length !== 64 || !/^[0-9a-fA-F]+$/.test(expectedHashHex)) {
+      return false;
+    }
+
+    const enc = new TextEncoder();
+    const salt = new Uint8Array(saltHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(password),
+      { name: "PBKDF2" },
+      false,
+      ["deriveBits"]
+    );
+
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt: salt,
+        iterations: iterations,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      256
+    );
+
+    const hashArray = Array.from(new Uint8Array(derivedBits));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (hashHex.length !== expectedHashHex.length) {
+      return false;
+    }
+
+    let mismatch = 0;
+    for (let i = 0; i < hashHex.length; i++) {
+      mismatch |= hashHex.charCodeAt(i) ^ expectedHashHex.charCodeAt(i);
+    }
+    return mismatch === 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function generateSessionToken() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hashSessionToken(rawToken) {
+  const enc = new TextEncoder();
+  const data = enc.encode(rawToken);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function getAuthenticatedUser(request, env) {
+  const cookieHeader = request.headers.get("Cookie");
+  if (!cookieHeader) return null;
+
+  const cookies = cookieHeader.split(';');
+  let rawToken = null;
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'rm_session' && value) {
+      rawToken = value;
+      break;
+    }
+  }
+
+  if (!rawToken) return null;
+
+  const tokenHash = await hashSessionToken(rawToken);
+  const nowISO = new Date().toISOString();
+
+  const sessionRecord = await env.DB.prepare(
+    `SELECT s.user_id, s.expires_at, u.id, u.email, u.role, u.status 
+     FROM sessions s 
+     JOIN users u ON s.user_id = u.id 
+     WHERE s.token_hash = ?`
+  )
+  .bind(tokenHash)
+  .first();
+
+  if (!sessionRecord) return null;
+
+  if (sessionRecord.status !== 'ACTIVE') {
+    return null;
+  }
+
+  if (sessionRecord.expires_at < nowISO) {
+    await env.DB.prepare(`DELETE FROM sessions WHERE token_hash = ?`).bind(tokenHash).run().catch(() => {});
+    return null;
+  }
+
+  return {
+    id: sessionRecord.id,
+    email: sessionRecord.email,
+    role: sessionRecord.role
+  };
+}
+
+// Timing-resistant constant-time secret comparison via SHA-256 digest
+async function secureCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  try {
+    const enc = new TextEncoder();
+    const digestA = await crypto.subtle.digest("SHA-256", enc.encode(a));
+    const digestB = await crypto.subtle.digest("SHA-256", enc.encode(b));
+    const arrA = new Uint8Array(digestA);
+    const arrB = new Uint8Array(digestB);
+    if (arrA.length !== arrB.length) return false;
+    let mismatch = 0;
+    for (let i = 0; i < arrA.length; i++) {
+      mismatch |= arrA[i] ^ arrB[i];
+    }
+    return mismatch === 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+function buildCorsHeaders(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  const isProd = env.ENVIRONMENT === 'production';
+  const allowedOrigin = env.ALLOWED_ORIGIN || "";
+
+  let isAuthorized = false;
+
+  if (isProd) {
+    if (allowedOrigin && origin && origin === allowedOrigin) {
+      isAuthorized = true;
+    }
+  } else {
+    // Development environment
+    if (!origin || origin === "http://localhost:3000") {
+      isAuthorized = true;
+    }
+  }
+
+  // Fail closed if origin is present in production/dev but unauthorized
+  if (origin && !isAuthorized) {
+    return null;
+  }
+
+  const corsHeaders = new Headers({
+    'Content-Type': 'application/json'
+  });
+
+  if (isAuthorized) {
+    if (isProd) {
+      corsHeaders.set('Access-Control-Allow-Origin', allowedOrigin);
+    } else {
+      corsHeaders.set('Access-Control-Allow-Origin', origin || "http://localhost:3000");
+    }
+    corsHeaders.set('Access-Control-Allow-Credentials', 'true');
+    corsHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    corsHeaders.set('Access-Control-Allow-Headers', 'Content-Type, X-Bootstrap-Secret');
+  }
+
+  return corsHeaders;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -390,20 +608,48 @@ export default {
     const method = request.method.toUpperCase();
 
     // -------------------------------------------------------------------------
-    // 1. CORS & Same-Origin Policy Configuration
+    // 1. CORS Preflight & Authorization Handling
     // -------------------------------------------------------------------------
-    const headers = new Headers({
-      'Content-Type': 'application/json',
-    });
+    const headers = buildCorsHeaders(request, env);
+    if (!headers && request.headers.get("Origin")) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'CORS policy violation: Origin not authorized.'
+          }
+        }),
+        {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    if (method === 'OPTIONS') {
+      if (!headers) {
+        return new Response(null, { status: 403 });
+      }
+      return new Response(null, { status: 204, headers });
+    }
 
     // -------------------------------------------------------------------------
-    // 2. Phase 1 Development Authentication Context Injection
+    // 2. Production-Safe Authentication Context & Development Fallback
     // -------------------------------------------------------------------------
-    const userId = env.DEV_USER_ID || 'dev-user-default-123';
+    const sessionUser = await getAuthenticatedUser(request, env);
+    let userId = null;
+    if (sessionUser) {
+      userId = sessionUser.id;
+    } else if (env.ENVIRONMENT !== 'production') {
+      userId = env.DEV_USER_ID || 'dev-user-default-123';
+    } else {
+      userId = null;
+    }
 
     try {
       // -------------------------------------------------------------------------
-      // 3. Health Endpoint Pipeline (Preserving Environment Property Context)
+      // 3. Health Endpoint Pipeline
       // -------------------------------------------------------------------------
       if (pathname === '/api/v1/health' && method === 'GET') {
         return new Response(
@@ -419,11 +665,200 @@ export default {
         );
       }
 
+      // =======================================================================
+      // --- TASK 1.11C AUTHENTICATION ENDPOINTS ---
+      // =======================================================================
+
+      // --- POST /api/v1/auth/bootstrap-owner ---
+      if (pathname === '/api/v1/auth/bootstrap-owner' && method === 'POST') {
+        const bootstrapSecretHeader = request.headers.get("X-Bootstrap-Secret");
+        if (!env.BOOTSTRAP_SECRET || !bootstrapSecretHeader || !(await secureCompare(bootstrapSecretHeader, env.BOOTSTRAP_SECRET))) {
+          return buildErrorResponse('UNAUTHORIZED', "Invalid or missing bootstrap authorization credentials.", 401, headers);
+        }
+
+        const existingUserCount = await env.DB.prepare(`SELECT COUNT(*) as count FROM users`).first();
+        if (existingUserCount && existingUserCount.count > 0) {
+          return buildErrorResponse('CONFLICT', "Owner account has already been provisioned. Bootstrap endpoint is locked.", 409, headers);
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_REQUEST', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { email, password } = body;
+        if (!email || typeof email !== 'string' || email.trim().length === 0) {
+          return buildErrorResponse('INVALID_REQUEST', "Field 'email' is required.", 400, headers);
+        }
+        if (!password || typeof password !== 'string' || password.length < 12) {
+          return buildErrorResponse('INVALID_REQUEST', "Field 'password' is required and must be at least 12 characters.", 400, headers);
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const passwordHash = await hashPassword(password);
+        const now = new Date().toISOString();
+
+        try {
+          await env.DB.prepare(
+            `INSERT INTO users (id, email, password_hash, role, status, created_at, updated_at)
+             VALUES (?, ?, ?, 'ADMIN', 'ACTIVE', ?, ?)`
+          )
+          .bind('dev-user-default-123', normalizedEmail, passwordHash, now, now)
+          .run();
+        } catch (dbErr) {
+          return buildErrorResponse('CONFLICT', "Failed to bootstrap owner identity. Account may already exist.", 409, headers);
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id: 'dev-user-default-123',
+              email: normalizedEmail,
+              role: 'ADMIN'
+            }
+          }),
+          { status: 201, headers }
+        );
+      }
+
+      // --- POST /api/v1/auth/login ---
+      if (pathname === '/api/v1/auth/login' && method === 'POST') {
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_REQUEST', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { email, password } = body;
+        if (!email || !password) {
+          return buildErrorResponse('INVALID_CREDENTIALS', "Invalid email or password.", 401, headers);
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await env.DB.prepare(
+          `SELECT id, email, password_hash, role, status FROM users WHERE email = ?`
+        )
+        .bind(normalizedEmail)
+        .first();
+
+        if (!user || user.status !== 'ACTIVE') {
+          return buildErrorResponse('INVALID_CREDENTIALS', "Invalid email or password.", 401, headers);
+        }
+
+        const passwordValid = await verifyPassword(password, user.password_hash);
+        if (!passwordValid) {
+          return buildErrorResponse('INVALID_CREDENTIALS', "Invalid email or password.", 401, headers);
+        }
+
+        const rawToken = await generateSessionToken();
+        const tokenHash = await hashSessionToken(rawToken);
+        const now = new Date();
+        const nowISO = now.toISOString();
+        const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)).toISOString(); // 24 hours absolute
+
+        await env.DB.prepare(
+          `INSERT INTO sessions (token_hash, user_id, created_at, last_activity_at, expires_at)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .bind(tokenHash, user.id, nowISO, nowISO, expiresAt)
+        .run();
+
+        const isProduction = env.ENVIRONMENT === 'production';
+        const cookieSecure = isProduction ? "; Secure" : "";
+        const cookieString = `rm_session=${rawToken}; HttpOnly; Path=/; SameSite=Lax${cookieSecure}; Max-Age=86400`;
+
+        const responseHeaders = new Headers(headers);
+        responseHeaders.append("Set-Cookie", cookieString);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              authenticated: true,
+              user: {
+                id: user.id,
+                email: user.email,
+                role: user.role
+              }
+            }
+          }),
+          { status: 200, headers: responseHeaders }
+        );
+      }
+
+      // --- GET /api/v1/auth/session ---
+      if (pathname === '/api/v1/auth/session' && method === 'GET') {
+        if (!sessionUser) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                authenticated: false,
+                user: null
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              authenticated: true,
+              user: sessionUser
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
+
+      // --- POST /api/v1/auth/logout ---
+      if (pathname === '/api/v1/auth/logout' && method === 'POST') {
+        const cookieHeader = request.headers.get("Cookie");
+        if (cookieHeader) {
+          const cookies = cookieHeader.split(';');
+          let rawToken = null;
+          for (let cookie of cookies) {
+            const [name, value] = cookie.trim().split('=');
+            if (name === 'rm_session' && value) {
+              rawToken = value;
+              break;
+            }
+          }
+
+          if (rawToken) {
+            const tokenHash = await hashSessionToken(rawToken);
+            await env.DB.prepare(`DELETE FROM sessions WHERE token_hash = ?`).bind(tokenHash).run().catch(() => {});
+          }
+        }
+
+        const isProduction = env.ENVIRONMENT === 'production';
+        const cookieSecure = isProduction ? "; Secure" : "";
+        const expiredCookieString = `rm_session=; HttpOnly; Path=/; SameSite=Lax${cookieSecure}; Max-Age=0`;
+
+        const responseHeaders = new Headers(headers);
+        responseHeaders.append("Set-Cookie", expiredCookieString);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              authenticated: false
+            }
+          }),
+          { status: 200, headers: responseHeaders }
+        );
+      }
+
       // -------------------------------------------------------------------------
-      // 4. RESTful Route Routing Pipeline
+      // 4. RESTful Route Routing Pipeline (Preserving Domain APIs & Safe Fallbacks)
       // -------------------------------------------------------------------------
       
-      // Route Match Definitions
       const resumeRootPattern = '/api/v1/resumes';
       const companyRootPattern = '/api/v1/companies';
       const opportunityRootPattern = '/api/v1/opportunities';
@@ -432,10 +867,7 @@ export default {
       const versionsRootRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions$/;
       const versionIdRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)$/;
       
-      // AI Context Generation Route Pattern
       const aiContextGenerateRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)\/ai-context\/generate$/;
-
-      // Additive R2 File Storage Match Pattern Definition
       const versionFileRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)\/file$/;
 
       const opportunityIdRegex = /^\/api\/v1\/opportunities\/([^\/]+)$/;
@@ -445,13 +877,15 @@ export default {
       const interviewsRootRegex = /^\/api\/v1\/opportunities\/([^\/]+)\/interviews$/;
       const interviewStatusRegex = /^\/api\/v1\/interviews\/([^\/]+)\/status$/;
 
-      // Additive Phase 1 Route Definitions
       const interviewsGlobalPattern = '/api/v1/interviews';
       const interviewIdRegex = /^\/api\/v1\/interviews\/([^\/]+)$/;
 
-      // Additive Phase 1 Cover Letters Route Definitions
       const coverLetterRootPattern = '/api/v1/cover-letters';
       const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
+
+      if (!userId) {
+        return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+      }
 
       // =======================================================================
       // MODULE: GEMINI AI FOUNDATION TESTING ROUTE
@@ -537,7 +971,6 @@ export default {
 
         const { resume_id, version_id, jd_text, analysis, messages, question } = body;
 
-        // Perform strict payload boundary checking enforcements
         if (!resume_id || typeof resume_id !== 'string' || resume_id.trim().length === 0) {
           return buildErrorResponse('INVALID_REQUEST', "The 'resume_id' parameter is required and must be a valid string.", 400, headers);
         }
@@ -594,7 +1027,6 @@ export default {
           }
         }
 
-        // STEP 1: Validate Resume ownership directly via userId mapping boundaries
         const parentResume = await env.DB.prepare(
           `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
         )
@@ -605,7 +1037,6 @@ export default {
           return buildErrorResponse('RESUME_NOT_FOUND', "The selected Resume does not exist or access is restricted.", 404, headers);
         }
 
-        // STEP 2: Validate Resume Version existence belonging explicitly to the verified parent resume_id context
         const explicitVersionCheck = await env.DB.prepare(
           `SELECT id, ai_context FROM resume_versions WHERE id = ? AND resume_id = ?`
         )
@@ -616,7 +1047,6 @@ export default {
           return buildErrorResponse('RESUME_VERSION_NOT_FOUND', "The selected Resume Version does not exist for this Resume.", 404, headers);
         }
 
-        // STEP 3: Retrieve the SAVED ai_context from that explicitly verified version item block
         const savedAiContext = explicitVersionCheck.ai_context;
         if (!savedAiContext || savedAiContext.trim().length === 0) {
           return buildErrorResponse('AI_CONTEXT_NOT_FOUND', "Generate or add AI Context for this Resume Version before starting a conversational chat.", 400, headers);
@@ -631,7 +1061,6 @@ export default {
           return buildErrorResponse('AI_PROVIDER_ERROR', "An internal upstream error was encountered within chat intelligence response cycles.", 502, headers);
         }
 
-        // Parse and validate the response against the expected chat schema
         let structuredChatJson;
         try {
           structuredChatJson = JSON.parse(chatResult.text);
@@ -724,7 +1153,6 @@ export default {
           return buildErrorResponse('JD_TOO_LARGE', "The provided Job Description text exceeds the maximum character limit layout boundaries of 100,000.", 400, headers);
         }
 
-        // Optional Fields Type Validation Pass Enforcements
         if (company !== undefined && company !== null) {
           if (typeof company !== 'string') {
             return buildErrorResponse('INVALID_REQUEST', "The optional field 'company' must be a valid string input template.", 400, headers);
@@ -747,7 +1175,6 @@ export default {
           jd_url: jd_url && jd_url.trim().length > 0 ? jd_url.trim() : null
         };
 
-        // STEP 1: Validate Resume ownership directly via userId mapping boundaries
         const parentResume = await env.DB.prepare(
           `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
         )
@@ -758,7 +1185,6 @@ export default {
           return buildErrorResponse('RESUME_NOT_FOUND', "The selected Resume does not exist or access is restricted.", 404, headers);
         }
 
-        // STEP 2: Validate Resume Version existence belonging explicitly to the verified parent resume_id context
         const explicitVersionCheck = await env.DB.prepare(
           `SELECT id, ai_context FROM resume_versions WHERE id = ? AND resume_id = ?`
         )
@@ -769,7 +1195,6 @@ export default {
           return buildErrorResponse('RESUME_VERSION_NOT_FOUND', "The selected Resume Version does not exist for this Resume.", 404, headers);
         }
 
-        // STEP 3: Retrieve the SAVED ai_context from that explicitly verified version item block
         const savedAiContext = explicitVersionCheck.ai_context;
         if (!savedAiContext || savedAiContext.trim().length === 0) {
           return buildErrorResponse('AI_CONTEXT_NOT_FOUND', "Generate or add AI Context for this Resume Version before analyzing a JD.", 400, headers);
@@ -784,7 +1209,6 @@ export default {
           return buildErrorResponse('AI_PROVIDER_ERROR', "An internal upstream error was encountered within structural intelligence evaluation routines.", 502, headers);
         }
 
-        // Deep response parsing structured validation layers execution
         let structuredJson;
         try {
           structuredJson = JSON.parse(analysisResult.text);
@@ -810,7 +1234,6 @@ export default {
           return buildErrorResponse('AI_PROVIDER_ERROR', "Required array collections or summaries are missing within the analysis response blocks.", 502, headers);
         }
 
-        // Validate gap internal properties constraint tags
         const validImpacts = ['HIGH', 'MEDIUM', 'LOW'];
         for (const gap of structuredJson.gaps) {
           if (gap.impact && !validImpacts.includes(gap.impact)) {
@@ -856,7 +1279,6 @@ export default {
           return buildErrorResponse('INTERNAL_SERVER_ERROR', "Storage object infrastructure context cluster tracking binds are unavailable.", 500, headers);
         }
 
-        // Secure Parent Resume + Nested Resume Version Ownership/Existence Verification Checks
         const ownershipCheck = await env.DB.prepare(
           `SELECT rv.id, rv.r2_object_key FROM resume_versions rv
            JOIN resumes r ON r.id = rv.resume_id
@@ -888,7 +1310,6 @@ export default {
         const detectedContentType = fileObject.httpMetadata?.contentType || '';
         const cleanContentType = detectedContentType.toLowerCase().trim();
 
-        // Strict PDF Type Validation utilizing trusted stored metadata boundaries
         if (cleanContentType.length > 0) {
           if (cleanContentType !== 'application/pdf') {
             return buildErrorResponse('UNSUPPORTED_FILE_TYPE', "AI Context generation currently supports PDF resume files only.", 415, headers);
@@ -897,7 +1318,7 @@ export default {
           return buildErrorResponse('UNSUPPORTED_FILE_TYPE', "AI Context generation currently supports PDF resume files only.", 415, headers);
         }
 
-        const maxAiFileBytes = 5 * 1024 * 1024; // Defensive 5 MB Check
+        const maxAiFileBytes = 5 * 1024 * 1024;
         if (fileObject.size > maxAiFileBytes) {
           return buildErrorResponse('FILE_TOO_LARGE', "Target resume application entity size parameters exceed the defensive boundaries for automated processing.", 413, headers);
         }
@@ -907,7 +1328,6 @@ export default {
           return buildErrorResponse('FILE_TOO_LARGE', "Target resume application entity size parameters exceed the defensive boundaries for automated processing.", 413, headers);
         }
 
-        // Safe Cloudflare Workers Runtime-compatible Base64 conversion avoiding block breaks or heavy concatenations
         const uint8Buffer = new Uint8Array(fileBlobBytes);
         let binaryString = "";
         const chunkQuantum = 8192;
@@ -949,12 +1369,10 @@ export default {
         const resumeId = versionFileMatch[1];
         const versionId = versionFileMatch[2];
 
-        // Validate R2 Bucket availability binding before structural execution paths
         if (!env.BUCKET) {
           return buildErrorResponse('INTERNAL_SERVER_ERROR', "The target private object storage cluster binding context is currently unavailable.", 500, headers);
         }
 
-        // Deep ownership context enforcement validation query mapping
         const ownershipCheck = await env.DB.prepare(
           `SELECT rv.id, rv.r2_object_key FROM resume_versions rv
            JOIN resumes r ON r.id = rv.resume_id
@@ -967,10 +1385,9 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted resume version portfolio tracking record does not exist or access rights are restricted.", 404, headers);
         }
 
-        // --- PUT /api/v1/resumes/:resumeId/versions/:versionId/file (Upload/Replace) ---
         if (method === 'PUT') {
           const contentLengthHeader = request.headers.get('content-length');
-          const maxFileBytes = 2 * 1024 * 1024; // 2MB exactly
+          const maxFileBytes = 2 * 1024 * 1024;
 
           if (contentLengthHeader) {
             const parsedLength = parseInt(contentLengthHeader, 10);
@@ -1001,7 +1418,6 @@ export default {
           }
 
           const rawXFileName = request.headers.get('x-file-name') || '';
-          // Sanitize filename to mitigate header injection vectors or layout breakouts
           let sanitizedFileName = rawXFileName
             .replace(/[\r\n\t]/g, '')
             .replace(/["'/\\]/g, '_')
@@ -1021,7 +1437,6 @@ export default {
             return buildErrorResponse('INVALID_INPUT', "Mismatched or invalid document file target extension structure detected.", 400, headers);
           }
 
-          // Strict checking of strict matching specifications criteria between MIME and Extensions
           if (cleanContentType === 'application/pdf' && evaluatedExtension !== 'pdf') {
             return buildErrorResponse('INVALID_INPUT', "Mismatched mapping parameters between PDF content and extension.", 400, headers);
           }
@@ -1032,7 +1447,6 @@ export default {
           const generatedUuid = crypto.randomUUID();
           const targetR2ObjectKey = `resumes/${userId}/${resumeId}/${versionId}/${generatedUuid}.${evaluatedExtension}`;
 
-          // Execute R2 put with metadata retention rules mapping
           await env.BUCKET.put(targetR2ObjectKey, rawBodyBuffer, {
             httpMetadata: { contentType: cleanContentType },
             customMetadata: { original_filename: sanitizedFileName }
@@ -1046,7 +1460,6 @@ export default {
           .bind(targetR2ObjectKey, versionId)
           .run();
 
-          // Safely execute old resource elimination cleanup processing after confirmation pointer updates
           if (oldR2ObjectKey) {
             ctx.waitUntil(
               env.BUCKET.delete(oldR2ObjectKey)
@@ -1070,7 +1483,6 @@ export default {
           );
         }
 
-        // --- GET /api/v1/resumes/:resumeId/versions/:versionId/file (Private Worker Mediation Download) ---
         if (method === 'GET') {
           const targetR2Key = ownershipCheck.r2_object_key;
           if (!targetR2Key) {
@@ -1104,7 +1516,6 @@ export default {
           });
         }
 
-        // --- DELETE /api/v1/resumes/:resumeId/versions/:versionId/file (Asset Purge Workflow) ---
         if (method === 'DELETE') {
           const targetR2Key = ownershipCheck.r2_object_key;
           if (!targetR2Key) {
@@ -1138,7 +1549,6 @@ export default {
       // MODULE: COVER LETTERS API
       // =======================================================================
 
-      // --- GET /api/v1/cover-letters (List Cover Letters) ---
       if (pathname === coverLetterRootPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
           `SELECT cl.id, cl.company_id, cl.title, cl.status, cl.created_at, cl.updated_at,
@@ -1170,7 +1580,6 @@ export default {
         );
       }
 
-      // --- POST /api/v1/cover-letters (Create Cover Letter) ---
       if (pathname === coverLetterRootPattern && method === 'POST') {
         let body;
         try {
@@ -1246,12 +1655,10 @@ export default {
         );
       }
 
-      // --- Id Level Handler for Cover Letters ---
       const clIdMatch = pathname.match(coverLetterIdRegex);
       if (clIdMatch) {
         const coverLetterId = clIdMatch[1];
 
-        // --- GET /api/v1/cover-letters/:id (Get Cover Letter Details) ---
         if (method === 'GET') {
           const row = await env.DB.prepare(
             `SELECT cl.id, cl.company_id, cl.title, cl.content, cl.status, cl.created_at, cl.updated_at,
@@ -1287,7 +1694,6 @@ export default {
           );
         }
 
-        // --- PUT /api/v1/cover-letters/:id (Update Cover Letter Specification) ---
         if (method === 'PUT') {
           const existingRecord = await env.DB.prepare(
             `SELECT * FROM cover_letters WHERE id = ? AND user_id = ?`
@@ -1352,7 +1758,6 @@ export default {
           );
         }
 
-        // --- DELETE /api/v1/cover-letters/:id (Delete Cover Letter Specifications) ---
         if (method === 'DELETE') {
           const existing = await env.DB.prepare(
             `SELECT id FROM cover_letters WHERE id = ? AND user_id = ?`
@@ -1379,7 +1784,6 @@ export default {
       // MODULE: INTERVIEWS API
       // =======================================================================
       
-      // --- PATCH /api/v1/interviews/:id/status (Update Interview Status) ---
       const intStatusMatch = pathname.match(interviewStatusRegex);
       if (intStatusMatch && method === 'PATCH') {
         const interviewId = intStatusMatch[1];
@@ -1398,7 +1802,6 @@ export default {
           return buildErrorResponse('INVALID_INPUT', `Invalid status value provided. Allowed values: ${allowedStatuses.join(', ')}`, 400, headers);
         }
 
-        // Deep visibility and access alignment check via opportunities ownership
         const interviewCheck = await env.DB.prepare(
           `SELECT i.id FROM interviews i
            JOIN opportunities o ON i.opportunity_id = o.id
@@ -1423,7 +1826,6 @@ export default {
         );
       }
 
-      // --- ADDITIVE NEW ENDPOINT: GET /api/v1/interviews (Global List) ---
       if (pathname === interviewsGlobalPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
           `SELECT 
@@ -1465,7 +1867,6 @@ export default {
         );
       }
 
-      // --- ADDITIVE NEW ENDPOINT: GET /api/v1/interviews/:id (Detail Block) ---
       const intIdGetMatch = pathname.match(interviewIdRegex);
       if (intIdGetMatch && !pathname.includes('/status') && method === 'GET') {
         const interviewId = intIdGetMatch[1];
@@ -1517,7 +1918,6 @@ export default {
         );
       }
 
-      // --- ADDITIVE NEW ENDPOINT: PUT /api/v1/interviews/:id (Update Specification) ---
       const intIdPutMatch = pathname.match(interviewIdRegex);
       if (intIdPutMatch && !pathname.includes('/status') && method === 'PUT') {
         const interviewId = intIdPutMatch[1];
@@ -1622,7 +2022,7 @@ export default {
             data: {
               id: interviewId,
               opportunity_id: existingRecord.opportunity_id,
-              dot_round_number: updatedRoundNumber,
+              round_number: updatedRoundNumber,
               round_title: updatedRoundTitle,
               status: updated_status,
               interview_date: updatedInterviewDate,
@@ -1637,12 +2037,10 @@ export default {
         );
       }
 
-      // --- Collection Level Handler for Opportunity Contextual Interviews ---
       const interviewsMatch = pathname.match(interviewsRootRegex);
       if (interviewsMatch) {
         const opportunityId = interviewsMatch[1];
 
-        // Access validation: Check opportunity visibility and ownership scope
         const opportunity = await env.DB.prepare(
           `SELECT id FROM opportunities WHERE id = ? AND user_id = ?`
         )
@@ -1653,7 +2051,6 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted resource does not exist or access rights are restricted.", 404, headers);
         }
 
-        // --- POST /api/v1/opportunities/:id/interviews (Create Interview) ---
         if (method === 'POST') {
           let body;
           try {
@@ -1667,7 +2064,6 @@ export default {
             interviewer_names, preparation_notes, questions_asked, feedback_notes 
           } = body;
 
-          // Structural field check rules
           if (round_number === undefined || typeof round_number !== 'number' || !Number.isInteger(round_number)) {
             return buildErrorResponse('INVALID_INPUT', "Field 'round_number' is a required integer.", 400, headers);
           }
@@ -1678,7 +2074,6 @@ export default {
             return buildErrorResponse('INVALID_INPUT', "Field 'interview_date' is a required string configuration parameter.", 400, headers);
           }
 
-          // Validate status lifecycle states
           const finalStatus = status || 'SCHEDULED';
           const allowedStatuses = ['SCHEDULED', 'COMPLETED', 'CANCELLED'];
           if (!allowedStatuses.includes(finalStatus)) {
@@ -1725,7 +2120,6 @@ export default {
           );
         }
 
-        // --- GET /api/v1/opportunities/:id/interviews (List Interviews) ---
         if (method === 'GET') {
           const { results } = await env.DB.prepare(
             `SELECT id, round_number, round_title, status, interview_date, interviewer_names
@@ -1736,7 +2130,6 @@ export default {
           .bind(opportunityId)
           .all();
 
-          // Standardize response text mutations safely
           const localizedInterviews = results.map(row => ({
             id: row.id,
             round_number: row.round_number,
@@ -2021,7 +2414,6 @@ export default {
       // MODULE: OPPORTUNITIES API
       // =======================================================================
 
-      // --- POST /api/v1/opportunities (Create Opportunity) ---
       if (pathname === opportunityRootPattern && method === 'POST') {
         let body;
         try {
@@ -2114,7 +2506,6 @@ export default {
         );
       }
 
-      // --- GET /api/v1/opportunities (List Opportunities) ---
       if (pathname === opportunityRootPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
           `SELECT o.id, c.name AS company_name, o.job_title, o.status, o.priority, o.date_applied, o.updated_at
@@ -2132,7 +2523,6 @@ export default {
         );
       }
 
-      // --- PATCH /api/v1/opportunities/:id/status (Update Opportunity Status) ---
       const statusMatch = pathname.match(opportunityStatusRegex);
       if (statusMatch && method === 'PATCH') {
         const opportunityId = statusMatch[1];
@@ -2175,7 +2565,6 @@ export default {
         );
       }
 
-      // --- GET /api/v1/opportunities/:id (Get Opportunity Details Dashboard) ---
       const oppIdMatch = pathname.match(opportunityIdRegex);
       if (oppIdMatch && !pathname.includes('/status') && !pathname.includes('/job-description') && !pathname.includes('/ats-analysis') && !pathname.includes('/interviews') && method === 'GET') {
         const opportunityId = oppIdMatch[1];
@@ -2265,7 +2654,6 @@ export default {
           atsAnalysis.skill_gaps = parsedGaps;
         }
 
-        // Updated Integration Module mapping for upcoming/past interviews
         const { results: rawInterviews } = await env.DB.prepare(
           `SELECT id, round_number, round_title, status, interview_date, interviewer_names
            FROM interviews 
@@ -2506,7 +2894,6 @@ export default {
           return buildErrorResponse('NOT_FOUND', "The targeted parent resume does not exist or access rights are restricted.", 404, headers);
         }
 
-        // --- PUT /api/v1/resumes/:resumeId/versions/:versionId (Edit Version Metadata Block) ---
         if (method === 'PUT') {
           let body;
           try {
@@ -2596,7 +2983,6 @@ export default {
           );
         }
 
-        // --- GET /api/v1/resumes/:resumeId/versions/:versionId (Get Version Detail Block) ---
         if (method === 'GET') {
           const version = await env.DB.prepare(
             `SELECT id, resume_id, version_label, target_role, r2_object_key, is_active, created_at, ai_context
