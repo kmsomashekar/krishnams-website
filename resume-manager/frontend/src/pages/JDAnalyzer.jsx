@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 
 // --- SINGLE-PASS API RESPONSE PARSER ---
 async function handleResponse(res, defaultErrorText) {
@@ -28,6 +29,38 @@ async function fetchResumeDetail(id) {
   if (!id) return null;
   const res = await fetch(`/api/v1/resumes/${id}`);
   return handleResponse(res, 'Failed to load resume details.');
+}
+
+async function fetchCompanies() {
+  const res = await fetch('/api/v1/companies');
+  return handleResponse(res, 'Failed to load companies.');
+}
+
+async function createCompany(payload) {
+  const res = await fetch('/api/v1/companies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to create company record.');
+}
+
+async function createOpportunity(payload) {
+  const res = await fetch('/api/v1/opportunities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to save opportunity.');
+}
+
+async function createJobDescription({ opportunityId, rawText }) {
+  const res = await fetch(`/api/v1/opportunities/${opportunityId}/job-description`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw_text: rawText })
+  });
+  return handleResponse(res, 'Failed to attach job description.');
 }
 
 async function runJDAnalysis(payload) {
@@ -67,6 +100,15 @@ export default function JDAnalyzer() {
   const [chatQuestion, setChatQuestion] = useState('');
   const [chatError, setChatError] = useState(null);
 
+  // --- SAVE AS OPPORTUNITY INTERACTION STATES ---
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [saveCompanyText, setSaveCompanyText] = useState('');
+  const [saveJobTitle, setSaveJobTitle] = useState('');
+  const [saveJdUrl, setSaveJdUrl] = useState('');
+  const [saveLocalError, setSaveLocalError] = useState(null);
+  const [savedOpportunityId, setSavedOpportunityId] = useState(null);
+  const [partialOpportunityId, setPartialOpportunityId] = useState(null);
+
   // --- BASE QUERIES ---
   const { data: resumesData, isLoading: isResumesLoading } = useQuery({
     queryKey: ['jd-analyzer-resumes'],
@@ -80,6 +122,13 @@ export default function JDAnalyzer() {
     enabled: !!selectedResumeId
   });
   const versionsList = resumeDetail?.versions || [];
+
+  const { data: companiesData, refetch: refetchCompanies } = useQuery({
+    queryKey: ['jd-analyzer-companies'],
+    queryFn: fetchCompanies,
+    enabled: isSaveModalOpen
+  });
+  const companiesList = companiesData?.companies || [];
 
   // --- AUTO-SELECTION LOGIC ---
   useEffect(() => {
@@ -103,7 +152,7 @@ export default function JDAnalyzer() {
     }
   }, [versionsList]);
 
-  // --- FORM MODIFICATION TRIPPERS (CLEARING STALE ANALYSIS/CHAT) ---
+  // --- FORM MODIFICATION TRIPPERS (CLEARING STALE ANALYSIS/CHAT/SAVE STATUS) ---
   const handleResumeChange = (e) => {
     setSelectedResumeId(e.target.value);
     setSelectedVersionId('');
@@ -113,6 +162,8 @@ export default function JDAnalyzer() {
     setChatError(null);
     setValidationError(null);
     setServerError(null);
+    setSavedOpportunityId(null);
+    setPartialOpportunityId(null);
   };
 
   const handleVersionChange = (e) => {
@@ -123,6 +174,8 @@ export default function JDAnalyzer() {
     setChatError(null);
     setValidationError(null);
     setServerError(null);
+    setSavedOpportunityId(null);
+    setPartialOpportunityId(null);
   };
 
   const handleJdTextChange = (e) => {
@@ -134,6 +187,8 @@ export default function JDAnalyzer() {
       setChatError(null);
       setValidationError(null);
       setServerError(null);
+      setSavedOpportunityId(null);
+      setPartialOpportunityId(null);
     }
   };
 
@@ -149,6 +204,8 @@ export default function JDAnalyzer() {
     setChatMessages([]);
     setChatQuestion('');
     setChatError(null);
+    setSavedOpportunityId(null);
+    setPartialOpportunityId(null);
   };
 
   // --- STRUCTURED ANALYSIS MUTATION ---
@@ -160,6 +217,8 @@ export default function JDAnalyzer() {
       setChatMessages([]);
       setChatQuestion('');
       setChatError(null);
+      setSavedOpportunityId(null);
+      setPartialOpportunityId(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
     onError: (err) => {
@@ -191,6 +250,75 @@ export default function JDAnalyzer() {
     }
   });
 
+  // --- SAVE OPPORTUNITY DUAL MUTATION HANDLER WITH SYNCHRONOUS ERROR METADATA DISTINCTION ---
+  const saveOpportunityMutation = useMutation({
+    mutationFn: async (payload) => {
+      let targetOpportunityId = partialOpportunityId;
+
+      try {
+        // Step 1 & 2: Create Opportunity only if one was not already partially created
+        if (!targetOpportunityId) {
+          let targetCompanyId = null;
+          const matchName = payload.companyName.trim().toLowerCase();
+          
+          const existingCompany = companiesList.find(
+            c => c.name.trim().toLowerCase() === matchName
+          );
+
+          if (existingCompany) {
+            targetCompanyId = existingCompany.id;
+          } else {
+            const newCompany = await createCompany({ name: payload.companyName.trim() });
+            targetCompanyId = newCompany.id;
+            await refetchCompanies();
+          }
+
+          const newOpportunity = await createOpportunity({
+            company_id: targetCompanyId,
+            resume_version_id: selectedVersionId || null,
+            job_title: payload.jobTitle.trim(),
+            application_url: payload.jdUrl.trim() || undefined,
+            priority: 3,
+            date_identified: new Date().toISOString().split('T')[0]
+          });
+
+          targetOpportunityId = newOpportunity.id;
+        }
+
+        // Step 4: POST exact analyzed jdText to job-description endpoint
+        if (jdText.trim().length > 0) {
+          await createJobDescription({
+            opportunityId: targetOpportunityId,
+            rawText: jdText.trim()
+          });
+        }
+
+        return targetOpportunityId;
+      } catch (innerErr) {
+        // Distinguish whether failure occurred during opportunity creation or during subsequent JD attachment
+        const failedOpportunityId = targetOpportunityId;
+        const enhancedError = new Error(innerErr.message || 'Save error');
+        enhancedError.createdOpportunityId = failedOpportunityId;
+        throw enhancedError;
+      }
+    },
+    onSuccess: (opportunityId) => {
+      setSavedOpportunityId(opportunityId);
+      setPartialOpportunityId(null);
+      setIsSaveModalOpen(false);
+      setSaveLocalError(null);
+    },
+    onError: (err) => {
+      const createdId = err.createdOpportunityId;
+      if (createdId) {
+        setPartialOpportunityId(createdId);
+        setSaveLocalError("Opportunity was created, but the Job Description could not be attached.");
+      } else {
+        setSaveLocalError(err.message || 'Failed to save role to Opportunities system.');
+      }
+    }
+  });
+
   const handleSubmit = (e) => {
     e.preventDefault();
     setValidationError(null);
@@ -219,6 +347,36 @@ export default function JDAnalyzer() {
     });
   };
 
+  const handleOpenSaveModal = () => {
+    setSaveCompanyText(company || '');
+    setSaveJobTitle(jobTitle || '');
+    setSaveJdUrl(jdUrl || '');
+    setSaveLocalError(null);
+    setIsSaveModalOpen(true);
+  };
+
+  const handleExecuteSaveOpportunity = (e) => {
+    e.preventDefault();
+    setSaveLocalError(null);
+
+    if (!partialOpportunityId) {
+      if (!saveCompanyText.trim()) {
+        setSaveLocalError('Company Name is required.');
+        return;
+      }
+      if (!saveJobTitle.trim()) {
+        setSaveLocalError('Job Title is required.');
+        return;
+      }
+    }
+
+    saveOpportunityMutation.mutate({
+      companyName: saveCompanyText,
+      jobTitle: saveJobTitle,
+      jdUrl: saveJdUrl
+    });
+  };
+
   // --- SEND CHAT QUESTION ACTION ENGINE ---
   const executeAskQuestion = (questionText) => {
     if (chatMutation.isPending || analyzeMutation.isPending) return;
@@ -232,14 +390,12 @@ export default function JDAnalyzer() {
       return;
     }
 
-    // Limit tracking exchanges block to 10 rounds maximum (20 total system historical messages)
     const userMessageCount = chatMessages.filter(m => m.role === 'user').length;
     if (userMessageCount >= 10) {
       setChatError('Conversation limit reached for this analysis. Clear the workspace to start a new analysis.');
       return;
     }
 
-    // Map conversation array payload cleanly for backend contract expectations
     const historicalPayload = chatMessages.map(({ role, content }) => ({ role, content }));
 
     chatMutation.mutate({
@@ -248,17 +404,13 @@ export default function JDAnalyzer() {
       jd_text: jdText.trim(),
       analysis: analysisResult.analysis,
       messages: historicalPayload,
-      question: cleanMessageForPayload(cleanQuestion)
+      question: cleanQuestion
     });
   };
 
   const handleChatSubmit = (e) => {
     e.preventDefault();
     executeAskQuestion(chatQuestion);
-  };
-
-  const cleanMessageForPayload = (text) => {
-    return text.trim();
   };
 
   // --- FORMATTING TRANSLATIONS ---
@@ -318,7 +470,6 @@ export default function JDAnalyzer() {
     }
   };
 
-  // --- CHAT CONVENIENCE SUGGESTION CHIPS CONTROLS ---
   const quickQuestions = [
     { label: 'Biggest risks?', query: 'What are my biggest risks or weaknesses for this role?' },
     { label: 'Which gaps matter most?', query: 'Which gaps are most likely to matter in the hiring decision?' },
@@ -330,7 +481,7 @@ export default function JDAnalyzer() {
   const isConversationLimitReached = totalUserMessages >= 10;
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 relative">
       {/* Workspace Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">JD Analyzer</h1>
@@ -368,7 +519,7 @@ export default function JDAnalyzer() {
                 Select Resume *
               </label>
               <select
-                disabled={isResumesLoading || analyzeMutation.isPending || chatMutation.isPending}
+                disabled={isResumesLoading || analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                 value={selectedResumeId}
                 onChange={handleResumeChange}
                 className="w-full rounded border border-slate-300 px-3 py-2 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -385,7 +536,7 @@ export default function JDAnalyzer() {
                 Select Version *
               </label>
               <select
-                disabled={isVersionsLoading || !selectedResumeId || analyzeMutation.isPending || chatMutation.isPending}
+                disabled={isVersionsLoading || !selectedResumeId || analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                 value={selectedVersionId}
                 onChange={handleVersionChange}
                 className="w-full rounded border border-slate-300 px-3 py-2 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -407,7 +558,7 @@ export default function JDAnalyzer() {
                 <input
                   type="text"
                   placeholder="e.g. Acme Corp"
-                  disabled={analyzeMutation.isPending || chatMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -421,7 +572,7 @@ export default function JDAnalyzer() {
                 <input
                   type="text"
                   placeholder="e.g. Senior Security Director"
-                  disabled={analyzeMutation.isPending || chatMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                   value={jobTitle}
                   onChange={(e) => setJobTitle(e.target.value)}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -435,7 +586,7 @@ export default function JDAnalyzer() {
                 <input
                   type="url"
                   placeholder="https://jobs.example.com/spec"
-                  disabled={analyzeMutation.isPending || chatMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                   value={jdUrl}
                   onChange={(e) => setJdUrl(e.target.value)}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs focus:outline-indigo-500 disabled:bg-slate-50"
@@ -456,7 +607,7 @@ export default function JDAnalyzer() {
                 rows="10"
                 required
                 placeholder="Paste the complete job description here..."
-                disabled={analyzeMutation.isPending || chatMutation.isPending}
+                disabled={analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                 value={jdText}
                 onChange={handleJdTextChange}
                 maxLength={100000}
@@ -467,7 +618,7 @@ export default function JDAnalyzer() {
             <div className="pt-2 flex flex-col space-y-2">
               <button
                 type="submit"
-                disabled={analyzeMutation.isPending || chatMutation.isPending}
+                disabled={analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-60"
               >
                 {analyzeMutation.isPending ? 'Analyzing JD...' : 'Analyze JD'}
@@ -477,7 +628,7 @@ export default function JDAnalyzer() {
                 <button
                   type="button"
                   onClick={handleClearAnalysis}
-                  disabled={analyzeMutation.isPending || chatMutation.isPending}
+                  disabled={analyzeMutation.isPending || chatMutation.isPending || saveOpportunityMutation.isPending}
                   className="w-full px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
                 >
                   Clear Workspace
@@ -518,11 +669,37 @@ export default function JDAnalyzer() {
                   <span className="text-[10px] text-slate-400 block font-medium">AI-Estimated Match</span>
                 </div>
                 
-                <div className="text-center space-y-1">
+                <div className="text-center space-y-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Recommendation</span>
                   <span className={`inline-block px-3 py-1 text-xs font-bold tracking-wider uppercase border rounded ${getRecommendationClass(analysisResult.analysis.recommendation)}`}>
                     {getRecommendationLabel(analysisResult.analysis.recommendation)}
                   </span>
+                  
+                  {/* Save as Opportunity Strategic Workspace Action Anchor */}
+                  <div className="pt-1">
+                    {savedOpportunityId ? (
+                      <div className="flex flex-col items-center space-y-1">
+                        <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 border border-emerald-200 rounded shadow-sm">
+                          Saved as Opportunity
+                        </span>
+                        <Link
+                          to={`/opportunities/${savedOpportunityId}`}
+                          className="text-[10px] text-indigo-600 font-bold hover:underline"
+                        >
+                          View Opportunity →
+                        </Link>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleOpenSaveModal}
+                        disabled={saveOpportunityMutation.isPending}
+                        className="w-full inline-flex items-center justify-center px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-50"
+                      >
+                        {saveOpportunityMutation.isPending ? 'Saving...' : partialOpportunityId ? 'Retry JD Save' : 'Save as Opportunity'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="sm:border-l sm:border-slate-100 sm:pl-6 space-y-1">
@@ -627,9 +804,7 @@ export default function JDAnalyzer() {
                 )}
               </div>
 
-              {/* =======================================================
-                  MODULE: WORKSPACE CONVERSATIONAL INTERFACE (CHAT WORKSPACE)
-                  ======================================================= */}
+              {/* Chat Advisor Workspace Area */}
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
                 <div className="border-b border-slate-100 pb-2">
                   <h3 className="text-sm font-bold text-slate-900 tracking-tight">Ask About This Role</h3>
@@ -638,7 +813,6 @@ export default function JDAnalyzer() {
                   </p>
                 </div>
 
-                {/* Local Conversation Thread Frame */}
                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
                   {chatMessages.length === 0 && !chatMutation.isPending && (
                     <p className="text-slate-400 text-xs font-medium italic py-2">
@@ -661,7 +835,6 @@ export default function JDAnalyzer() {
                           {msg.content}
                         </div>
 
-                        {/* Advisor Metadata Attachment Display Context (Evidence, Badges & Cautions) */}
                         {!isUser && (
                           <div className="w-full space-y-2 mt-1.5 pl-1">
                             {msg.evidence_status && (
@@ -696,7 +869,6 @@ export default function JDAnalyzer() {
                     );
                   })}
 
-                  {/* Active Response Loading View */}
                   {chatMutation.isPending && (
                     <div className="flex flex-col space-y-1 items-start max-w-[80%]">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider animate-pulse">
@@ -712,14 +884,12 @@ export default function JDAnalyzer() {
                   )}
                 </div>
 
-                {/* Local Chat Operation Action Error Display */}
                 {chatError && (
                   <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded text-xs font-semibold shadow-sm">
                     {chatError}
                   </div>
                 )}
 
-                {/* Quick Question Suggestion Chips Deck */}
                 <div className="space-y-1.5 pt-2 border-t border-slate-100">
                   <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Suggested Questions</span>
                   <div className="flex flex-wrap gap-2">
@@ -737,7 +907,6 @@ export default function JDAnalyzer() {
                   </div>
                 </div>
 
-                {/* Chat Input Parameter Interface Controls Form */}
                 <form onSubmit={handleChatSubmit} className="pt-2 flex gap-2">
                   <div className="flex-1 relative">
                     <input
@@ -775,6 +944,104 @@ export default function JDAnalyzer() {
         </div>
 
       </div>
+
+      {/* =======================================================
+          MODULE: MODAL ENVELOPE CONFIGURATION (SAVE OPPORTUNITY FORM)
+          ======================================================= */}
+      {isSaveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {partialOpportunityId ? "Complete Opportunity Save" : "Save as Opportunity"}
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                  {partialOpportunityId ? "The Opportunity was created. Retry attaching the Job Description." : "Add this role to Opportunities for tracking."}
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsSaveModalOpen(false)}
+                disabled={saveOpportunityMutation.isPending}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1 rounded hover:bg-slate-200 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteSaveOpportunity} className="p-5 space-y-4 text-xs font-medium">
+              {saveLocalError && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded text-[11px] font-semibold">
+                  {saveLocalError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Company Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Acme Corporation"
+                  disabled={saveOpportunityMutation.isPending || Boolean(partialOpportunityId)}
+                  value={saveCompanyText}
+                  onChange={(e) => setSaveCompanyText(e.target.value)}
+                  className="w-full rounded border border-slate-300 px-3 py-2 focus:outline-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Job Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Senior Security Engineer"
+                  disabled={saveOpportunityMutation.isPending || Boolean(partialOpportunityId)}
+                  value={saveJobTitle}
+                  onChange={(e) => setSaveJobTitle(e.target.value)}
+                  className="w-full rounded border border-slate-300 px-3 py-2 focus:outline-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Job Spec URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://example.com/jobs/spec"
+                  disabled={saveOpportunityMutation.isPending || Boolean(partialOpportunityId)}
+                  value={saveJdUrl}
+                  onChange={(e) => setSaveJdUrl(e.target.value)}
+                  className="w-full rounded border border-slate-300 px-3 py-2 focus:outline-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSaveModalOpen(false)}
+                  disabled={saveOpportunityMutation.isPending}
+                  className="px-4 py-2 font-bold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saveOpportunityMutation.isPending}
+                  className="px-4 py-2 font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm transition-colors disabled:opacity-50"
+                >
+                  {saveOpportunityMutation.isPending ? 'Saving...' : partialOpportunityId ? 'Retry JD Save' : 'Save Opportunity'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
