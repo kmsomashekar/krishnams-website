@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 
 export const navigationItems = [
   { name: 'Dashboard', path: '/dashboard' },
+  { name: 'JD Analyzer', path: '/jd-analyzer' },
   { name: 'Opportunities', path: '/opportunities' },
   { name: 'Resumes', path: '/resumes' },
   { name: 'Interviews', path: '/interviews' },

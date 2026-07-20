@@ -10,6 +10,7 @@ import OpportunityDetail from './pages/OpportunityDetail.jsx';
 import Resumes from './pages/Resumes.jsx';
 import Interviews from './pages/Interviews.jsx';
 import CoverLetters from './pages/CoverLetters.jsx';
+import JDAnalyzer from './pages/JDAnalyzer.jsx';
 
 export default function App() {
   return (
@@ -20,6 +21,8 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
             <Route path="/dashboard" element={<Dashboard />} />
+
+            <Route path="/jd-analyzer" element={<JDAnalyzer />} />
 
             <Route path="/opportunities" element={<Opportunities />} />
 
