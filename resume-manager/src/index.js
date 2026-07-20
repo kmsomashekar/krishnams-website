@@ -1,8 +1,8 @@
 // =============================================================================
 // File: resume-manager/src/index.js
-// Approved Phase: Stage 1 — Task 1.11C (Owner Provisioning + Password Auth + Sessions)
+// Approved Phase: Stage 1 — Task 1.11D (TOTP / Microsoft Authenticator Foundation)
 // Target Platform: Cloudflare Workers + D1 (SQLite)
-// Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions
+// Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions & TOTP
 // =============================================================================
 
 // --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
@@ -383,7 +383,7 @@ async function callAIProviderWithJDChat(aiContext, jdText, initialAnalysis, mess
 }
 
 // =============================================================================
-// --- TASK 1.11C CRYPTOGRAPHIC & AUTHENTICATION UTILITIES ---
+// --- TASK 1.11C & 1.11D CRYPTOGRAPHIC & AUTHENTICATION UTILITIES ---
 // =============================================================================
 
 async function hashPassword(password, saltHex = null) {
@@ -540,7 +540,6 @@ async function getAuthenticatedUser(request, env) {
   };
 }
 
-// Timing-resistant constant-time secret comparison via SHA-256 digest
 async function secureCompare(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   try {
@@ -558,6 +557,182 @@ async function secureCompare(a, b) {
   } catch (e) {
     return false;
   }
+}
+
+// --- NATIVE BASE32 CODECS (RFC 4648) ---
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32Encode(uint8Array) {
+  let output = "";
+  let bits = 0;
+  let value = 0;
+
+  for (let i = 0; i < uint8Array.length; i++) {
+    value = (value << 8) | uint8Array[i];
+    bits += 8;
+
+    while (bits >= 5) {
+      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+
+  if (bits > 0) {
+    output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+  }
+
+  return output;
+}
+
+function base32Decode(base32String) {
+  const cleaned = base32String.replace(/=+$/, "").toUpperCase();
+  let bits = 0;
+  let value = 0;
+  const output = [];
+
+  for (let i = 0; i < cleaned.length; i++) {
+    const char = cleaned[i];
+    const val = BASE32_ALPHABET.indexOf(char);
+    if (val === -1) {
+      throw new Error("Invalid character in Base32 string.");
+    }
+    value = (value << 5) | val;
+    bits += 5;
+
+    if (bits >= 8) {
+      output.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+
+  return new Uint8Array(output);
+}
+
+// --- AES-256-GCM TOTP ENCRYPTION UTILITIES ---
+function validateTotpEncryptionKey(env) {
+  const keyHex = env.TOTP_ENCRYPTION_KEY;
+  if (!keyHex || typeof keyHex !== 'string' || keyHex.length !== 64 || !/^[0-9a-fA-F]+$/.test(keyHex)) {
+    throw new Error("Server configuration error: TOTP_ENCRYPTION_KEY must be exactly 64 hexadecimal characters.");
+  }
+  return keyHex;
+}
+
+async function getAesKey(keyHex) {
+  const keyBytes = new Uint8Array(keyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  return await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptTotpSecret(plaintextSecret, env) {
+  const keyHex = validateTotpEncryptionKey(env);
+  const cryptoKey = await getAesKey(keyHex);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const encoded = enc.encode(plaintextSecret);
+
+  const ciphertextBuffer = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv },
+    cryptoKey,
+    encoded
+  );
+
+  const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
+  const cipherHex = Array.from(new Uint8Array(ciphertextBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return `v1$${ivHex}$${cipherHex}`;
+}
+
+async function decryptTotpSecret(encryptedString, env) {
+  const keyHex = validateTotpEncryptionKey(env);
+  const parts = encryptedString.split('$');
+  if (parts.length !== 3 || parts[0] !== 'v1') {
+    throw new Error("Malformed encrypted TOTP format.");
+  }
+  const ivHex = parts[1];
+  const cipherHex = parts[2];
+
+  if (!ivHex || ivHex.length !== 24 || !/^[0-9a-fA-F]+$/.test(ivHex)) {
+    throw new Error("Invalid IV in encrypted TOTP data.");
+  }
+  if (!cipherHex || !/^[0-9a-fA-F]+$/.test(cipherHex)) {
+    throw new Error("Invalid ciphertext in encrypted TOTP data.");
+  }
+
+  const cryptoKey = await getAesKey(keyHex);
+  const iv = new Uint8Array(ivHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  const ciphertext = new Uint8Array(cipherHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+  const decryptedBuffer = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: iv },
+    cryptoKey,
+    ciphertext
+  );
+
+  const dec = new TextDecoder();
+  return dec.decode(decryptedBuffer);
+}
+
+// --- RFC 6238 TOTP ENGINE ---
+async function generateTotpCode(base32Secret, timeStep) {
+  const secretBytes = base32Decode(base32Secret);
+  const counterBuffer = new ArrayBuffer(8);
+  const view = new DataView(counterBuffer);
+  const high = Math.floor(timeStep / 0x100000000);
+  const low = timeStep >>> 0;
+  view.setUint32(0, high, false);
+  view.setUint32(4, low, false);
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: { name: "SHA-1" } },
+    false,
+    ["sign"]
+  );
+
+  const hmacResult = await crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    counterBuffer
+  );
+
+  const hmacArray = new Uint8Array(hmacResult);
+  const offset = hmacArray[hmacArray.length - 1] & 0x0f;
+  const binary =
+    ((hmacArray[offset] & 0x7f) << 24) |
+    ((hmacArray[offset + 1] & 0xff) << 16) |
+    ((hmacArray[offset + 2] & 0xff) << 8) |
+    (hmacArray[offset + 3] & 0xff);
+
+  const otp = binary % 1000000;
+  return otp.toString().padStart(6, '0');
+}
+
+async function verifyTotpCode(base32Secret, submittedCode) {
+  if (!submittedCode || typeof submittedCode !== 'string' || !/^\d{6}$/.test(submittedCode)) {
+    return false;
+  }
+
+  const currentTimeSeconds = Math.floor(Date.now() / 1000);
+  const currentStep = Math.floor(currentTimeSeconds / 30);
+
+  const steps = [currentStep - 1, currentStep, currentStep + 1];
+  let matched = false;
+
+  for (const step of steps) {
+    const expectedCode = await generateTotpCode(base32Secret, step);
+    if (await secureCompare(expectedCode, submittedCode)) {
+      matched = true;
+      break;
+    }
+  }
+
+  return matched;
 }
 
 function buildCorsHeaders(request, env) {
@@ -578,7 +753,6 @@ function buildCorsHeaders(request, env) {
     }
   }
 
-  // Fail closed if origin is present in production/dev but unauthorized
   if (origin && !isAuthorized) {
     return null;
   }
@@ -666,7 +840,7 @@ export default {
       }
 
       // =======================================================================
-      // --- TASK 1.11C AUTHENTICATION ENDPOINTS ---
+      // --- TASK 1.11C & 1.11D AUTHENTICATION & TOTP ENDPOINTS ---
       // =======================================================================
 
       // --- POST /api/v1/auth/bootstrap-owner ---
@@ -758,7 +932,7 @@ export default {
         const tokenHash = await hashSessionToken(rawToken);
         const now = new Date();
         const nowISO = now.toISOString();
-        const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)).toISOString(); // 24 hours absolute
+        const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)).toISOString();
 
         await env.DB.prepare(
           `INSERT INTO sessions (token_hash, user_id, created_at, last_activity_at, expires_at)
@@ -852,6 +1026,200 @@ export default {
             }
           }),
           { status: 200, headers: responseHeaders }
+        );
+      }
+
+      // --- TOTP ENDPOINTS (Task 1.11D: Require Real Authenticated Session) ---
+      if (pathname === '/api/v1/auth/totp/status' && method === 'GET') {
+        if (!sessionUser) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+
+        const totpRow = await env.DB.prepare(
+          `SELECT is_verified FROM totp_secrets WHERE user_id = ?`
+        )
+        .bind(sessionUser.id)
+        .first();
+
+        let enabled = false;
+        let pending = false;
+
+        if (totpRow) {
+          if (totpRow.is_verified === 1) {
+            enabled = true;
+          } else {
+            pending = true;
+          }
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              enabled,
+              pending
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
+
+      if (pathname === '/api/v1/auth/totp/setup' && method === 'POST') {
+        if (!sessionUser) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+
+        try {
+          validateTotpEncryptionKey(env);
+        } catch (e) {
+          return buildErrorResponse('INTERNAL_SERVER_ERROR', "Server encryption configuration error.", 500, headers);
+        }
+
+        const existingTotp = await env.DB.prepare(
+          `SELECT is_verified FROM totp_secrets WHERE user_id = ?`
+        )
+        .bind(sessionUser.id)
+        .first();
+
+        if (existingTotp && existingTotp.is_verified === 1) {
+          return buildErrorResponse('CONFLICT', "TOTP is already verified and enabled. Reset is not permitted via setup.", 409, headers);
+        }
+
+        const secretBytes = crypto.getRandomValues(new Uint8Array(20));
+        const base32Secret = base32Encode(secretBytes);
+        const encryptedSecret = await encryptTotpSecret(base32Secret, env);
+        const now = new Date().toISOString();
+
+        if (existingTotp) {
+          await env.DB.prepare(
+            `UPDATE totp_secrets 
+             SET encrypted_secret = ?, is_verified = 0, verified_at = NULL, updated_at = ? 
+             WHERE user_id = ?`
+          )
+          .bind(encryptedSecret, now, sessionUser.id)
+          .run();
+        } else {
+          await env.DB.prepare(
+            `INSERT INTO totp_secrets (user_id, encrypted_secret, is_verified, created_at, updated_at)
+             VALUES (?, ?, 0, ?, ?)`
+          )
+          .bind(sessionUser.id, encryptedSecret, now, now)
+          .run();
+        }
+
+        const encodedEmail = encodeURIComponent(sessionUser.email);
+        const otpauthUri = `otpauth://totp/Resume%20Manager:${encodedEmail}?secret=${base32Secret}&issuer=Resume%20Manager&algorithm=SHA1&digits=6&period=30`;
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              secret: base32Secret,
+              otpauth_uri: otpauthUri,
+              issuer: "Resume Manager",
+              account: sessionUser.email,
+              algorithm: "SHA1",
+              digits: 6,
+              period: 30
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
+
+      if (pathname === '/api/v1/auth/totp/setup' && method === 'DELETE') {
+        if (!sessionUser) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+
+        const existingTotp = await env.DB.prepare(
+          `SELECT is_verified FROM totp_secrets WHERE user_id = ?`
+        )
+        .bind(sessionUser.id)
+        .first();
+
+        if (!existingTotp) {
+          return new Response(
+            JSON.stringify({ success: true, data: { deleted: true } }),
+            { status: 200, headers }
+          );
+        }
+
+        if (existingTotp.is_verified === 1) {
+          return buildErrorResponse('CONFLICT', "Cannot delete a verified TOTP enrollment.", 409, headers);
+        }
+
+        await env.DB.prepare(`DELETE FROM totp_secrets WHERE user_id = ?`)
+          .bind(sessionUser.id)
+          .run();
+
+        return new Response(
+          JSON.stringify({ success: true, data: { deleted: true } }),
+          { status: 200, headers }
+        );
+      }
+
+      if (pathname === '/api/v1/auth/totp/verify' && method === 'POST') {
+        if (!sessionUser) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_REQUEST', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { code } = body;
+        if (!code || typeof code !== 'string' || !/^\d{6}$/.test(code.trim())) {
+          return buildErrorResponse('INVALID_REQUEST', "A valid 6-digit numeric TOTP code is required.", 400, headers);
+        }
+
+        const totpRow = await env.DB.prepare(
+          `SELECT encrypted_secret, is_verified FROM totp_secrets WHERE user_id = ?`
+        )
+        .bind(sessionUser.id)
+        .first();
+
+        if (!totpRow) {
+          return buildErrorResponse('NOT_FOUND', "No pending TOTP enrollment found. Please initialize setup first.", 404, headers);
+        }
+
+        if (totpRow.is_verified === 1) {
+          return buildErrorResponse('CONFLICT', "TOTP is already verified.", 409, headers);
+        }
+
+        let plaintextSecret;
+        try {
+          plaintextSecret = await decryptTotpSecret(totpRow.encrypted_secret, env);
+        } catch (e) {
+          return buildErrorResponse('INTERNAL_SERVER_ERROR', "Failed to decrypt verification context.", 500, headers);
+        }
+
+        const isValid = await verifyTotpCode(plaintextSecret, code.trim());
+        if (!isValid) {
+          return buildErrorResponse('INVALID_CODE', "Invalid TOTP verification code.", 400, headers);
+        }
+
+        const now = new Date().toISOString();
+        await env.DB.prepare(
+          `UPDATE totp_secrets 
+           SET is_verified = 1, verified_at = ?, updated_at = ? 
+           WHERE user_id = ? AND is_verified = 0`
+        )
+        .bind(now, now, sessionUser.id)
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              enabled: true,
+              pending: false
+            }
+          }),
+          { status: 200, headers }
         );
       }
 
