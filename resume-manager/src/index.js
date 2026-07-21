@@ -511,7 +511,8 @@ async function getAuthenticatedUser(request, env) {
   if (!rawToken) return null;
 
   const tokenHash = await hashSessionToken(rawToken);
-  const nowISO = new Date().toISOString();
+  const now = new Date();
+  const nowISO = now.toISOString();
 
   const sessionRecord = await env.DB.prepare(
     `SELECT s.user_id, s.expires_at, u.id, u.email, u.role, u.status, u.is_owner 
@@ -531,6 +532,19 @@ async function getAuthenticatedUser(request, env) {
   if (sessionRecord.expires_at < nowISO) {
     await env.DB.prepare(`DELETE FROM sessions WHERE token_hash = ?`).bind(tokenHash).run().catch(() => {});
     return null;
+  }
+
+  const expiresTime = new Date(sessionRecord.expires_at).getTime();
+  const remainingMs = expiresTime - now.getTime();
+  const slideThresholdMs = 50 * 60 * 1000;
+
+  if (remainingMs < slideThresholdMs) {
+    const newExpiresAt = new Date(now.getTime() + (60 * 60 * 1000)).toISOString();
+    await env.DB.prepare(
+      `UPDATE sessions SET last_activity_at = ?, expires_at = ? WHERE token_hash = ?`
+    )
+    .bind(nowISO, newExpiresAt, tokenHash)
+    .run();
   }
 
   return {
@@ -1048,7 +1062,7 @@ export default {
         const tokenHash = await hashSessionToken(rawToken);
         const now = new Date();
         const nowISO = now.toISOString();
-        const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)).toISOString();
+        const expiresAt = new Date(now.getTime() + (60 * 60 * 1000)).toISOString();
 
         await env.DB.prepare(
           `INSERT INTO sessions (token_hash, user_id, created_at, last_activity_at, expires_at)
@@ -1177,7 +1191,7 @@ export default {
         const tokenHash = await hashSessionToken(rawToken);
         const now = new Date();
         const nowISOString = now.toISOString();
-        const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)).toISOString();
+        const expiresAt = new Date(now.getTime() + (60 * 60 * 1000)).toISOString();
 
         await env.DB.prepare(
           `INSERT INTO sessions (token_hash, user_id, created_at, last_activity_at, expires_at)

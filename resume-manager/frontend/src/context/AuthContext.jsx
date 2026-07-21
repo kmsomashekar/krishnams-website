@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const idleTimerRef = useRef(null);
 
   useEffect(() => {
     async function checkSession() {
@@ -12,6 +13,15 @@ export function AuthProvider({ children }) {
         const response = await fetch('/api/v1/auth/session', {
           credentials: 'include'
         });
+
+        if (response.status === 401) {
+          setUser(null);
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
+          return;
+        }
+
         const json = await response.json();
         if (json.success && json.data && json.data.authenticated && json.data.user) {
           setUser(json.data.user);
@@ -38,7 +48,7 @@ export function AuthProvider({ children }) {
     if (!response.ok || !json.success) {
       throw new Error(json.error?.message || 'Login failed');
     }
-    
+
     // Check if MFA challenge is required
     if (json.data && json.data.mfa_required) {
       return json.data;
@@ -78,6 +88,49 @@ export function AuthProvider({ children }) {
     }
     setUser(null);
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const INACTIVITY_LIMIT_MS = 60 * 60 * 1000;
+
+    const handleIdleTimeout = async () => {
+      try {
+        await logout();
+      } catch (err) {
+        setUser(null);
+      } finally {
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+      }
+    };
+
+    const resetIdleTimer = () => {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+      }
+      idleTimerRef.current = setTimeout(handleIdleTimeout, INACTIVITY_LIMIT_MS);
+    };
+
+    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetIdleTimer, { passive: true });
+    });
+
+    resetIdleTimer();
+
+    return () => {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetIdleTimer);
+      });
+    };
+  }, [user]);
 
   const value = {
     user,
