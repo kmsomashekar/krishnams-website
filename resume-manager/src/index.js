@@ -1793,19 +1793,68 @@ export default {
         if (!userId) {
           return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
         }
+
+        const periodParam = url.searchParams.get('period') || 'this_month';
+        const validPeriods = ['this_month', 'last_month', 'last_30', 'last_90', 'all_time'];
+        if (!validPeriods.includes(periodParam)) {
+          return buildErrorResponse('INVALID_INPUT', "Invalid or unsupported period value provided.", 400, headers);
+        }
+
         const now = new Date();
         const year = now.getUTCFullYear();
-        const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-        const monthPrefix = `${year}-${month}`;
+        const month = now.getUTCMonth();
+        const day = now.getUTCDate();
 
-        const { results } = await env.DB.prepare(
-          `SELECT channel, COUNT(*) as count 
-           FROM outreach_logs 
-           WHERE user_id = ? AND contact_date LIKE ? 
-           GROUP BY channel`
-        )
-        .bind(userId, `${monthPrefix}%`)
-        .all();
+        const pad = (n) => String(n).padStart(2, '0');
+        const formatDate = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+
+        let startDate = null;
+        let endDate = null;
+        let periodLabel = 'This Month';
+
+        if (periodParam === 'this_month') {
+          const start = new Date(Date.UTC(year, month, 1));
+          const end = new Date(Date.UTC(year, month, day));
+          startDate = formatDate(start);
+          endDate = formatDate(end);
+          periodLabel = 'This Month';
+        } else if (periodParam === 'last_month') {
+          const start = new Date(Date.UTC(year, month - 1, 1));
+          const end = new Date(Date.UTC(year, month, 0));
+          startDate = formatDate(start);
+          endDate = formatDate(end);
+          periodLabel = 'Last Month';
+        } else if (periodParam === 'last_30') {
+          const end = new Date(Date.UTC(year, month, day));
+          const start = new Date(Date.UTC(year, month, day));
+          start.setUTCDate(start.getUTCDate() - 29);
+          startDate = formatDate(start);
+          endDate = formatDate(end);
+          periodLabel = 'Last 30 Days';
+        } else if (periodParam === 'last_90') {
+          const end = new Date(Date.UTC(year, month, day));
+          const start = new Date(Date.UTC(year, month, day));
+          start.setUTCDate(start.getUTCDate() - 89);
+          startDate = formatDate(start);
+          endDate = formatDate(end);
+          periodLabel = 'Last 90 Days';
+        } else if (periodParam === 'all_time') {
+          periodLabel = 'All Time';
+        }
+
+        let query = `SELECT channel, COUNT(*) as count FROM outreach_logs WHERE user_id = ?`;
+        let bindParams = [userId];
+
+        if (periodParam !== 'all_time' && startDate && endDate) {
+          query += ` AND contact_date >= ? AND contact_date <= ?`;
+          bindParams.push(startDate, endDate);
+        }
+
+        query += ` GROUP BY channel`;
+
+        const { results } = await env.DB.prepare(query)
+          .bind(...bindParams)
+          .all();
 
         const channelBreakdown = {
           LINKEDIN: 0,
@@ -1830,7 +1879,8 @@ export default {
           JSON.stringify({
             success: true,
             data: {
-              year_month: monthPrefix,
+              period: periodParam,
+              period_label: periodLabel,
               total_people_contacted: totalPeopleContacted,
               breakdown: channelBreakdown
             }

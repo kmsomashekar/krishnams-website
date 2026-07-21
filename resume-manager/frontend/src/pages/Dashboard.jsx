@@ -1,8 +1,51 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 const BASE_URL = '';
+
+// Helper to get UTC-safe period boundary start/end date strings (YYYY-MM-DD)
+function getPeriodBounds(period) {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const day = now.getUTCDate();
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const formatDate = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+
+  switch (period) {
+    case 'last_month': {
+      const start = new Date(Date.UTC(year, month - 1, 1));
+      const end = new Date(Date.UTC(year, month, 0));
+      return { start: formatDate(start), end: formatDate(end) };
+    }
+    case 'last_30': {
+      const end = new Date(Date.UTC(year, month, day));
+      const start = new Date(Date.UTC(year, month, day));
+      start.setUTCDate(start.getUTCDate() - 29);
+      return { start: formatDate(start), end: formatDate(end) };
+    }
+    case 'last_90': {
+      const end = new Date(Date.UTC(year, month, day));
+      const start = new Date(Date.UTC(year, month, day));
+      start.setUTCDate(start.getUTCDate() - 89);
+      return { start: formatDate(start), end: formatDate(end) };
+    }
+    case 'this_month':
+    default: {
+      const start = new Date(Date.UTC(year, month, 1));
+      const end = new Date(Date.UTC(year, month, day));
+      return { start: formatDate(start), end: formatDate(end) };
+    }
+  }
+}
+
+function isDateInRange(dateStr, startStr, endStr) {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const clean = dateStr.split('T')[0];
+  return clean >= startStr && clean <= endStr;
+}
 
 // Fetch the main list of opportunities
 async function fetchOpportunities() {
@@ -31,9 +74,9 @@ async function fetchOpportunityDetail(id) {
   return body?.data || null;
 }
 
-// Fetch current-month outreach summary
-async function fetchOutreachSummary() {
-  const res = await fetch(`${BASE_URL}/api/v1/outreach/summary`);
+// Fetch outreach summary based on selected period
+async function fetchOutreachSummary(period) {
+  const res = await fetch(`${BASE_URL}/api/v1/outreach/summary?period=${encodeURIComponent(period)}`);
   if (!res.ok) {
     throw new Error('Failed to load outreach summary');
   }
@@ -41,10 +84,12 @@ async function fetchOutreachSummary() {
   if (!body?.success) {
     throw new Error(body?.error?.message || 'Failed to load outreach summary');
   }
-  return body?.data || { total_people_contacted: 0, breakdown: {} };
+  return body?.data || { total_people_contacted: 0, breakdown: {}, period_label: 'This month' };
 }
 
 export default function Dashboard() {
+  const [period, setPeriod] = useState('this_month');
+
   // 1. Fetch main opportunities index
   const {
     data: opportunities = [],
@@ -56,13 +101,13 @@ export default function Dashboard() {
     queryFn: fetchOpportunities
   });
 
-  // Fetch outreach summary metrics
+  // Fetch outreach summary metrics scoped by period
   const {
-    data: outreachSummary = { total_people_contacted: 0, breakdown: {} },
+    data: outreachSummary = { total_people_contacted: 0, breakdown: {}, period_label: 'This month' },
     isLoading: isOutreachLoading
   } = useQuery({
-    queryKey: ['outreach-summary'],
-    queryFn: fetchOutreachSummary
+    queryKey: ['outreach-summary', period],
+    queryFn: () => fetchOutreachSummary(period)
   });
 
   // Extract stable array of IDs for the details query key
@@ -118,12 +163,20 @@ export default function Dashboard() {
     );
   }
 
+  // --- CALCULATE PERIOD BOUNDS FOR FILTERING ---
+  const bounds = period !== 'all_time' ? getPeriodBounds(period) : null;
+
   // --- CALCULATE METRICS ---
   const totalOpportunities = opportunities.length;
 
-  // Calculated using only "APPLIED" status for now. 
-  // Can be expanded later when the complete backend status enum is confirmed.
-  const totalApplications = opportunities.filter(item => item.status === 'APPLIED').length;
+  // Jobs Applied filtering logic:
+  // - For All Time: count all opportunities with status === 'APPLIED', even if date_applied is null.
+  // - For period options: count only opportunities with status === 'APPLIED' AND a valid date_applied within the selected period.
+  const totalApplications = opportunities.filter(item => {
+    if (item.status !== 'APPLIED') return false;
+    if (period === 'all_time') return true;
+    return item.date_applied && bounds && isDateInRange(item.date_applied, bounds.start, bounds.end);
+  }).length;
 
   let totalInterviews = 0;
   let atsScoreSum = 0;
@@ -135,13 +188,22 @@ export default function Dashboard() {
     if (!detail) return;
 
     if (Array.isArray(detail.interviews)) {
-      totalInterviews += detail.interviews.length;
       detail.interviews.forEach(interview => {
+        // Add all interviews to allInterviews regardless of period (for Upcoming Interviews sidebar)
         allInterviews.push({
           ...interview,
           companyName: detail.company?.name || item.company_name || 'Unknown Company',
           jobTitle: detail.job_title || item.job_title || 'Untitled Position'
         });
+
+        // Increment totalInterviews KPI based on period filtering
+        if (period === 'all_time') {
+          totalInterviews += 1;
+        } else {
+          if (interview.interview_date && bounds && isDateInRange(interview.interview_date, bounds.start, bounds.end)) {
+            totalInterviews += 1;
+          }
+        }
       });
     }
 
@@ -169,10 +231,29 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
-        <p className="text-slate-500 text-sm mt-1">Overview of your job search activity</p>
+      {/* Header with Period Filter */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
+          <p className="text-slate-500 text-sm mt-1">Overview of your job search activity</p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <label htmlFor="period-select" className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Period:
+          </label>
+          <select
+            id="period-select"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            className="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 font-medium"
+          >
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="last_30">Last 30 Days</option>
+            <option value="last_90">Last 90 Days</option>
+            <option value="all_time">All Time</option>
+          </select>
+        </div>
       </div>
 
       {/* KPI Cards Grid */}
@@ -190,7 +271,7 @@ export default function Dashboard() {
           <div className="text-3xl font-bold text-slate-900 mt-2">
             {isOutreachLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : outreachSummary.total_people_contacted}
           </div>
-          <div className="text-[11px] text-slate-500 font-medium mt-1">This month</div>
+          <div className="text-[11px] text-slate-500 font-medium mt-1">{outreachSummary.period_label}</div>
           <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
             <span>LinkedIn: {outreachSummary.breakdown?.LINKEDIN || 0}</span>
             <span>WhatsApp: {outreachSummary.breakdown?.WHATSAPP || 0}</span>
