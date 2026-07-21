@@ -2,22 +2,51 @@ name = "resume-manager-dev"
 main = "src/index.js"
 compatibility_date = "2026-07-18"
 
-# Static assets configuration mapping directly to the isolated public UI workspace
+# Default/dev static assets.
+# Local React development continues to run separately through Vite on port 3000.
 [assets]
 directory = "./public"
 binding = "ASSETS"
 
-# Development explicit environment profiles block
+# ---------------------------------------------------------------------------
+# DEVELOPMENT
+# ---------------------------------------------------------------------------
+
 [env.dev]
 vars = { ENVIRONMENT = "development" }
 
-# Unchanged database binding placeholder for Cloudflare D1
 [[env.dev.d1_databases]]
 binding = "DB"
 database_name = "resume-manager-dev"
 database_id = "YOUR_DEV_D1_DATABASE_ID_PLACEHOLDER"
 
-# Unchanged object storage binding placeholder for private Cloudflare R2
 [[env.dev.r2_buckets]]
 binding = "BUCKET"
 bucket_name = "resume-manager-dev"
+
+# ---------------------------------------------------------------------------
+# PRODUCTION
+# ---------------------------------------------------------------------------
+
+[env.prod]
+name = "resume-manager-prod"
+vars = { ENVIRONMENT = "production" }
+
+routes = [
+  { pattern = "career.krishnams.com", custom_domain = true }
+]
+
+# Production serves the accepted React Phase 1 build.
+[env.prod.assets]
+directory = "./frontend/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[env.prod.d1_databases]]
+binding = "DB"
+database_name = "resume-manager-prod"
+database_id = "583cc1da-6c72-4ad2-b9fd-15e483c1159f"
+
+[[env.prod.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "resume-manager-prod"

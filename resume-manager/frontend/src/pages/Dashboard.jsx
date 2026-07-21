@@ -57,7 +57,7 @@ async function fetchOpportunities() {
   if (!body?.success) {
     throw new Error(body?.message || 'Failed to load opportunities');
   }
-  return body?.data?.opportunities || [];
+  return body?.data || { opportunities: [] };
 }
 
 // Fetch details for a specific opportunity
@@ -92,14 +92,18 @@ export default function Dashboard() {
 
   // 1. Fetch main opportunities index
   const {
-    data: opportunities = [],
-    isLoading: isListLoading,
-    isError: isListError,
-    error: listError
-  } = useQuery({
-    queryKey: ['opportunities'],
-    queryFn: fetchOpportunities
-  });
+  data: opportunityData,
+  isLoading: isListLoading,
+  isError: isListError,
+  error: listError
+} = useQuery({
+  queryKey: ['opportunities'],
+  queryFn: fetchOpportunities
+});
+
+const opportunities = Array.isArray(opportunityData?.opportunities)
+  ? opportunityData.opportunities
+  : [];
 
   // Fetch outreach summary metrics scoped by period
   const {
