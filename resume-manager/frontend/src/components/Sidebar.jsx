@@ -5,6 +5,7 @@ export const navigationItems = [
   { name: 'Dashboard', path: '/dashboard' },
   { name: 'JD Analyzer', path: '/jd-analyzer' },
   { name: 'Opportunities', path: '/opportunities' },
+  { name: 'Outreach', path: '/outreach' },
   { name: 'Resumes', path: '/resumes' },
   { name: 'Interviews', path: '/interviews' },
   { name: 'Cover Letters', path: '/cover-letters' },

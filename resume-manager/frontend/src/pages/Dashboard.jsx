@@ -31,6 +31,19 @@ async function fetchOpportunityDetail(id) {
   return body?.data || null;
 }
 
+// Fetch current-month outreach summary
+async function fetchOutreachSummary() {
+  const res = await fetch(`${BASE_URL}/api/v1/outreach/summary`);
+  if (!res.ok) {
+    throw new Error('Failed to load outreach summary');
+  }
+  const body = await res.json();
+  if (!body?.success) {
+    throw new Error(body?.error?.message || 'Failed to load outreach summary');
+  }
+  return body?.data || { total_people_contacted: 0, breakdown: {} };
+}
+
 export default function Dashboard() {
   // 1. Fetch main opportunities index
   const {
@@ -41,6 +54,15 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ['opportunities'],
     queryFn: fetchOpportunities
+  });
+
+  // Fetch outreach summary metrics
+  const {
+    data: outreachSummary = { total_people_contacted: 0, breakdown: {} },
+    isLoading: isOutreachLoading
+  } = useQuery({
+    queryKey: ['outreach-summary'],
+    queryFn: fetchOutreachSummary
   });
 
   // Extract stable array of IDs for the details query key
@@ -154,14 +176,29 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
         <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Total Opportunities</div>
           <div className="text-3xl font-bold text-slate-900 mt-2">{totalOpportunities}</div>
         </div>
         <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
-          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Applications</div>
+          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Jobs Applied</div>
           <div className="text-3xl font-bold text-slate-900 mt-2">{totalApplications}</div>
+        </div>
+        <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
+          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">People Contacted</div>
+          <div className="text-3xl font-bold text-slate-900 mt-2">
+            {isOutreachLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : outreachSummary.total_people_contacted}
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium mt-1">This month</div>
+          <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+            <span>LinkedIn: {outreachSummary.breakdown?.LINKEDIN || 0}</span>
+            <span>WhatsApp: {outreachSummary.breakdown?.WHATSAPP || 0}</span>
+            <span>Email: {outreachSummary.breakdown?.EMAIL || 0}</span>
+            <span>Phone: {outreachSummary.breakdown?.PHONE || 0}</span>
+            <span>Referral: {outreachSummary.breakdown?.REFERRAL || 0}</span>
+            <span>Other: {outreachSummary.breakdown?.OTHER || 0}</span>
+          </div>
         </div>
         <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Interviews</div>

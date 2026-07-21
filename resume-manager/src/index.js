@@ -1763,6 +1763,294 @@ export default {
       const coverLetterRootPattern = '/api/v1/cover-letters';
       const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
 
+      // =======================================================================
+      // MODULE: OUTREACH LOGS API (Task 1.12)
+      // =======================================================================
+      const outreachRootPattern = '/api/v1/outreach';
+      const outreachIdRegex = /^\/api\/v1\/outreach\/([^\/]+)$/;
+      const outreachSummaryPattern = '/api/v1/outreach/summary';
+
+      // Helper function for strict YYYY-MM-DD validation using UTC
+      function isValidYYYYMMDD(dateString) {
+        if (typeof dateString !== 'string') return false;
+        const regex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!regex.test(dateString)) return false;
+
+        const parts = dateString.split('-');
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const day = parseInt(parts[2], 10);
+
+        const date = new Date(Date.UTC(year, month - 1, day));
+        return (
+          date.getUTCFullYear() === year &&
+          date.getUTCMonth() === month - 1 &&
+          date.getUTCDate() === day
+        );
+      }
+
+      if (pathname === outreachSummaryPattern && method === 'GET') {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        const now = new Date();
+        const year = now.getUTCFullYear();
+        const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+        const monthPrefix = `${year}-${month}`;
+
+        const { results } = await env.DB.prepare(
+          `SELECT channel, COUNT(*) as count 
+           FROM outreach_logs 
+           WHERE user_id = ? AND contact_date LIKE ? 
+           GROUP BY channel`
+        )
+        .bind(userId, `${monthPrefix}%`)
+        .all();
+
+        const channelBreakdown = {
+          LINKEDIN: 0,
+          WHATSAPP: 0,
+          EMAIL: 0,
+          PHONE: 0,
+          REFERRAL: 0,
+          OTHER: 0
+        };
+
+        let totalPeopleContacted = 0;
+        if (results) {
+          results.forEach(row => {
+            if (channelBreakdown.hasOwnProperty(row.channel)) {
+              channelBreakdown[row.channel] = row.count;
+            }
+            totalPeopleContacted += row.count;
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              year_month: monthPrefix,
+              total_people_contacted: totalPeopleContacted,
+              breakdown: channelBreakdown
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
+
+      if (pathname === outreachRootPattern && method === 'GET') {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        const { results } = await env.DB.prepare(
+          `SELECT id, user_id, contact_date, person_name, company, email, channel, notes, created_at, updated_at
+           FROM outreach_logs
+           WHERE user_id = ?
+           ORDER BY contact_date DESC, created_at DESC`
+        )
+        .bind(userId)
+        .all();
+
+        return new Response(
+          JSON.stringify({ success: true, data: { outreach: results } }),
+          { status: 200, headers }
+        );
+      }
+
+      if (pathname === outreachRootPattern && method === 'POST') {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { contact_date, person_name, company, email, channel, notes } = body;
+
+        if (!contact_date || !isValidYYYYMMDD(contact_date)) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'contact_date' is required and must be a valid calendar date in YYYY-MM-DD format.", 400, headers);
+        }
+        if (!person_name || typeof person_name !== 'string' || person_name.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'person_name' is required.", 400, headers);
+        }
+        
+        const validChannels = ['LINKEDIN', 'WHATSAPP', 'EMAIL', 'PHONE', 'REFERRAL', 'OTHER'];
+        if (!channel || !validChannels.includes(channel)) {
+          return buildErrorResponse('INVALID_INPUT', `Field 'channel' must be one of: ${validChannels.join(', ')}.`, 400, headers);
+        }
+
+        if (company !== undefined && company !== null && typeof company !== 'string') {
+          return buildErrorResponse('INVALID_INPUT', "Field 'company' must be a string.", 400, headers);
+        }
+        if (email !== undefined && email !== null) {
+          if (typeof email !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'email' must be a string.", 400, headers);
+          }
+          const emailTrimmed = email.trim();
+          if (emailTrimmed.length > 0) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(emailTrimmed)) {
+              return buildErrorResponse('INVALID_INPUT', "Provided email address format is invalid.", 400, headers);
+            }
+          }
+        }
+        if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+          return buildErrorResponse('INVALID_INPUT', "Field 'notes' must be a string.", 400, headers);
+        }
+
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        await env.DB.prepare(
+          `INSERT INTO outreach_logs (id, user_id, contact_date, person_name, company, email, channel, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          id,
+          userId,
+          contact_date.trim(),
+          person_name.trim(),
+          company ? company.trim() : null,
+          email ? email.trim() : null,
+          channel,
+          notes ? notes.trim() : null,
+          now,
+          now
+        )
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id,
+              user_id: userId,
+              contact_date: contact_date.trim(),
+              person_name: person_name.trim(),
+              company: company ? company.trim() : null,
+              email: email ? email.trim() : null,
+              channel,
+              notes: notes ? notes.trim() : null,
+              created_at: now,
+              updated_at: now
+            }
+          }),
+          { status: 201, headers }
+        );
+      }
+
+      const outreachIdMatch = pathname.match(outreachIdRegex);
+      if (outreachIdMatch) {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        const outreachId = outreachIdMatch[1];
+
+        const existingRecord = await env.DB.prepare(
+          `SELECT * FROM outreach_logs WHERE id = ? AND user_id = ?`
+        )
+        .bind(outreachId, userId)
+        .first();
+
+        if (!existingRecord) {
+          return buildErrorResponse('NOT_FOUND', "The targeted outreach record does not exist or access rights are restricted.", 404, headers);
+        }
+
+        if (method === 'PATCH') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { contact_date, person_name, company, email, channel, notes } = body;
+
+          if (contact_date !== undefined) {
+            if (!isValidYYYYMMDD(contact_date)) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'contact_date' must be a valid calendar date in YYYY-MM-DD format.", 400, headers);
+            }
+          }
+          if (person_name !== undefined && (typeof person_name !== 'string' || person_name.trim().length === 0)) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'person_name' cannot be empty.", 400, headers);
+          }
+          
+          const validChannels = ['LINKEDIN', 'WHATSAPP', 'EMAIL', 'PHONE', 'REFERRAL', 'OTHER'];
+          if (channel !== undefined && !validChannels.includes(channel)) {
+            return buildErrorResponse('INVALID_INPUT', `Field 'channel' must be one of: ${validChannels.join(', ')}.`, 400, headers);
+          }
+
+          if (company !== undefined && company !== null && typeof company !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'company' must be a string.", 400, headers);
+          }
+          if (email !== undefined && email !== null) {
+            if (typeof email !== 'string') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'email' must be a string.", 400, headers);
+            }
+            const emailTrimmed = email.trim();
+            if (emailTrimmed.length > 0) {
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!emailRegex.test(emailTrimmed)) {
+                return buildErrorResponse('INVALID_INPUT', "Provided email address format is invalid.", 400, headers);
+              }
+            }
+          }
+          if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'notes' must be a string.", 400, headers);
+          }
+
+          const updatedDate = contact_date !== undefined ? contact_date.trim() : existingRecord.contact_date;
+          const updatedName = person_name !== undefined ? person_name.trim() : existingRecord.person_name;
+          const updatedCompany = company !== undefined ? (company ? company.trim() : null) : existingRecord.company;
+          const updatedEmail = email !== undefined ? (email ? email.trim() : null) : existingRecord.email;
+          const updatedChannel = channel !== undefined ? channel : existingRecord.channel;
+          const updatedNotes = notes !== undefined ? (notes ? notes.trim() : null) : existingRecord.notes;
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `UPDATE outreach_logs
+             SET contact_date = ?, person_name = ?, company = ?, email = ?, channel = ?, notes = ?, updated_at = ?
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(updatedDate, updatedName, updatedCompany, updatedEmail, updatedChannel, updatedNotes, now, outreachId, userId)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: outreachId,
+                user_id: userId,
+                contact_date: updatedDate,
+                person_name: updatedName,
+                company: updatedCompany,
+                email: updatedEmail,
+                channel: updatedChannel,
+                notes: updatedNotes,
+                created_at: existingRecord.created_at,
+                updated_at: now
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        if (method === 'DELETE') {
+          await env.DB.prepare(`DELETE FROM outreach_logs WHERE id = ? AND user_id = ?`)
+            .bind(outreachId, userId)
+            .run();
+
+          return new Response(
+            JSON.stringify({ success: true, data: { id: outreachId, deleted: true } }),
+            { status: 200, headers }
+          );
+        }
+      }
+
       if (!userId) {
         return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
       }
@@ -1950,7 +2238,7 @@ export default {
         try {
           body = await request.json();
         } catch (e) {
-          return buildErrorResponse('INVALID_REQUEST', "Request payload must be a valid JSON structure.", 400, headers);
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
         }
 
         if (!body) {
