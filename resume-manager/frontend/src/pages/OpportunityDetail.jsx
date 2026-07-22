@@ -142,20 +142,20 @@ export default function OpportunityDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-// Edit/Delete Opportunity UI state
-const [isEditOpen, setIsEditOpen] = useState(false);
-const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-const [actionError, setActionError] = useState(null);
+  // Edit/Delete Opportunity UI state
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
-const [editForm, setEditForm] = useState({
-  company_id: '',
-  job_title: '',
-  priority: 3,
-  application_url: '',
-  date_identified: '',
-  date_applied: '',
-  notes: ''
-});
+  const [editForm, setEditForm] = useState({
+    company_id: '',
+    job_title: '',
+    priority: 3,
+    application_url: '',
+    date_identified: '',
+    date_applied: '',
+    notes: ''
+  });
   // Feedback and form UI states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mutationError, setMutationError] = useState(null);
@@ -182,14 +182,14 @@ const [editForm, setEditForm] = useState({
   });
 
   // Load companies only when the Edit Opportunity modal is open
-const {
-  data: companies = [],
-  isLoading: isCompaniesLoading
-} = useQuery({
-  queryKey: ['opportunity-edit-companies'],
-  queryFn: fetchCompanies,
-  enabled: isEditOpen
-});
+  const {
+    data: companies = [],
+    isLoading: isCompaniesLoading
+  } = useQuery({
+    queryKey: ['opportunity-edit-companies'],
+    queryFn: fetchCompanies,
+    enabled: isEditOpen
+  });
 
   // Update opportunity mutation
   const editOpportunityMutation = useMutation({
@@ -365,45 +365,45 @@ const {
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-0.5">{job_title}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-  <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${getStatusBadgeClass(status)}`}>
-    {OPPORTUNITY_STATUS_LABELS[status] || status}
-  </span>
+            <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${getStatusBadgeClass(status)}`}>
+              {OPPORTUNITY_STATUS_LABELS[status] || status}
+            </span>
 
-  <span className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap">
-    {priority !== null && priority !== undefined ? `P-${priority}` : '—'}
-  </span>
+            <span className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap">
+              {priority !== null && priority !== undefined ? `P-${priority}` : '—'}
+            </span>
 
-  <button
-    type="button"
-    onClick={() => {
-      setEditForm({
-        company_id: company?.id || '',
-        job_title: job_title || '',
-        priority: priority || 3,
-        application_url: opportunity.application_url || '',
-        date_identified: opportunity.date_identified || '',
-        date_applied: opportunity.date_applied || '',
-        notes: opportunity.notes || ''
-      });
-      setActionError(null);
-      setIsEditOpen(true);
-    }}
-    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
-  >
-    Edit
-  </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditForm({
+                  company_id: company?.id || '',
+                  job_title: job_title || '',
+                  priority: priority || 3,
+                  application_url: opportunity.application_url || '',
+                  date_identified: opportunity.date_identified || '',
+                  date_applied: opportunity.date_applied || '',
+                  notes: opportunity.notes || ''
+                });
+                setActionError(null);
+                setIsEditOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+            >
+              Edit
+            </button>
 
-  <button
-    type="button"
-    onClick={() => {
-      setActionError(null);
-      setIsDeleteOpen(true);
-    }}
-    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-  >
-    Delete
-  </button>
-</div>
+            <button
+              type="button"
+              onClick={() => {
+                setActionError(null);
+                setIsDeleteOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
         </div>
       </div>
 
@@ -415,10 +415,10 @@ const {
 
       {/* Main Content Layout Split */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        
+
         {/* Left Columns */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* Opportunity Overview */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">
@@ -532,20 +532,162 @@ const {
             </h3>
             {ats_analysis ? (
               <div className="space-y-5">
-                <div className="flex items-center space-x-4">
-                  <div className="text-3xl font-extrabold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
-                    {ats_analysis.match_score}%
-                  </div>
-                  <div>
-                    <span className="text-sm font-bold text-slate-800 block">ATS Match Score</span>
-                    {ats_analysis.analyzed_at && (
-                      <span className="text-xs text-slate-400 block mt-0.5">
-                        Analyzed: {formatDateTime(ats_analysis.analyzed_at)}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="text-3xl font-extrabold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
+                      {ats_analysis.match_score}%
+                    </div>
+
+                    <div>
+                      <span className="text-sm font-bold text-slate-800 block">
+                        ATS Match Score
+                      </span>
+
+                      {ats_analysis.analyzed_at && (
+                        <span className="text-xs text-slate-400 block mt-0.5">
+                          Analyzed: {formatDateTime(ats_analysis.analyzed_at)}
+                        </span>
+                      )}
+                    </div>
+
+                    {ats_analysis.analysis_json?.recommendation && (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {ats_analysis.analysis_json.recommendation}
                       </span>
                     )}
                   </div>
+
+                  {ats_analysis.analysis_json?.summary && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                      <span className="block font-bold text-slate-400 text-xs uppercase tracking-wider mb-1">
+                        Analysis Summary
+                      </span>
+                      <p className="text-sm text-slate-700 leading-relaxed">
+                        {ats_analysis.analysis_json.summary}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
+                {ats_analysis.analysis_json && (
+                  <div className="space-y-4">
+
+                    {/* Strong Matches */}
+                    {Array.isArray(ats_analysis.analysis_json.strong_matches) &&
+                      ats_analysis.analysis_json.strong_matches.length > 0 && (
+                        <div>
+                          <span className="block font-bold text-slate-400 text-xs uppercase tracking-wider mb-2">
+                            Strong Matches
+                          </span>
+
+                          <div className="space-y-2">
+                            {ats_analysis.analysis_json.strong_matches.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="bg-emerald-50 border border-emerald-100 rounded-lg p-3"
+                              >
+                                <p className="text-sm font-bold text-emerald-800">
+                                  {item.requirement}
+                                </p>
+
+                                {item.evidence && (
+                                  <p className="text-sm text-slate-700 mt-1">
+                                    {item.evidence}
+                                  </p>
+                                )}
+
+                                {item.reason && (
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Why it matches: {item.reason}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    {/* Partial Matches */}
+                    {Array.isArray(ats_analysis.analysis_json.partial_matches) &&
+                      ats_analysis.analysis_json.partial_matches.length > 0 && (
+                        <div>
+                          <span className="block font-bold text-slate-400 text-xs uppercase tracking-wider mb-2">
+                            Partial Matches
+                          </span>
+
+                          <div className="space-y-2">
+                            {ats_analysis.analysis_json.partial_matches.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="bg-amber-50 border border-amber-100 rounded-lg p-3"
+                              >
+                                <p className="text-sm font-bold text-amber-800">
+                                  {item.requirement}
+                                </p>
+
+                                {item.evidence && (
+                                  <p className="text-sm text-slate-700 mt-1">
+                                    {item.evidence}
+                                  </p>
+                                )}
+
+                                {item.reason && (
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Gap: {item.reason}
+                                  </p>
+                                )}
+
+                                {item.positioning && (
+                                  <p className="text-xs text-slate-600 mt-2">
+                                    <span className="font-bold">Positioning:</span>{' '}
+                                    {item.positioning}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    {/* Detailed Gaps */}
+                    {Array.isArray(ats_analysis.analysis_json.gaps) &&
+                      ats_analysis.analysis_json.gaps.length > 0 && (
+                        <div>
+                          <span className="block font-bold text-slate-400 text-xs uppercase tracking-wider mb-2">
+                            Gaps
+                          </span>
+
+                          <div className="space-y-2">
+                            {ats_analysis.analysis_json.gaps.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="bg-rose-50 border border-rose-100 rounded-lg p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-sm font-bold text-rose-800">
+                                    {item.requirement}
+                                  </p>
+
+                                  {item.impact && (
+                                    <span className="text-xs font-bold uppercase text-rose-700">
+                                      {item.impact}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {item.reason && (
+                                  <p className="text-sm text-slate-700 mt-1">
+                                    {item.reason}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div className="space-y-2">
                     <span className="block font-bold text-slate-400 text-xs uppercase tracking-wider">Missing Keywords</span>
@@ -567,8 +709,13 @@ const {
                     {Array.isArray(ats_analysis.skill_gaps) && ats_analysis.skill_gaps.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {ats_analysis.skill_gaps.map((gap, idx) => (
-                          <span key={idx} className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-xs font-semibold border border-amber-100">
-                            {gap}
+                          <span
+                            key={idx}
+                            className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-xs font-semibold border border-amber-100"
+                          >
+                            {typeof gap === 'string'
+                              ? gap
+                              : gap?.requirement || gap?.reason || 'Skill gap identified'}
                           </span>
                         ))}
                       </div>
@@ -578,11 +725,45 @@ const {
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100 space-y-1">
-                  <span className="block font-bold text-slate-400 text-xs uppercase tracking-wider">Improvement Suggestions</span>
-                  <p className="text-slate-700 text-sm leading-relaxed font-medium">
-                    {ats_analysis.improvement_suggestions || 'No improvement suggestions available.'}
-                  </p>
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <span className="block font-bold text-slate-400 text-xs uppercase tracking-wider">
+                    Improvement Suggestions
+                  </span>
+
+                  {Array.isArray(ats_analysis.analysis_json?.resume_opportunities) &&
+                    ats_analysis.analysis_json.resume_opportunities.length > 0 ? (
+                    <div className="space-y-3">
+                      {ats_analysis.analysis_json.resume_opportunities.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-slate-50 border border-slate-100 rounded-lg p-3"
+                        >
+                          {item?.area && (
+                            <p className="text-sm font-bold text-slate-800">
+                              {item.area}
+                            </p>
+                          )}
+
+                          {item?.suggestion && (
+                            <p className="text-sm text-slate-700 leading-relaxed mt-1">
+                              {item.suggestion}
+                            </p>
+                          )}
+
+                          {item?.evidence && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Evidence: {item.evidence}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-700 text-sm leading-relaxed font-medium">
+                      {ats_analysis.improvement_suggestions ||
+                        'No improvement suggestions available.'}
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (
@@ -593,7 +774,7 @@ const {
 
         {/* Right Sidebar Columns */}
         <div className="space-y-6">
-          
+
           {/* Company */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-2 mb-3">
@@ -684,7 +865,7 @@ const {
               <div className="space-y-3.5 max-h-[360px] overflow-y-auto pr-0.5">
                 {sortedInterviews.map((iv) => {
                   const localStatus = INTERVIEW_STATUS_LABELS[iv.status] || iv.status || 'Scheduled';
-                  
+
                   return (
                     <div key={iv.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
                       <div className="flex items-start justify-between gap-2">
@@ -703,7 +884,7 @@ const {
                           <span className="font-bold text-slate-400 mr-1">Date/Time:</span> {formatDateTime(iv.interview_date)}
                         </div>
                         <div className="truncate">
-                          <span className="font-bold text-slate-400 mr-1">Interviewer(s):</span> 
+                          <span className="font-bold text-slate-400 mr-1">Interviewer(s):</span>
                           <span className="text-slate-700">{iv.interviewer_names || '—'}</span>
                         </div>
                       </div>
@@ -826,7 +1007,7 @@ const {
           </div>
         </div>
       )}
-            {/* Edit Opportunity Modal */}
+      {/* Edit Opportunity Modal */}
       {isEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl border border-slate-200">
@@ -1047,7 +1228,7 @@ const {
           </div>
         </div>
       )}
-            {/* Delete Opportunity Confirmation Modal */}
+      {/* Delete Opportunity Confirmation Modal */}
       {isDeleteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200">

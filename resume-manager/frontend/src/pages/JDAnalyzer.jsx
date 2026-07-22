@@ -63,6 +63,15 @@ async function createJobDescription({ opportunityId, rawText }) {
   return handleResponse(res, 'Failed to attach job description.');
 }
 
+async function createAtsAnalysis({ opportunityId, payload }) {
+  const res = await fetch(`/api/v1/opportunities/${opportunityId}/ats-analysis`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  return handleResponse(res, 'Failed to save ATS analysis.');
+}
 async function runJDAnalysis(payload) {
   const res = await fetch('/api/v1/jd-analyzer/analyze', {
     method: 'POST',
@@ -108,6 +117,7 @@ export default function JDAnalyzer() {
   const [saveLocalError, setSaveLocalError] = useState(null);
   const [savedOpportunityId, setSavedOpportunityId] = useState(null);
   const [partialOpportunityId, setPartialOpportunityId] = useState(null);
+  const [partialJdSaved, setPartialJdSaved] = useState(false);
 
   // --- BASE QUERIES ---
   const { data: resumesData, isLoading: isResumesLoading } = useQuery({
@@ -164,6 +174,7 @@ export default function JDAnalyzer() {
     setServerError(null);
     setSavedOpportunityId(null);
     setPartialOpportunityId(null);
+    setPartialJdSaved(false);
   };
 
   const handleVersionChange = (e) => {
@@ -176,6 +187,7 @@ export default function JDAnalyzer() {
     setServerError(null);
     setSavedOpportunityId(null);
     setPartialOpportunityId(null);
+    setPartialJdSaved(false);
   };
 
   const handleJdTextChange = (e) => {
@@ -189,6 +201,7 @@ export default function JDAnalyzer() {
       setServerError(null);
       setSavedOpportunityId(null);
       setPartialOpportunityId(null);
+      setPartialJdSaved(false);
     }
   };
 
@@ -206,6 +219,7 @@ export default function JDAnalyzer() {
     setChatError(null);
     setSavedOpportunityId(null);
     setPartialOpportunityId(null);
+    setPartialJdSaved(false);
   };
 
   // --- STRUCTURED ANALYSIS MUTATION ---
@@ -219,6 +233,7 @@ export default function JDAnalyzer() {
       setChatError(null);
       setSavedOpportunityId(null);
       setPartialOpportunityId(null);
+      setPartialJdSaved(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
     onError: (err) => {
@@ -254,6 +269,7 @@ export default function JDAnalyzer() {
   const saveOpportunityMutation = useMutation({
     mutationFn: async (payload) => {
       let targetOpportunityId = partialOpportunityId;
+        let jdSavedThisAttempt = partialJdSaved;
 
       try {
         // Step 1 & 2: Create Opportunity only if one was not already partially created
@@ -286,37 +302,86 @@ export default function JDAnalyzer() {
         }
 
         // Step 4: POST exact analyzed jdText to job-description endpoint
-        if (jdText.trim().length > 0) {
-          await createJobDescription({
-            opportunityId: targetOpportunityId,
-            rawText: jdText.trim()
-          });
-        }
+        // Step 4: Save the Job Description only if it has not already
+        // been saved during a previous partial attempt.
+        if (jdText.trim().length > 0 && !partialJdSaved) {
+        await createJobDescription({
+        opportunityId: targetOpportunityId,
+        rawText: jdText.trim()
+  });
+  jdSavedThisAttempt = true;
+  setPartialJdSaved(true);
+}
 
+        // Step 5: Persist the already-generated ATS analysis.
+  // This does NOT call the AI again.
+      if (analysisResult?.analysis && selectedVersionId) {
+  const analysis = analysisResult.analysis;
+
+  await createAtsAnalysis({
+    opportunityId: targetOpportunityId,
+    payload: {
+      resume_version_id: selectedVersionId,
+      match_score: analysis.match_score,
+      missing_keywords: [],
+      skill_gaps: Array.isArray(analysis.gaps) ? analysis.gaps : [],
+      improvement_suggestions: Array.isArray(analysis.resume_opportunities)
+      ? analysis.resume_opportunities
+      .map((item) =>
+        typeof item === 'string'
+          ? item
+          : item?.suggestion || item?.area || ''
+        )
+      .filter(Boolean)
+      .join('\n')
+    : '',
+      analysis_json: analysis
+    }
+  });
+}
         return targetOpportunityId;
       } catch (innerErr) {
-        // Distinguish whether failure occurred during opportunity creation or during subsequent JD attachment
-        const failedOpportunityId = targetOpportunityId;
-        const enhancedError = new Error(innerErr.message || 'Save error');
-        enhancedError.createdOpportunityId = failedOpportunityId;
-        throw enhancedError;
-      }
+      // Preserve partial-save state so retries can resume from the correct step.
+      const failedOpportunityId = targetOpportunityId;
+      const enhancedError = new Error(innerErr.message || 'Save error');
+
+      enhancedError.createdOpportunityId = failedOpportunityId;
+      enhancedError.jdSaved = jdSavedThisAttempt;
+      throw enhancedError;
+    }
+
     },
     onSuccess: (opportunityId) => {
       setSavedOpportunityId(opportunityId);
       setPartialOpportunityId(null);
       setIsSaveModalOpen(false);
       setSaveLocalError(null);
+      setPartialJdSaved(false);
     },
     onError: (err) => {
-      const createdId = err.createdOpportunityId;
-      if (createdId) {
-        setPartialOpportunityId(createdId);
-        setSaveLocalError("Opportunity was created, but the Job Description could not be attached.");
-      } else {
-        setSaveLocalError(err.message || 'Failed to save role to Opportunities system.');
-      }
+  const createdId = err.createdOpportunityId;
+
+  if (createdId) {
+    setPartialOpportunityId(createdId);
+
+    if (err.jdSaved) {
+      setPartialJdSaved(true);
+      setSaveLocalError(
+        "Opportunity and Job Description were saved, but the ATS analysis could not be saved. Retry to complete the ATS save."
+      );
+    } else {
+      setPartialJdSaved(false);
+      setSaveLocalError(
+        "Opportunity was created, but the Job Description could not be attached."
+      );
     }
+  } else {
+    setPartialJdSaved(false);
+    setSaveLocalError(
+      err.message || 'Failed to save role to Opportunities system.'
+    );
+  }
+}
   });
 
   const handleSubmit = (e) => {
