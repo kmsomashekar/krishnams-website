@@ -7,9 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
-  "dependencies": {},
   "devDependencies": {
-    "wrangler": "^4.112.0"
+    "wrangler": "^4.113.0"
   },
   "private": true,
   "allowScripts": {

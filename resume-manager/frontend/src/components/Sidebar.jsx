@@ -17,7 +17,7 @@ export default function Sidebar() {
     <aside className="hidden lg:flex w-64 bg-slate-900 text-slate-100 flex-col justify-between p-5 border-r border-slate-800 shrink-0">
       <div>
         <div className="text-lg font-semibold tracking-tight text-white px-3 py-4 mb-6 border-b border-slate-800">
-          Resume Manager
+          Job Search Manager
         </div>
         <nav className="space-y-1">
           {navigationItems.map((item) => (

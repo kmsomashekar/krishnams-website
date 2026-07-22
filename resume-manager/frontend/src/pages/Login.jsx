@@ -59,7 +59,7 @@ export default function Login() {
     <div className="min-h-screen w-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Resume Manager</h2>
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Job Search Manager</h2>
           <p className="text-sm text-slate-500 mt-1">
             {mfaChallenge ? 'Two-Factor Authentication Required' : 'Sign in to your account to continue'}
           </p>

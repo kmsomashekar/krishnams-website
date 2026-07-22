@@ -33,7 +33,7 @@ name = "resume-manager-prod"
 vars = { ENVIRONMENT = "production" }
 
 routes = [
-  { pattern = "career.krishnams.com", custom_domain = true }
+  { pattern = "jobsearch.krishnams.com", custom_domain = true }
 ]
 
 # Production serves the accepted React Phase 1 build.

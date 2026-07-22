@@ -4,7 +4,40 @@ const path = require('path');
 
 const PROJECT_ROOT = __dirname;
 const BACKUPS_ROOT = path.join(PROJECT_ROOT, 'backups');
-const BUCKET_NAME = 'resume-manager-dev';
+
+const mode = (process.argv[2] || '').toLowerCase();
+
+const CONFIG = {
+  dev: {
+    source: 'local-development',
+    environment: 'dev',
+    database: 'DB',
+    bucket: 'resume-manager-dev',
+    locationFlag: '--local',
+    folderPrefix: 'resume-manager-dev'
+  },
+  prod: {
+    source: 'production',
+    environment: 'prod',
+    database: 'resume-manager-prod',
+    bucket: 'resume-manager-prod',
+    locationFlag: '--remote',
+    folderPrefix: 'resume-manager-prod'
+  }
+};
+
+if (!CONFIG[mode]) {
+  console.error('');
+  console.error('Invalid or missing backup mode.');
+  console.error('');
+  console.error('Usage:');
+  console.error('  node backup-resume-manager.js dev');
+  console.error('  node backup-resume-manager.js prod');
+  console.error('');
+  process.exit(1);
+}
+
+const config = CONFIG[mode];
 
 function timestamp() {
   const now = new Date();
@@ -46,7 +79,7 @@ function runWrangler(args, captureOutput = false) {
 function main() {
   const backupFolder = path.join(
     BACKUPS_ROOT,
-    `resume-manager-${timestamp()}`
+    `${config.folderPrefix}-${timestamp()}`
   );
 
   const databaseFile = path.join(backupFolder, 'database.sql');
@@ -56,20 +89,30 @@ function main() {
   fs.mkdirSync(r2Folder, { recursive: true });
 
   console.log('');
-  console.log('Resume Manager Backup');
-  console.log('=====================');
+  console.log('Job Search Manager Backup');
+  console.log('=========================');
+  console.log(`Mode:          ${mode.toUpperCase()}`);
+  console.log(`Source:        ${config.source}`);
+  console.log(`D1 database:   ${config.database}`);
+  console.log(`R2 bucket:     ${config.bucket}`);
   console.log(`Backup folder: ${backupFolder}`);
   console.log('');
 
-  console.log('1. Exporting local D1 database...');
+  if (mode === 'prod') {
+    console.log('PRODUCTION BACKUP - READ-ONLY EXPORT/DOWNLOAD');
+    console.log('No restore, delete, or write operation will be performed.');
+    console.log('');
+  }
+
+  console.log(`1. Exporting ${config.source} D1 database...`);
 
   runWrangler([
     'd1',
     'export',
-    'DB',
+    config.database,
     '--env',
-    'dev',
-    '--local',
+    config.environment,
+    config.locationFlag,
     '--output',
     databaseFile,
     '--skip-confirmation'
@@ -91,10 +134,10 @@ function main() {
   const queryOutput = runWrangler([
     'd1',
     'execute',
-    'DB',
+    config.database,
     '--env',
-    'dev',
-    '--local',
+    config.environment,
+    config.locationFlag,
     '--json',
     '--command',
     "SELECT r2_object_key FROM resume_versions WHERE r2_object_key IS NOT NULL AND r2_object_key <> '';"
@@ -140,10 +183,10 @@ function main() {
       'r2',
       'object',
       'get',
-      `${BUCKET_NAME}/${objectKey}`,
+      `${config.bucket}/${objectKey}`,
       '--env',
-      'dev',
-      '--local',
+      config.environment,
+      config.locationFlag,
       '--file',
       destination
     ]);
@@ -166,17 +209,20 @@ function main() {
   }
 
   const manifest = {
-    backup_version: 1,
+    backup_version: 2,
     created_at: new Date().toISOString(),
-    source: 'local-development',
+    source: config.source,
+    mode,
     d1: {
-      binding: 'DB',
-      environment: 'dev',
+      database: config.database,
+      environment: config.environment,
+      location: config.locationFlag === '--remote' ? 'remote' : 'local',
       file: 'database.sql',
       size_bytes: databaseSize
     },
     r2: {
-      bucket: BUCKET_NAME,
+      bucket: config.bucket,
+      location: config.locationFlag === '--remote' ? 'remote' : 'local',
       object_count: backedUpObjects.length,
       objects: backedUpObjects
     }
@@ -191,6 +237,7 @@ function main() {
   console.log('');
   console.log('BACKUP COMPLETED SUCCESSFULLY');
   console.log('=============================');
+  console.log(`Mode:        ${mode.toUpperCase()}`);
   console.log(`D1 database: ${databaseSize} bytes`);
   console.log(`R2 files:    ${backedUpObjects.length}`);
   console.log(`Location:    ${backupFolder}`);
