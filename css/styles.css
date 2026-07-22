@@ -823,3 +823,314 @@ button:focus-visible {
   
   .timeline-item { grid-template-columns: 40px 280px 1fr; }
 }
+
+/* ==========================================================================
+   PORTFOLIO LANDING & PROJECT CASE STUDY
+   ========================================================================== */
+
+.portfolio-hero {
+  padding-bottom: 3rem;
+}
+
+.portfolio-hero-inner {
+  text-align: center;
+  max-width: 960px;
+}
+
+.portfolio-eyebrow,
+.portfolio-category-kicker {
+  display: inline-block;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  font-size: .78rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.portfolio-intro {
+  max-width: 850px;
+  margin: 0 auto;
+}
+
+.portfolio-section {
+  padding-top: 3rem;
+  padding-bottom: 4rem;
+}
+
+.portfolio-category-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.portfolio-category-header .section-subtitle {
+  margin-bottom: 0;
+}
+
+.featured-project-card,
+.portfolio-dashboard-card,
+.portfolio-philosophy,
+.case-study-preview {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.featured-project-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  overflow: hidden;
+  border-color: rgba(212, 175, 55, .32);
+}
+
+.featured-project-copy {
+  padding: 2rem;
+}
+
+.project-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.project-label {
+  display: inline-block;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.project-status {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  color: #fff;
+  font-size: .8rem;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #67d36f;
+  box-shadow: 0 0 0 4px rgba(103, 211, 111, .12);
+}
+
+.featured-project-copy h2,
+.portfolio-dashboard-card h2,
+.portfolio-philosophy h2,
+.case-study-preview h2 {
+  color: #fff;
+  line-height: 1.2;
+}
+
+.featured-project-copy h2 {
+  font-size: 2rem;
+  margin-bottom: .9rem;
+}
+
+.project-lead {
+  color: #fff;
+  font-size: 1.08rem;
+  margin-bottom: 1rem;
+}
+
+.project-principle {
+  margin-top: 1.5rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--gold);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.project-badges {
+  justify-content: flex-start;
+  margin-top: 1.5rem;
+}
+
+.portfolio-actions {
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+  margin-top: 1.75rem;
+}
+
+.featured-project-visual {
+  min-height: 280px;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(212, 175, 55, .12), transparent 38%),
+    var(--surface2);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.project-visual-icon {
+  color: var(--gold);
+  font-size: 3.2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.project-visual-title {
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 1rem 0 1.5rem;
+}
+
+.project-visual-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  flex-wrap: wrap;
+  margin: .35rem 0;
+  font-size: .82rem;
+}
+
+.project-visual-flow span:nth-child(odd) {
+  padding: .4rem .65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(7, 17, 29, .55);
+  color: #fff;
+}
+
+.project-visual-flow span:nth-child(even) {
+  color: var(--gold);
+}
+
+.portfolio-dashboard-section {
+  background: rgba(255, 255, 255, .012);
+}
+
+.portfolio-dashboard-card {
+  padding: 2rem;
+}
+
+.portfolio-dashboard-card h2 {
+  margin: .65rem 0 1rem;
+  font-size: 1.8rem;
+}
+
+.dashboard-mini-grid,
+.case-study-topic-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .75rem;
+  margin-top: 1.5rem;
+}
+
+.dashboard-mini-grid span,
+.case-study-topic-grid span {
+  padding: .8rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: #fff;
+  font-size: .9rem;
+}
+
+.portfolio-philosophy-section {
+  padding-top: 2rem;
+  padding-bottom: 5rem;
+}
+
+.portfolio-philosophy {
+  padding: 2rem;
+  display: grid;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.portfolio-philosophy h2 {
+  font-size: 1.8rem;
+}
+
+.portfolio-hero-actions {
+  justify-content: center;
+}
+
+.case-study-preview {
+  padding: 2rem;
+  max-width: 1000px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.case-study-preview h2 {
+  font-size: 1.8rem;
+  margin-bottom: 1rem;
+}
+
+.case-study-preview > p {
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+@media (min-width: 576px) {
+  .portfolio-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-mini-grid,
+  .case-study-topic-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 768px) {
+  .featured-project-copy,
+  .portfolio-dashboard-card,
+  .portfolio-philosophy,
+  .case-study-preview {
+    padding: 3rem;
+  }
+
+  .featured-project-copy h2 {
+    font-size: 2.5rem;
+  }
+
+  .portfolio-philosophy {
+    grid-template-columns: .8fr 1.2fr;
+  }
+}
+
+@media (min-width: 992px) {
+  .featured-project-card {
+    grid-template-columns: 1.35fr .65fr;
+  }
+
+  .featured-project-visual {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .portfolio-dashboard-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 3rem;
+    align-items: center;
+  }
+
+  .portfolio-dashboard-card .portfolio-actions {
+    margin-top: 0;
+  }
+
+  .case-study-topic-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
