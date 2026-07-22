@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // Status labels for opportunity tracking
@@ -71,7 +71,50 @@ async function createInterview({ opportunityId, payload }) {
   });
   return handleResponse(res, 'Failed to save interview.');
 }
+// Fetch companies for the Edit Opportunity form
+async function fetchCompanies() {
+  const res = await fetch(`/api/v1/companies`);
+  const body = await res.json();
 
+
+  if (!res.ok || !body?.success) {
+    throw new Error(body?.error?.message || 'Failed to load companies.');
+  }
+
+  return body?.data?.companies || [];
+}
+
+// Update an existing opportunity
+async function updateOpportunity(id, payload) {
+  const res = await fetch(`/api/v1/opportunities/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const body = await res.json();
+
+  if (!res.ok || !body?.success) {
+    throw new Error(body?.error?.message || 'Failed to update opportunity.');
+  }
+
+  return body.data;
+}
+
+// Delete an opportunity
+async function deleteOpportunity(id) {
+  const res = await fetch(`/api/v1/opportunities/${id}`, {
+    method: 'DELETE'
+  });
+
+  const body = await res.json();
+
+  if (!res.ok || !body?.success) {
+    throw new Error(body?.error?.message || 'Failed to delete opportunity.');
+  }
+
+  return body.data;
+}
 function getStatusBadgeClass(status) {
   switch (status) {
     case 'CONSIDERING': return 'bg-slate-100 text-slate-800 border-slate-200';
@@ -97,7 +140,22 @@ function getInterviewStatusClass(status) {
 export default function OpportunityDetail() {
   const { id: opportunityId } = useParams();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
+// Edit/Delete Opportunity UI state
+const [isEditOpen, setIsEditOpen] = useState(false);
+const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+const [actionError, setActionError] = useState(null);
+
+const [editForm, setEditForm] = useState({
+  company_id: '',
+  job_title: '',
+  priority: 3,
+  application_url: '',
+  date_identified: '',
+  date_applied: '',
+  notes: ''
+});
   // Feedback and form UI states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mutationError, setMutationError] = useState(null);
@@ -121,6 +179,43 @@ export default function OpportunityDetail() {
     queryKey: ['opportunity-details', opportunityId],
     queryFn: () => fetchOpportunityDetail(opportunityId),
     enabled: !!opportunityId
+  });
+
+  // Load companies only when the Edit Opportunity modal is open
+const {
+  data: companies = [],
+  isLoading: isCompaniesLoading
+} = useQuery({
+  queryKey: ['opportunity-edit-companies'],
+  queryFn: fetchCompanies,
+  enabled: isEditOpen
+});
+
+  // Update opportunity mutation
+  const editOpportunityMutation = useMutation({
+    mutationFn: (payload) => updateOpportunity(opportunityId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['opportunity-details', opportunityId] });
+      queryClient.invalidateQueries({ queryKey: ['opportunities'] });
+      setIsEditOpen(false);
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(err.message);
+    }
+  });
+
+  // Delete opportunity mutation
+  const deleteOpportunityMutation = useMutation({
+    mutationFn: () => deleteOpportunity(opportunityId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['opportunities'] });
+      setIsDeleteOpen(false);
+      navigate('/opportunities');
+    },
+    onError: (err) => {
+      setActionError(err.message);
+    }
   });
 
   // Create interview mutation
@@ -269,14 +364,46 @@ export default function OpportunityDetail() {
             </h2>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-0.5">{job_title}</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${getStatusBadgeClass(status)}`}>
-              {OPPORTUNITY_STATUS_LABELS[status] || status}
-            </span>
-            <span className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap">
-              {priority !== null && priority !== undefined ? `P-${priority}` : '—'}
-            </span>
-          </div>
+          <div className="flex flex-wrap items-center gap-3">
+  <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${getStatusBadgeClass(status)}`}>
+    {OPPORTUNITY_STATUS_LABELS[status] || status}
+  </span>
+
+  <span className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap">
+    {priority !== null && priority !== undefined ? `P-${priority}` : '—'}
+  </span>
+
+  <button
+    type="button"
+    onClick={() => {
+      setEditForm({
+        company_id: company?.id || '',
+        job_title: job_title || '',
+        priority: priority || 3,
+        application_url: opportunity.application_url || '',
+        date_identified: opportunity.date_identified || '',
+        date_applied: opportunity.date_applied || '',
+        notes: opportunity.notes || ''
+      });
+      setActionError(null);
+      setIsEditOpen(true);
+    }}
+    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+  >
+    Edit
+  </button>
+
+  <button
+    type="button"
+    onClick={() => {
+      setActionError(null);
+      setIsDeleteOpen(true);
+    }}
+    className="px-3 py-1.5 text-xs font-semibold rounded-md border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+  >
+    Delete
+  </button>
+</div>
         </div>
       </div>
 
@@ -696,6 +823,291 @@ export default function OpportunityDetail() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+            {/* Edit Opportunity Modal */}
+      {isEditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Edit Opportunity</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update the tracked opportunity details.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditOpen(false);
+                  setActionError(null);
+                }}
+                disabled={editOpportunityMutation.isPending}
+                className="text-slate-400 hover:text-slate-600 text-xl leading-none disabled:opacity-50"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setActionError(null);
+
+                editOpportunityMutation.mutate({
+                  company_id: editForm.company_id,
+                  job_title: editForm.job_title.trim(),
+                  priority: Number(editForm.priority),
+                  application_url: editForm.application_url.trim(),
+                  date_identified: editForm.date_identified,
+                  date_applied: editForm.date_applied,
+                  notes: editForm.notes.trim()
+                });
+              }}
+              className="p-5 space-y-4"
+            >
+              {actionError && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {actionError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Company *
+                </label>
+
+                <select
+                  required
+                  disabled={isCompaniesLoading || editOpportunityMutation.isPending}
+                  value={editForm.company_id}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, company_id: e.target.value })
+                  }
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                >
+                  <option value="">
+                    {isCompaniesLoading ? 'Loading companies...' : 'Select Company'}
+                  </option>
+
+                  {companies.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Job Title *
+                </label>
+
+                <input
+                  type="text"
+                  required
+                  disabled={editOpportunityMutation.isPending}
+                  value={editForm.job_title}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, job_title: e.target.value })
+                  }
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Priority *
+                </label>
+
+                <select
+                  required
+                  disabled={editOpportunityMutation.isPending}
+                  value={editForm.priority}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      priority: Number(e.target.value)
+                    })
+                  }
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                >
+                  <option value={1}>P-1 — Highest</option>
+                  <option value={2}>P-2 — High</option>
+                  <option value={3}>P-3 — Medium</option>
+                  <option value={4}>P-4 — Low</option>
+                  <option value={5}>P-5 — Lowest</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Application URL
+                </label>
+
+                <input
+                  type="url"
+                  disabled={editOpportunityMutation.isPending}
+                  value={editForm.application_url}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      application_url: e.target.value
+                    })
+                  }
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Date Identified
+                  </label>
+
+                  <input
+                    type="date"
+                    disabled={editOpportunityMutation.isPending}
+                    value={editForm.date_identified}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        date_identified: e.target.value
+                      })
+                    }
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Date Applied
+                  </label>
+
+                  <input
+                    type="date"
+                    disabled={editOpportunityMutation.isPending}
+                    value={editForm.date_applied}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        date_applied: e.target.value
+                      })
+                    }
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Notes
+                </label>
+
+                <textarea
+                  rows={4}
+                  disabled={editOpportunityMutation.isPending}
+                  value={editForm.notes}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, notes: e.target.value })
+                  }
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-xs font-medium focus:outline-indigo-500 disabled:bg-slate-50 resize-y"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditOpen(false);
+                    setActionError(null);
+                  }}
+                  disabled={editOpportunityMutation.isPending}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={
+                    editOpportunityMutation.isPending ||
+                    isCompaniesLoading
+                  }
+                  className="px-4 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-500 shadow-sm disabled:opacity-60"
+                >
+                  {editOpportunityMutation.isPending
+                    ? 'Saving...'
+                    : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+            {/* Delete Opportunity Confirmation Modal */}
+      {isDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-base font-bold text-slate-900">
+                Delete Opportunity
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-slate-700">
+                Are you sure you want to delete{' '}
+                <span className="font-semibold text-slate-900">
+                  {job_title}
+                </span>
+                {company?.name ? ` at ${company.name}` : ''}?
+              </p>
+
+              <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                Related job description, ATS analysis and interview records may
+                also be permanently deleted.
+              </p>
+
+              {actionError && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {actionError}
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDeleteOpen(false);
+                    setActionError(null);
+                  }}
+                  disabled={deleteOpportunityMutation.isPending}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionError(null);
+                    deleteOpportunityMutation.mutate();
+                  }}
+                  disabled={deleteOpportunityMutation.isPending}
+                  className="px-4 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-500 shadow-sm disabled:opacity-60"
+                >
+                  {deleteOpportunityMutation.isPending
+                    ? 'Deleting...'
+                    : 'Delete Opportunity'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

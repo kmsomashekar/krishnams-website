@@ -3739,6 +3739,222 @@ export default {
       }
 
       const oppIdMatch = pathname.match(opportunityIdRegex);
+            // Update an existing opportunity
+      if (oppIdMatch && method === 'PUT') {
+        const opportunityId = oppIdMatch[1];
+
+        const existingOpportunity = await env.DB.prepare(
+          `SELECT id, resume_version_id FROM opportunities WHERE id = ? AND user_id = ?`
+        )
+        .bind(opportunityId, userId)
+        .first();
+
+        if (!existingOpportunity) {
+          return buildErrorResponse(
+            'NOT_FOUND',
+            "The targeted opportunity does not exist or access rights are restricted.",
+            404,
+            headers
+          );
+        }
+
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse(
+            'INVALID_INPUT',
+            "Request payload must be a valid JSON structure.",
+            400,
+            headers
+          );
+        }
+
+        const {
+          company_id,
+          resume_version_id,
+          job_title,
+          priority,
+          application_url,
+          date_identified,
+          date_applied,
+          notes
+        } = body;
+
+        if (!company_id || typeof company_id !== 'string') {
+          return buildErrorResponse(
+            'INVALID_INPUT',
+            "Field 'company_id' is a required string parameter.",
+            400,
+            headers
+          );
+        }
+
+        if (!job_title || typeof job_title !== 'string' || job_title.trim().length === 0) {
+          return buildErrorResponse(
+            'INVALID_INPUT',
+            "Field 'job_title' is a required non-empty string.",
+            400,
+            headers
+          );
+        }
+
+        const parsedPriority = parseInt(priority, 10);
+
+        if (isNaN(parsedPriority) || parsedPriority < 1 || parsedPriority > 5) {
+          return buildErrorResponse(
+            'INVALID_INPUT',
+            "Priority must be an integer between 1 and 5.",
+            400,
+            headers
+          );
+        }
+
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+        if (date_identified && !dateRegex.test(date_identified)) {
+          return buildErrorResponse(
+            'INVALID_INPUT',
+            "Field 'date_identified' must use YYYY-MM-DD format.",
+            400,
+            headers
+          );
+        }
+
+        if (date_applied && !dateRegex.test(date_applied)) {
+          return buildErrorResponse(
+            'INVALID_INPUT',
+            "Field 'date_applied' must use YYYY-MM-DD format.",
+            400,
+            headers
+          );
+        }
+
+        const company = await env.DB.prepare(
+          `SELECT id FROM companies WHERE id = ? AND user_id = ?`
+        )
+        .bind(company_id, userId)
+        .first();
+
+        if (!company) {
+          return buildErrorResponse(
+            'NOT_FOUND',
+            "The targeted company does not exist or access rights are restricted.",
+            404,
+            headers
+          );
+        }
+
+        if (resume_version_id) {
+          const version = await env.DB.prepare(
+            `SELECT rv.id
+             FROM resume_versions rv
+             JOIN resumes r ON rv.resume_id = r.id
+             WHERE rv.id = ? AND r.user_id = ?`
+          )
+          .bind(resume_version_id, userId)
+          .first();
+
+          if (!version) {
+            return buildErrorResponse(
+              'NOT_FOUND',
+              "The targeted resume version does not exist or access rights are restricted.",
+              404,
+              headers
+            );
+          }
+        }
+
+        const now = new Date().toISOString();
+
+        await env.DB.prepare(
+          `UPDATE opportunities
+           SET company_id = ?,
+               resume_version_id = ?,
+               job_title = ?,
+               priority = ?,
+               application_url = ?,
+               date_identified = ?,
+               date_applied = ?,
+               notes = ?,
+               updated_at = ?
+           WHERE id = ? AND user_id = ?`
+        )
+        .bind(
+          company_id,
+          resume_version_id !== undefined
+            ? (resume_version_id || null)
+            : existingOpportunity.resume_version_id,
+          job_title.trim(),
+          parsedPriority,
+          application_url ? application_url.trim() : null,
+          date_identified || null,
+          date_applied || null,
+          notes ? notes.trim() : null,
+          now,
+          opportunityId,
+          userId
+        )
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id: opportunityId,
+              company_id,
+              resume_version_id: resume_version_id || null,
+              job_title: job_title.trim(),
+              priority: parsedPriority,
+              application_url: application_url ? application_url.trim() : null,
+              date_identified: date_identified || null,
+              date_applied: date_applied || null,
+              notes: notes ? notes.trim() : null,
+              updated_at: now
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
+
+      // Delete an opportunity.
+      // Related job descriptions, ATS analyses and interviews are removed
+      // by the database ON DELETE CASCADE foreign-key relationships.
+      if (oppIdMatch && method === 'DELETE') {
+        const opportunityId = oppIdMatch[1];
+
+        const existingOpportunity = await env.DB.prepare(
+          `SELECT id FROM opportunities WHERE id = ? AND user_id = ?`
+        )
+        .bind(opportunityId, userId)
+        .first();
+
+        if (!existingOpportunity) {
+          return buildErrorResponse(
+            'NOT_FOUND',
+            "The targeted opportunity does not exist or access rights are restricted.",
+            404,
+            headers
+          );
+        }
+
+        await env.DB.prepare(
+          `DELETE FROM opportunities WHERE id = ? AND user_id = ?`
+        )
+        .bind(opportunityId, userId)
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id: opportunityId,
+              deleted: true
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
       if (oppIdMatch && !pathname.includes('/status') && !pathname.includes('/job-description') && !pathname.includes('/ats-analysis') && !pathname.includes('/interviews') && method === 'GET') {
         const opportunityId = oppIdMatch[1];
 
