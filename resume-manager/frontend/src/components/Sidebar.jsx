@@ -9,7 +9,7 @@ export const navigationItems = [
   { name: 'Resumes', path: '/resumes' },
   { name: 'Interviews', path: '/interviews' },
   { name: 'Cover Letters', path: '/cover-letters' },
-  { name: 'Settings', path: '/settings/admin/users' },
+  { name: 'Settings', path: '/settings' },
 ];
 
 export default function Sidebar() {

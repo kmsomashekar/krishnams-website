@@ -1255,7 +1255,115 @@ export default {
           { status: 200, headers }
         );
       }
+// --- POST /api/v1/auth/change-password ---
+if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
+  const sessionUser = await getAuthenticatedUser(request, env);
 
+  if (!sessionUser) {
+    return buildErrorResponse(
+      'UNAUTHORIZED',
+      'Authentication required.',
+      401,
+      headers
+    );
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return buildErrorResponse(
+      'INVALID_REQUEST',
+      'Request payload must be a valid JSON structure.',
+      400,
+      headers
+    );
+  }
+
+  const { current_password, new_password } = body || {};
+
+  if (!current_password || !new_password) {
+    return buildErrorResponse(
+      'VALIDATION_ERROR',
+      'Current password and new password are required.',
+      400,
+      headers
+    );
+  }
+
+  if (typeof new_password !== 'string' || new_password.length < 12) {
+    return buildErrorResponse(
+      'VALIDATION_ERROR',
+      'New password must be at least 12 characters long.',
+      400,
+      headers
+    );
+  }
+
+  if (current_password === new_password) {
+    return buildErrorResponse(
+      'VALIDATION_ERROR',
+      'New password must be different from the current password.',
+      400,
+      headers
+    );
+  }
+
+  const user = await env.DB.prepare(
+    `SELECT id, password_hash
+     FROM users
+     WHERE id = ? AND status = 'ACTIVE'`
+  )
+    .bind(sessionUser.id)
+    .first();
+
+  if (!user) {
+    return buildErrorResponse(
+      'USER_NOT_FOUND',
+      'Active user account not found.',
+      404,
+      headers
+    );
+  }
+
+  const currentPasswordValid = await verifyPassword(
+    current_password,
+    user.password_hash
+  );
+
+  if (!currentPasswordValid) {
+    return buildErrorResponse(
+      'INVALID_CURRENT_PASSWORD',
+      'Current password is incorrect.',
+      400,
+      headers
+    );
+  }
+
+  const newPasswordHash = await hashPassword(new_password);
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(
+    `UPDATE users
+     SET password_hash = ?, updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(newPasswordHash, now, sessionUser.id)
+    .run();
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      data: {
+        message: 'Password changed successfully.'
+      }
+    }),
+    {
+      status: 200,
+      headers
+    }
+  );
+}
       // --- POST /api/v1/auth/logout ---
       if (pathname === '/api/v1/auth/logout' && method === 'POST') {
         const cookieHeader = request.headers.get("Cookie");

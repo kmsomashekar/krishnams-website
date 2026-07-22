@@ -13,6 +13,7 @@ import Interviews from './pages/Interviews.jsx';
 import CoverLetters from './pages/CoverLetters.jsx';
 import JDAnalyzer from './pages/JDAnalyzer.jsx';
 import Outreach from './pages/Outreach.jsx';
+import Settings from './pages/Settings';
 
 function LoadingScreen() {
   return (
@@ -72,14 +73,16 @@ export default function App() {
             }
           >
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/jd-analyzer" element={<JDAnalyzer />} />
             <Route path="/opportunities" element={<Opportunities />} />
-			<Route path="/outreach" element={<Outreach />} />
+			      <Route path="/outreach" element={<Outreach />} />
             <Route path="/opportunities/:id" element={<OpportunityDetail />} />
             <Route path="/resumes" element={<Resumes />} />
             <Route path="/interviews" element={<Interviews />} />
             <Route path="/cover-letters" element={<CoverLetters />} />
+            
             <Route
               path="/settings/admin/users"
               element={
