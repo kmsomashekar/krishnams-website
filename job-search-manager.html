@@ -3,65 +3,458 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Job Search Manager - Technology project case study by Krishna M S.">
+    <meta name="description" content="Job Search Manager case study by Krishna M S — a secure, cloud-native application built with a Cloudflare-first architecture, disciplined Git branching, security-by-design and AI-assisted engineering.">
     <meta name="author" content="Krishna M S">
     <title>Job Search Manager | Project Case Study | Krishna M S</title>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
-<script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=1yIutKSR4Ab5kIXLLMd-wGjRNyKFS1kjwXSEgvl2Wu-EOtBMSLPOATTLuHIzBTnVa0lq598EA7-B1Cptw8nDB-F4YxTBFpfthsSNxmQ3P-ST89p6-fknYqe3MbPj8x8Mbvl4vCyBrW9QXuxJu-POeBHG3x_2xJJwcUrZ-t8f5KiTOpeS4Cd3zHxm9a76HtenELgYVaio5tOeDTgZG3as0LUuHg6YvEtK62Vv3BEE2OqZHKIqgIVqD04cspbjFaBerYKwcP7W6pXklwdwhmQ1pKo-tQsUoM9SVIJttSSHmDFa5GXfpTV62iAsmYttUO-YLIXAxh6hQVjq1iJirdcXXg" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://me.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9jaGF0Z3B0LmNvbS9iYWNrZW5kLWFwaS9lc3R1YXJ5L2NvbnRlbnQ_aWQ9ZmlsZV8wMDAwMDAwMDY2YzA4MjA5YWUyNjE0YTYwYjk2ODllNiZmbj1qb2Itc2VhcmNoLW1hbmFnZXIuaHRtbCZjZD1hdHRhY2htZW50JnRzPTQ5NTc1OCZwPWZzJmNpZD0xJnNpZz1lNDhjM2E3Y2NiY2VlZTJmNWJlNTIxMjZkNWJhODYxNmRiYTVlNmI3YjdkNGQyNjZjYzE3M2U2N2M2MzlmNGUxJnY9MA"/></head>
+<script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=CJBBulL7M1XLAxCnxaQjvt77QNTapNgGHzfOnSCnxLGsLxmpCF0yCpKcPdfQGYBCMp41adnSJAVLPCrotJN4f55WIkmbNiWE6PTh31jXJY8l5I1VdYPO6jm2kCx5b9v8xvUDmvQSLzrXWqfgenkdyjCcKf3QVf587EYvo1hQ4G14SzZSGAOQfxDo_lLsqFpsbNhzciPFs0R4CI3cJzpWaoEahtmsZ5tpMj26JOm-uCsniyNSOwKtUvofgAqDIV_wOdzekQLSXCHZnqIVl5HO1-UIoO4baE4tnAeVIRszF0BGQgQ_brgxbl_rVUdD8xXXf9y0wKzKyWl5oDviy4sEmg" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://me.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9jaGF0Z3B0LmNvbS9iYWNrZW5kLWFwaS9lc3R1YXJ5L2NvbnRlbnQ_aWQ9ZmlsZV8wMDAwMDAwMGU2NmM4MjQzYmE0OTNlYmMxZGRiNWUxZCZmbj1qb2Itc2VhcmNoLW1hbmFnZXItZmluYWwuaHRtbCZjZD1hdHRhY2htZW50JnRzPTQ5NTc1OCZwPWZzJmNpZD0xJnNpZz1jZGU4ZmZjOWU0ZDQzZGNjZTcyMWUxYzllMTlhZWVhZjk1NmE0ZDNiZTljZjI5ZmEwOTQzYmJkMjVmODg4Y2FkJnY9MA"/></head>
 <body>
+
 <a href="#main-content" class="skip-to-content">Skip to main content</a>
+
 <header class="main-header">
     <div class="container header-container">
-        <a href="index.html" class="logo-area" aria-label="Krishna M S Home"><img src="images/kms-logo.png" alt="KMS Logo" class="nav-logo"></a>
-        <button class="mobile-nav-toggle" aria-controls="primary-navigation" aria-expanded="false" aria-label="Toggle primary navigation"><span class="sr-only">Menu</span><div class="hamburger-bar" aria-hidden="true"></div></button>
+        <a href="index.html" class="logo-area" aria-label="Krishna M S Home">
+            <img src="images/kms-logo.png" alt="KMS Logo" class="nav-logo">
+        </a>
+
+        <button class="mobile-nav-toggle" aria-controls="primary-navigation" aria-expanded="false" aria-label="Toggle primary navigation">
+            <span class="sr-only">Menu</span>
+            <div class="hamburger-bar" aria-hidden="true"></div>
+        </button>
+
         <nav id="primary-navigation" class="main-navigation" aria-label="Main Navigation">
             <ul class="nav-links">
                 <li><a href="index.html" class="nav-link">Home</a></li>
+                <li><a href="index.html#about" class="nav-link">About</a></li>
+                <li><a href="index.html#experience" class="nav-link">Experience</a></li>
+                <li><a href="index.html#expertise" class="nav-link">Expertise</a></li>
                 <li><a href="portfolio.html" class="nav-link active">Portfolio</a></li>
+                <li><a href="index.html#certifications" class="nav-link">Certifications</a></li>
                 <li><a href="index.html#contact" class="nav-link">Contact</a></li>
             </ul>
         </nav>
     </div>
 </header>
+
 <main id="main-content">
-<section class="hero-section portfolio-hero">
-    <div class="container portfolio-hero-inner scroll-reveal">
-        <span class="portfolio-eyebrow">Featured Technology Project</span>
-        <h1 class="hero-title">Job Search Manager</h1>
-        <p class="hero-subtitle">Simple by Design. Secure by Default.</p>
-        <p class="hero-summary portfolio-intro">
-            A secure, cloud-native application created from a real-world need to bring job-search activities,
-            opportunities, relationships and career assets into one structured system.
-        </p>
-        <div class="portfolio-actions portfolio-hero-actions">
-            <a href="https://jobsearch.krishnams.com" target="_blank" rel="noopener noreferrer" class="btn btn-primary">View Live Application</a>
-            <a href="portfolio.html" class="btn btn-secondary">Back to Portfolio</a>
-        </div>
-    </div>
-</section>
-<section class="portfolio-section">
-    <div class="container">
-        <div class="case-study-preview scroll-reveal">
-            <span class="portfolio-category-kicker">Case Study In Development</span>
-            <h2>The Full Project Story Is Coming Next</h2>
-            <p>
-                This case study will document why the project was developed, its feature set and product map,
-                system architecture, technology choices, security-by-design approach, engineering and AI-assisted
-                development workflow, code and security reviews, testing, deployment, outcomes and roadmap.
+
+<section class="hero-section jsm-hero">
+    <div class="container jsm-hero-grid">
+        <div class="jsm-hero-copy scroll-reveal">
+            <span class="portfolio-eyebrow">Featured Technology Project • Live</span>
+            <h1 class="hero-title">Job Search<br>Manager</h1>
+            <p class="hero-subtitle">Simple by Design. Secure by Default.</p>
+            <p class="hero-summary">
+                A secure, cloud-native application created from a real-world need to bring opportunities,
+                relationships, career documents and job-search activities into one structured system.
             </p>
-            <div class="case-study-topic-grid">
-                <span>Why It Was Built</span><span>Features &amp; Product Map</span><span>System Architecture</span>
-                <span>Security by Design</span><span>Technology &amp; Tools</span><span>Code &amp; Security Reviews</span>
-                <span>Testing &amp; Deployment</span><span>Roadmap &amp; Lessons</span>
+
+            <div class="jsm-at-glance">
+                <span>Cloud-Native</span>
+                <span>Security by Design</span>
+                <span>Full-Stack</span>
+                <span>AI-Assisted Engineering</span>
+            </div>
+
+            <div class="portfolio-actions">
+                <a href="https://jobsearch.krishnams.com" target="_blank" rel="noopener noreferrer" class="btn btn-primary">View Live Application</a>
+                <a href="portfolio.html" class="btn btn-secondary">Back to Portfolio</a>
+            </div>
+        </div>
+
+        <div class="jsm-hero-visual scroll-reveal" aria-hidden="true">
+            <div class="jsm-window">
+                <div class="jsm-window-bar"><span></span><span></span><span></span></div>
+                <div class="jsm-window-body">
+                    <div class="jsm-window-title">JOB SEARCH MANAGER</div>
+                    <div class="jsm-window-subtitle">One structured journey</div>
+                    <div class="jsm-mini-flow">
+                        <span>Discover</span><b>→</b><span>Prepare</span><b>→</b><span>Apply</span>
+                    </div>
+                    <div class="jsm-mini-flow">
+                        <span>Connect</span><b>→</b><span>Interview</span><b>→</b><span>Outcome</span>
+                    </div>
+                    <div class="jsm-window-principle">SECURE • STRUCTURED • PRACTICAL</div>
+                </div>
             </div>
         </div>
     </div>
 </section>
+
+<section class="jsm-section jsm-problem-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">01 • The Origin</span>
+            <h2 class="section-title">Why I Built It</h2>
+        </div>
+
+        <div class="jsm-story-grid">
+            <div class="jsm-story-copy scroll-reveal">
+                <p class="jsm-lead">
+                    Job Search Manager began with a problem I experienced personally while managing an active and increasingly complex job search.
+                </p>
+                <p>
+                    Applying for a serious opportunity involved much more than finding a job and submitting a resume.
+                    Each role required reviewing the Job Description, assessing how well my experience matched,
+                    evaluating ATS alignment, identifying relevant skills and keywords, customizing the resume where appropriate,
+                    and tracking exactly which resume version was submitted.
+                </p>
+                <p>
+                    At the same time, I needed to manage opportunities from different channels, recruiter and professional contacts,
+                    application status, interviews, follow-ups, job descriptions, resumes and supporting documents.
+                    The workflow quickly became fragmented across spreadsheets, job portals, documents, email, LinkedIn and other channels.
+                </p>
+                <p>
+                    Rather than continuing to adapt my workflow around disconnected tools, I decided to design and build a purpose-built system.
+                    What began as a resume-management idea evolved into an end-to-end <strong>Job Search Manager</strong>.
+                </p>
+            </div>
+
+            <div class="jsm-evolution-card scroll-reveal">
+                <span class="project-label">The Real Workflow</span>
+                <div class="jsm-vertical-flow">
+                    <div><span>01</span><strong>Review the Job Description</strong></div>
+                    <div><span>02</span><strong>Assess Match &amp; ATS Alignment</strong></div>
+                    <div><span>03</span><strong>Customize &amp; Version the Resume</strong></div>
+                    <div><span>04</span><strong>Apply &amp; Track</strong></div>
+                    <div><span>05</span><strong>Connect &amp; Follow Up</strong></div>
+                    <div><span>06</span><strong>Interview &amp; Manage Outcome</strong></div>
+                </div>
+            </div>
+        </div>
+
+        <blockquote class="jsm-principle-quote scroll-reveal">
+            <p>The goal was not to over-engineer the solution. Simplicity would never come at the expense of security, privacy, maintainability or engineering discipline.</p>
+            <strong>Simple by Design. Secure by Default.</strong>
+        </blockquote>
+    </div>
+</section>
+
+<section class="jsm-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">02 • Product</span>
+            <h2 class="section-title">What the Product Brings Together</h2>
+            <p class="section-subtitle">A single structured system supporting the broader job-search lifecycle rather than one isolated task.</p>
+        </div>
+
+        <div class="jsm-feature-grid">
+            <article class="jsm-feature-card scroll-reveal"><span>01</span><h3>Opportunities &amp; Applications</h3><p>Organize opportunities, companies, job descriptions, application stages, status and the overall application lifecycle.</p></article>
+            <article class="jsm-feature-card scroll-reveal"><span>02</span><h3>Contacts &amp; Relationships</h3><p>Bring recruiters, hiring contacts, professional connections, interactions and follow-up context into the same workflow.</p></article>
+            <article class="jsm-feature-card scroll-reveal"><span>03</span><h3>Resumes &amp; Documents</h3><p>Maintain career assets, resume versions and supporting documents so the right material can be associated with the right opportunity.</p></article>
+            <article class="jsm-feature-card scroll-reveal"><span>04</span><h3>JD &amp; Application Workflow</h3><p>Keep the job description and application context connected, supporting a structured approach to evaluating and preparing for opportunities.</p></article>
+            <article class="jsm-feature-card scroll-reveal"><span>05</span><h3>Interviews &amp; Follow-Ups</h3><p>Keep interview and follow-up activity connected to the broader opportunity journey rather than scattered across separate notes and channels.</p></article>
+            <article class="jsm-feature-card scroll-reveal"><span>06</span><h3>Dashboard &amp; Visibility</h3><p>Create a consolidated view of job-search activity and pipeline information to make the overall process easier to understand and manage.</p></article>
+            <article class="jsm-feature-card scroll-reveal"><span>07</span><h3>Administration</h3><p>Support controlled administration and user-management capabilities with protected privileged operations and ownership rules.</p></article>
+            <article class="jsm-feature-card scroll-reveal"><span>08</span><h3>Security &amp; Access</h3><p>Apply authenticated access, role-aware authorization, session controls and protected API boundaries across the application.</p></article>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section jsm-map-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">03 • Product Map</span>
+            <h2 class="section-title">The Job-Search Journey</h2>
+            <p class="section-subtitle">The product is organized around the journey of the job seeker—not around a collection of disconnected software modules.</p>
+        </div>
+
+        <div class="jsm-product-map scroll-reveal">
+            <div class="jsm-map-step"><span>01</span><strong>Discover &amp;<br>Evaluate</strong><small>Opportunities • JDs</small></div>
+            <div class="jsm-map-arrow">→</div>
+            <div class="jsm-map-step"><span>02</span><strong>Prepare &amp;<br>Tailor</strong><small>Resumes • Documents</small></div>
+            <div class="jsm-map-arrow">→</div>
+            <div class="jsm-map-step"><span>03</span><strong>Apply &amp;<br>Track</strong><small>Applications • Status</small></div>
+            <div class="jsm-map-arrow">→</div>
+            <div class="jsm-map-step"><span>04</span><strong>Connect &amp;<br>Follow Up</strong><small>Contacts • Interactions</small></div>
+            <div class="jsm-map-arrow">→</div>
+            <div class="jsm-map-step"><span>05</span><strong>Interview</strong><small>Interviews • Follow-ups</small></div>
+            <div class="jsm-map-arrow">→</div>
+            <div class="jsm-map-step"><span>06</span><strong>Outcome</strong><small>Pipeline • Visibility</small></div>
+        </div>
+
+        <div class="jsm-foundation-bar scroll-reveal">
+            <span>SECURITY</span><span>ADMINISTRATION</span><span>CLOUD PLATFORM</span><span>DATA &amp; DOCUMENTS</span>
+        </div>
+
+        <div class="jsm-roadmap-note scroll-reveal">
+            <span class="project-label">Evolution Roadmap</span>
+            <p>Deeper ATS analysis, resume editing and customization, job feeds and matching, and mock interview/coaching capabilities are treated as product evolution—not presented here as completed production capabilities.</p>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">04 • Architecture</span>
+            <h2 class="section-title">Cloudflare-First. Purposefully Simple.</h2>
+            <p class="section-subtitle">The architecture was selected to fit the problem: secure, maintainable, cost-conscious and scalable enough for its purpose without unnecessary infrastructure.</p>
+        </div>
+
+        <div class="jsm-architecture scroll-reveal">
+            <div class="arch-node arch-user"><small>USER</small><strong>Browser / Web UI</strong></div>
+            <div class="arch-connector">↓</div>
+            <div class="arch-boundary">
+                <div class="arch-boundary-title">CLOUDFLARE PLATFORM / APPLICATION BOUNDARY</div>
+                <div class="arch-two-col">
+                    <div class="arch-node"><small>FRONTEND</small><strong>React + Vite</strong><span>Application Experience</span></div>
+                    <div class="arch-node arch-accent"><small>PROTECTED BACKEND</small><strong>Cloudflare Workers</strong><span>API • Business Logic • Security Enforcement</span></div>
+                </div>
+                <div class="arch-security-strip">Authentication • Authorization • Session Controls • Validation • Business Rules</div>
+                <div class="arch-two-col">
+                    <div class="arch-node"><small>STRUCTURED DATA</small><strong>Cloudflare D1</strong><span>Application Records</span></div>
+                    <div class="arch-node"><small>OBJECT STORAGE</small><strong>Cloudflare R2</strong><span>Documents &amp; Files</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="jsm-decision-grid">
+            <article class="jsm-decision-card scroll-reveal"><h3>Protected API Boundary</h3><p>Privileged operations are mediated through the backend/API layer rather than giving the browser direct privileged access to data and storage resources.</p></article>
+            <article class="jsm-decision-card scroll-reveal"><h3>Separation of Concerns</h3><p>D1 holds structured application records while R2 handles file/object storage—using each service for the type of data it is designed to manage.</p></article>
+            <article class="jsm-decision-card scroll-reveal"><h3>Appropriate Complexity</h3><p>The design deliberately avoids infrastructure that does not add meaningful value to the problem, reducing operational burden without removing necessary controls.</p></article>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section jsm-security-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">05 • Security by Design</span>
+            <h2 class="section-title">Security Was a Requirement, Not an Afterthought</h2>
+            <p class="section-subtitle">The application handles personal career information and documents. Appropriate controls were therefore considered across identity, sessions, authorization, APIs, data, development and deployment.</p>
+        </div>
+
+        <div class="jsm-security-highlight-grid">
+            <article class="jsm-security-highlight scroll-reveal"><div class="security-icon">MFA</div><h3>Mandatory MFA for Administrators</h3><p>Privileged administrative access requires stronger authentication, applying a simple principle: higher privilege requires stronger identity assurance.</p></article>
+            <article class="jsm-security-highlight scroll-reveal"><div class="security-icon">⏱</div><h3>Server-Enforced Session Timeout</h3><p>Authenticated sessions are subject to server-side timeout controls so unattended access does not remain available indefinitely.</p></article>
+            <article class="jsm-security-highlight scroll-reveal"><div class="security-icon">RBAC</div><h3>Server-Side Authorization</h3><p>Role and privilege controls are enforced by the backend rather than relying only on what the browser chooses to display.</p></article>
+            <article class="jsm-security-highlight scroll-reveal"><div class="security-icon">API</div><h3>Protected Data Access</h3><p>Application data and files sit behind controlled application/API boundaries instead of being exposed as directly privileged browser resources.</p></article>
+        </div>
+
+        <div class="jsm-defense-stack scroll-reveal">
+            <div><span>01</span><strong>Identity &amp; Authentication</strong><small>Authenticated access • stronger controls for privileged administration</small></div>
+            <div><span>02</span><strong>Session Security</strong><small>Server-side validation • inactivity / expiry controls</small></div>
+            <div><span>03</span><strong>Authorization &amp; Ownership</strong><small>RBAC • protected owner/admin operations • data ownership concepts</small></div>
+            <div><span>04</span><strong>API &amp; Application Controls</strong><small>Protected endpoints • validation • business-rule enforcement</small></div>
+            <div><span>05</span><strong>Data &amp; Storage Boundaries</strong><small>Structured data and file storage separated behind controlled services</small></div>
+            <div><span>06</span><strong>Engineering &amp; Change Control</strong><small>Branching • review • testing • controlled integration</small></div>
+        </div>
+
+        <div class="jsm-invisible-controls scroll-reveal">
+            <span class="project-label">Some of the Most Important Features Are Invisible</span>
+            <p>Authentication controls • authorization checks • ownership validation • protected APIs • session handling • privileged-access safeguards • data boundaries • code review • Git change control</p>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">06 • Technology &amp; Local Development</span>
+            <h2 class="section-title">Technology Chosen to Fit the Problem</h2>
+            <p class="section-subtitle">The stack was selected around security, simplicity, maintainability, cost efficiency and the ability to evolve—not around collecting technologies.</p>
+        </div>
+
+        <div class="jsm-tech-grid">
+            <article class="jsm-tech-card scroll-reveal"><strong>React + Vite</strong><span>Frontend</span><p>Responsive application UI and modern local development workflow.</p></article>
+            <article class="jsm-tech-card scroll-reveal"><strong>Cloudflare Workers</strong><span>Backend / API</span><p>Protected server-side API, business logic and security enforcement.</p></article>
+            <article class="jsm-tech-card scroll-reveal"><strong>Cloudflare D1</strong><span>Database</span><p>Relational storage for structured application records.</p></article>
+            <article class="jsm-tech-card scroll-reveal"><strong>Cloudflare R2</strong><span>Object Storage</span><p>Separate storage boundary for documents and file assets.</p></article>
+            <article class="jsm-tech-card scroll-reveal"><strong>Wrangler</strong><span>Cloudflare Tooling</span><p>Local Worker runtime, bindings, configuration, migrations and deployment workflow.</p></article>
+            <article class="jsm-tech-card scroll-reveal"><strong>Node.js + npm</strong><span>Build Toolchain</span><p>Development, dependency and application build tooling.</p></article>
+            <article class="jsm-tech-card scroll-reveal"><strong>Git + GitHub</strong><span>Version Control</span><p>Branching, traceability, known-good checkpoints and controlled integration.</p></article>
+            <article class="jsm-tech-card scroll-reveal"><strong>Browser DevTools</strong><span>Validation</span><p>UI, network/API, authentication, cookie and integration troubleshooting.</p></article>
+        </div>
+
+        <div class="jsm-local-env scroll-reveal">
+            <div>
+                <span class="project-label">Local Development Environment</span>
+                <h3>Build and Validate Before Production</h3>
+                <p>The frontend, backend/API, database migrations and service bindings were exercised through a local development workflow designed to represent the deployed architecture as closely as practical.</p>
+            </div>
+            <div class="local-env-flow">
+                <span>React / Vite</span><span>Wrangler / Worker</span><span>D1 / Migrations</span><span>R2 Bindings</span><span>Browser DevTools</span><span>Git</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section jsm-git-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">07 • Git, Branching &amp; Change Control</span>
+            <h2 class="section-title">Isolate the Change. Protect the Baseline.</h2>
+            <p class="section-subtitle">Git was used as an engineering control—not simply as a place to store finished code.</p>
+        </div>
+
+        <div class="jsm-branch-visual scroll-reveal">
+            <div class="branch-main"><span>main</span><strong>Stable Integrated Baseline</strong></div>
+            <div class="branch-line"></div>
+            <div class="branch-task"><span>task-x.x-feature-name</span><strong>Defined / Isolated Change</strong></div>
+            <div class="branch-stages">
+                <span>Implement</span><b>→</b><span>Build &amp; Test</span><b>→</b><span>Review</span><b>→</b><span>Correct</span><b>→</b><span>Known-Good Commit</span>
+            </div>
+            <div class="branch-merge">↓ &nbsp; Controlled Merge &nbsp; ↓</div>
+            <div class="branch-main"><span>main</span><strong>Validated Baseline → Deploy</strong></div>
+        </div>
+
+        <div class="jsm-git-points">
+            <article class="jsm-decision-card scroll-reveal"><h3>Task-Oriented Branches</h3><p>Meaningful capabilities and changes were isolated in dedicated branches so development could progress without immediately putting the stable baseline at risk.</p></article>
+            <article class="jsm-decision-card scroll-reveal"><h3>Known-Good Checkpoints</h3><p>Commits were used to preserve validated states, providing traceability, recoverability and safe points before moving to the next task.</p></article>
+            <article class="jsm-decision-card scroll-reveal"><h3>Controlled Integration</h3><p>Changes moved toward the stable branch after implementation, local validation, review and correction rather than through uncontrolled large-scale edits.</p></article>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">08 • AI-Assisted Engineering</span>
+            <h2 class="section-title">AI as an Accelerator—Inside Engineering Boundaries</h2>
+            <p class="section-subtitle">AI accelerated implementation, exploration, troubleshooting and review, but generated output was not automatically treated as production-ready.</p>
+        </div>
+
+        <div class="jsm-ai-quote scroll-reveal">
+            <p>“AI can accelerate development. Engineering discipline provides the control.”</p>
+        </div>
+
+        <div class="jsm-engineering-flow scroll-reveal">
+            <div><span>01</span><strong>Human Direction</strong><small>Problem • Requirements • SRS • Decisions</small></div>
+            <b>→</b>
+            <div><span>02</span><strong>Architecture</strong><small>Design • Security • Boundaries</small></div>
+            <b>→</b>
+            <div><span>03</span><strong>AI-Assisted Build</strong><small>Implementation • Exploration • Debugging</small></div>
+            <b>→</b>
+            <div><span>04</span><strong>Review &amp; Test</strong><small>Functional • Architecture • Security</small></div>
+            <b>→</b>
+            <div><span>05</span><strong>Git Control</strong><small>Commit • Merge • Traceability</small></div>
+            <b>→</b>
+            <div><span>06</span><strong>Deploy &amp; Validate</strong><small>Production verification</small></div>
+        </div>
+
+        <div class="jsm-ai-tools-grid">
+            <article class="jsm-ai-tool scroll-reveal"><h3>Gemini</h3><p>Used substantially for larger implementation and code-generation tasks within defined requirements and task boundaries.</p></article>
+            <article class="jsm-ai-tool scroll-reveal"><h3>ChatGPT</h3><p>Used for requirements refinement, architecture discussions, implementation planning, debugging, change review, security reasoning and iterative refinement.</p></article>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section jsm-review-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">09 • Code Review &amp; Quality</span>
+            <h2 class="section-title">Working Code Was Not Automatically Finished Code</h2>
+            <p class="section-subtitle">Review looked beyond whether a page loaded. Changes were challenged for correctness, architecture, security, scope and regression risk.</p>
+        </div>
+
+        <div class="jsm-review-grid">
+            <article class="jsm-review-card scroll-reveal"><span>FUNCTIONAL</span><h3>Does it satisfy the requirement?</h3><p>Validate expected workflows, behavior and whether the implementation actually solves the defined task.</p></article>
+            <article class="jsm-review-card scroll-reveal"><span>ARCHITECTURE</span><h3>Does it still fit the design?</h3><p>Check separation of concerns, service boundaries, unnecessary complexity and architecture drift.</p></article>
+            <article class="jsm-review-card scroll-reveal"><span>SECURITY</span><h3>Are controls enforced correctly?</h3><p>Review authentication, authorization, privileged operations, session behavior, ownership and protected APIs.</p></article>
+            <article class="jsm-review-card scroll-reveal"><span>REGRESSION</span><h3>What should not have changed?</h3><p>Look for unintended file changes, broken existing behavior and side effects outside the intended scope.</p></article>
+        </div>
+
+        <blockquote class="jsm-review-principle scroll-reveal">
+            <strong>Review principle:</strong> Verify not only what changed—but also what should not have changed.
+        </blockquote>
+    </div>
+</section>
+
+<section class="jsm-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">10 • Testing &amp; Security Validation</span>
+            <h2 class="section-title">Test Expected Success—and Expected Denial</h2>
+            <p class="section-subtitle">Testing was incremental and layered, covering application behavior, integration, authentication/authorization and security-control outcomes.</p>
+        </div>
+
+        <div class="jsm-test-flow scroll-reveal">
+            <span>Local Functional Testing</span><b>→</b><span>API / Integration</span><b>→</b><span>Auth &amp; Authorization</span><b>→</b><span>Security Controls</span><b>→</b><span>Regression Checks</span><b>→</b><span>Production Validation</span>
+        </div>
+
+        <div class="jsm-test-grid">
+            <article class="jsm-test-card scroll-reveal"><h3>Positive Paths</h3><p>Confirm that authorized users and valid workflows behave as expected.</p></article>
+            <article class="jsm-test-card scroll-reveal"><h3>Negative Paths</h3><p>Confirm that unauthenticated, insufficiently privileged or expired access is denied where it should be.</p></article>
+            <article class="jsm-test-card scroll-reveal"><h3>Real Integration Issues</h3><p>Development included resolving practical issues involving CORS, authentication state, session cookies, protected routes, API authorization, migrations and deployment behavior.</p></article>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-section jsm-delivery-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">11 • Delivery</span>
+            <h2 class="section-title">From Defined Task to Production</h2>
+        </div>
+
+        <div class="jsm-delivery-pipeline scroll-reveal">
+            <span>Task Defined</span><b>→</b><span>Task Branch</span><b>→</b><span>AI-Assisted Implementation</span><b>→</b><span>Local Development</span><b>→</b><span>Code &amp; Security Review</span><b>→</b><span>Test &amp; Retest</span><b>→</b><span>Known-Good Commit</span><b>→</b><span>Controlled Merge</span><b>→</b><span>Deploy</span><b>→</b><span>Production Validation</span>
+        </div>
+
+        <p class="jsm-delivery-note scroll-reveal">The objective was not process for the sake of process. Each control created a safer boundary around rapid, AI-assisted development.</p>
+    </div>
+</section>
+
+<section class="jsm-section">
+    <div class="container">
+        <div class="jsm-section-heading scroll-reveal">
+            <span class="portfolio-category-kicker">12 • Outcome &amp; Evolution</span>
+            <h2 class="section-title">From Personal Problem to Deployed Product</h2>
+            <p class="section-subtitle">The achievement is not only the application itself—it is the complete journey from identifying a real problem to designing, securing, reviewing, testing and deploying a working solution.</p>
+        </div>
+
+        <div class="jsm-outcome-grid">
+            <article class="jsm-outcome-card scroll-reveal"><span>01</span><h3>Product Thinking</h3><p>Started with a real operational problem and expanded the scope only when the broader lifecycle made the need clear.</p></article>
+            <article class="jsm-outcome-card scroll-reveal"><span>02</span><h3>Architecture Thinking</h3><p>Selected a pragmatic cloud architecture that balanced security, simplicity, maintainability and cost.</p></article>
+            <article class="jsm-outcome-card scroll-reveal"><span>03</span><h3>Security Thinking</h3><p>Treated identity, privileged access, sessions, authorization and data boundaries as design requirements rather than late additions.</p></article>
+            <article class="jsm-outcome-card scroll-reveal"><span>04</span><h3>Engineering Discipline</h3><p>Used local environments, task-based branching, reviews, testing, known-good checkpoints and controlled integration around AI-assisted development.</p></article>
+        </div>
+
+        <div class="jsm-roadmap scroll-reveal">
+            <div>
+                <span class="project-label">Product Evolution</span>
+                <h3>What Comes Next</h3>
+                <p>The roadmap extends the same end-to-end job-search vision with deeper intelligence and assistance while preserving the principles established in the first production foundation.</p>
+            </div>
+            <div class="jsm-roadmap-items">
+                <span>Resume Editing &amp; Tailoring</span>
+                <span>Deeper ATS / JD Analysis</span>
+                <span>Job Feeds &amp; Match Intelligence</span>
+                <span>Mock Interviews &amp; Coaching</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="jsm-closing-section">
+    <div class="container">
+        <div class="jsm-closing-card scroll-reveal">
+            <span class="portfolio-category-kicker">Job Search Manager</span>
+            <h2>Real Problem. Thoughtful Design.<br>Working Product.</h2>
+            <p>Built to solve a problem I experienced firsthand—and developed as a practical exercise in product thinking, secure architecture, modern cloud engineering, disciplined change control and responsible AI-assisted development.</p>
+            <div class="portfolio-actions">
+                <a href="https://jobsearch.krishnams.com" target="_blank" rel="noopener noreferrer" class="btn btn-primary">View Live Application</a>
+                <a href="portfolio.html" class="btn btn-secondary">Explore Portfolio</a>
+            </div>
+        </div>
+    </div>
+</section>
+
 </main>
-<footer class="main-footer"><div class="container footer-content"><p>&copy; 2026 Krishna M S. All Rights Reserved.</p><p class="footer-tagline">Job Search Manager • Project Case Study</p></div></footer>
+
+<footer class="main-footer">
+    <div class="container footer-content">
+        <p>&copy; 2026 Krishna M S. All Rights Reserved.</p>
+        <p class="footer-tagline">Simple by Design. Secure by Default.</p>
+    </div>
+</footer>
+
 <script src="js/script.js"></script>
 </body>
 </html>
