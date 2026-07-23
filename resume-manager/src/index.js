@@ -1964,11 +1964,11 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
           periodLabel = 'All Time';
         }
 
-        let query = `SELECT channel, COUNT(*) as count FROM outreach_logs WHERE user_id = ?`;
+        let query = `SELECT channel, COUNT(*) as count FROM interactions WHERE user_id = ?`;
         let bindParams = [userId];
 
         if (periodParam !== 'all_time' && startDate && endDate) {
-          query += ` AND contact_date >= ? AND contact_date <= ?`;
+          query += ` AND interaction_date >= ? AND interaction_date <= ?`;
           bindParams.push(startDate, endDate);
         }
 
