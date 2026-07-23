@@ -15,6 +15,18 @@ function getPeriodBounds(period) {
   const formatDate = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 
   switch (period) {
+  case 'this_week': {
+  const today = new Date(Date.UTC(year, month, day));
+
+  // Monday as the start of the week
+  const dayOfWeek = today.getUTCDay();
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+  const start = new Date(today);
+  start.setUTCDate(today.getUTCDate() - daysSinceMonday);
+
+  return { start: formatDate(start), end: formatDate(today) };
+}
     case 'last_month': {
       const start = new Date(Date.UTC(year, month - 1, 1));
       const end = new Date(Date.UTC(year, month, 0));
@@ -251,6 +263,7 @@ const opportunities = Array.isArray(opportunityData?.opportunities)
             onChange={(e) => setPeriod(e.target.value)}
             className="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 font-medium"
           >
+            <option value="this_week">This Week</option>
             <option value="this_month">This Month</option>
             <option value="last_month">Last Month</option>
             <option value="last_30">Last 30 Days</option>

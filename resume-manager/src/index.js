@@ -1917,7 +1917,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         }
 
         const periodParam = url.searchParams.get('period') || 'this_month';
-        const validPeriods = ['this_month', 'last_month', 'last_30', 'last_90', 'all_time'];
+        const validPeriods = ['this_week', 'this_month', 'last_month', 'last_30', 'last_90', 'all_time'];
         if (!validPeriods.includes(periodParam)) {
           return buildErrorResponse('INVALID_INPUT', "Invalid or unsupported period value provided.", 400, headers);
         }
@@ -1934,36 +1934,60 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         let endDate = null;
         let periodLabel = 'This Month';
 
-        if (periodParam === 'this_month') {
+
+        if (periodParam === 'this_week') {
+          const today = new Date(Date.UTC(year, month, day));
+
+          // Monday as the start of the week
+          const dayOfWeek = today.getUTCDay();
+          const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+          const start = new Date(today);
+          start.setUTCDate(today.getUTCDate() - daysSinceMonday);
+
+          startDate = formatDate(start);
+          endDate = formatDate(today);
+          periodLabel = 'This Week';
+
+        } else if (periodParam === 'this_month') {
           const start = new Date(Date.UTC(year, month, 1));
           const end = new Date(Date.UTC(year, month, day));
+
           startDate = formatDate(start);
           endDate = formatDate(end);
           periodLabel = 'This Month';
+
         } else if (periodParam === 'last_month') {
           const start = new Date(Date.UTC(year, month - 1, 1));
           const end = new Date(Date.UTC(year, month, 0));
+
           startDate = formatDate(start);
           endDate = formatDate(end);
           periodLabel = 'Last Month';
+
         } else if (periodParam === 'last_30') {
           const end = new Date(Date.UTC(year, month, day));
           const start = new Date(Date.UTC(year, month, day));
+
           start.setUTCDate(start.getUTCDate() - 29);
+
           startDate = formatDate(start);
           endDate = formatDate(end);
           periodLabel = 'Last 30 Days';
+
         } else if (periodParam === 'last_90') {
           const end = new Date(Date.UTC(year, month, day));
           const start = new Date(Date.UTC(year, month, day));
+
           start.setUTCDate(start.getUTCDate() - 89);
+
           startDate = formatDate(start);
           endDate = formatDate(end);
           periodLabel = 'Last 90 Days';
+
         } else if (periodParam === 'all_time') {
           periodLabel = 'All Time';
         }
-
         let query = `SELECT channel, COUNT(*) as count FROM interactions WHERE user_id = ?`;
         let bindParams = [userId];
 
