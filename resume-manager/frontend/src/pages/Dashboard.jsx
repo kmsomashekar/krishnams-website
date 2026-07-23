@@ -99,6 +99,18 @@ async function fetchOutreachSummary(period) {
   return body?.data || { total_people_contacted: 0, breakdown: {}, period_label: 'This month' };
 }
 
+// Fetch recent dashboard activity
+async function fetchDashboardActivity() {
+  const res = await fetch(`${BASE_URL}/api/v1/dashboard/activity`, {
+    credentials: 'include'
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to fetch dashboard activity');
+  }
+
+  return res.json();
+}
 export default function Dashboard() {
   const [period, setPeriod] = useState('this_month');
 
@@ -125,6 +137,15 @@ const opportunities = Array.isArray(opportunityData?.opportunities)
     queryKey: ['outreach-summary', period],
     queryFn: () => fetchOutreachSummary(period)
   });
+
+  // Fetch recent dashboard activity
+const {
+  data: activityData = { activities: [] },
+  isLoading: isActivityLoading
+} = useQuery({
+  queryKey: ['dashboard-activity'],
+  queryFn: fetchDashboardActivity
+});
 
   // Extract stable array of IDs for the details query key
   const opportunityIds = opportunities.map(o => o.id);

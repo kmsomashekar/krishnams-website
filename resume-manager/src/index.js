@@ -1864,6 +1864,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
       const resumeRootPattern = '/api/v1/resumes';
       const companyRootPattern = '/api/v1/companies';
       const opportunityRootPattern = '/api/v1/opportunities';
+      const dashboardActivityPattern = '/api/v1/dashboard/activity';
 
       const resumeIdRegex = /^\/api\/v1\/resumes\/([^\/]+)$/;
       const versionsRootRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions$/;
@@ -1892,6 +1893,78 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
       const outreachIdRegex = /^\/api\/v1\/outreach\/([^\/]+)$/;
       const outreachSummaryPattern = '/api/v1/outreach/summary';
 
+            // =======================================================================
+      // MODULE: DASHBOARD ACTIVITY API (Task 1.24)
+      // =======================================================================
+
+      if (pathname === dashboardActivityPattern && method === 'GET') {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+
+        const activities = [];
+
+        // Recent applications
+        const { results: applications } = await env.DB.prepare(
+          `SELECT job_title, date_applied, status
+           FROM opportunities
+           WHERE user_id = ?
+             AND date_applied IS NOT NULL
+           ORDER BY date_applied DESC
+           LIMIT 10`
+        )
+        .bind(userId)
+        .all();
+
+        if (applications) {
+          applications.forEach(app => {
+            activities.push({
+              type: 'APPLICATION',
+              date: app.date_applied,
+              title: `Applied for ${app.job_title}`,
+              details: app.status
+            });
+          });
+        }
+
+        // Recent outreach interactions
+        const { results: interactions } = await env.DB.prepare(
+          `SELECT i.interaction_date, i.channel, c.person_name
+           FROM interactions i
+           JOIN contacts c ON c.id = i.contact_id
+           WHERE i.user_id = ?
+           ORDER BY i.interaction_date DESC
+           LIMIT 10`
+        )
+        .bind(userId)
+        .all();
+
+        if (interactions) {
+          interactions.forEach(item => {
+            activities.push({
+              type: 'OUTREACH',
+              date: item.interaction_date,
+              title: `${item.channel} interaction with ${item.person_name}`,
+              details: item.channel
+            });
+          });
+        }
+
+        // Sort combined activity stream
+        activities.sort((a, b) =>
+          new Date(b.date) - new Date(a.date)
+        );
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              activities: activities.slice(0, 10)
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
       // Helper function for strict YYYY-MM-DD validation using UTC
       function isValidYYYYMMDD(dateString) {
         if (typeof dateString !== 'string') return false;
