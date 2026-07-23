@@ -1860,15 +1860,15 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
       // -------------------------------------------------------------------------
       // 4. RESTful Route Routing Pipeline (Preserving Domain APIs & Safe Fallbacks)
       // -------------------------------------------------------------------------
-      
+
       const resumeRootPattern = '/api/v1/resumes';
       const companyRootPattern = '/api/v1/companies';
       const opportunityRootPattern = '/api/v1/opportunities';
-      
+
       const resumeIdRegex = /^\/api\/v1\/resumes\/([^\/]+)$/;
       const versionsRootRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions$/;
       const versionIdRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)$/;
-      
+
       const aiContextGenerateRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)\/ai-context\/generate$/;
       const versionFileRegex = /^\/api\/v1\/resumes\/([^\/]+)\/versions\/([^\/]+)\/file$/;
 
@@ -2049,7 +2049,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         if (!person_name || typeof person_name !== 'string' || person_name.trim().length === 0) {
           return buildErrorResponse('INVALID_INPUT', "Field 'person_name' is required.", 400, headers);
         }
-        
+
         const validChannels = ['LINKEDIN', 'WHATSAPP', 'EMAIL', 'PHONE', 'REFERRAL', 'OTHER'];
         if (!channel || !validChannels.includes(channel)) {
           return buildErrorResponse('INVALID_INPUT', `Field 'channel' must be one of: ${validChannels.join(', ')}.`, 400, headers);
@@ -2150,7 +2150,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
           if (person_name !== undefined && (typeof person_name !== 'string' || person_name.trim().length === 0)) {
             return buildErrorResponse('INVALID_INPUT', "Field 'person_name' cannot be empty.", 400, headers);
           }
-          
+
           const validChannels = ['LINKEDIN', 'WHATSAPP', 'EMAIL', 'PHONE', 'REFERRAL', 'OTHER'];
           if (channel !== undefined && !validChannels.includes(channel)) {
             return buildErrorResponse('INVALID_INPUT', `Field 'channel' must be one of: ${validChannels.join(', ')}.`, 400, headers);
@@ -2223,6 +2223,399 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         }
       }
 
+// =======================================================================
+      // MODULE: CONTACTS & INTERACTIONS API (Task 1.22C)
+      // =======================================================================
+      const contactsRootPattern = '/api/v1/contacts';
+      const contactIdRegex = /^\/api\/v1\/contacts\/([^\/]+)$/;
+      const contactsInteractionsRegex = /^\/api\/v1\/contacts\/([^\/]+)\/interactions$/;
+      const interactionIdRegex = /^\/api\/v1\/interactions\/([^\/]+)$/;
+
+      // GET /api/v1/contacts
+      if (pathname === contactsRootPattern && method === 'GET') {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        const { results } = await env.DB.prepare(
+          `SELECT id, user_id, person_name, company, email, phone, linkedin_url, notes, created_at, updated_at
+           FROM contacts
+           WHERE user_id = ?
+           ORDER BY updated_at DESC`
+        )
+        .bind(userId)
+        .all();
+
+        return new Response(
+          JSON.stringify({ success: true, data: { contacts: results } }),
+          { status: 200, headers }
+        );
+      }
+
+      // POST /api/v1/contacts
+      if (pathname === contactsRootPattern && method === 'POST') {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { person_name, company, email, phone, linkedin_url, notes } = body;
+
+        if (!person_name || typeof person_name !== 'string' || person_name.trim().length === 0) {
+          return buildErrorResponse('INVALID_INPUT', "Field 'person_name' is required and cannot be blank.", 400, headers);
+        }
+
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        await env.DB.prepare(
+          `INSERT INTO contacts (id, user_id, person_name, company, email, phone, linkedin_url, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          id,
+          userId,
+          person_name.trim(),
+          company ? company.trim() : null,
+          email ? email.trim() : null,
+          phone ? phone.trim() : null,
+          linkedin_url ? linkedin_url.trim() : null,
+          notes ? notes.trim() : null,
+          now,
+          now
+        )
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id,
+              user_id: userId,
+              person_name: person_name.trim(),
+              company: company ? company.trim() : null,
+              email: email ? email.trim() : null,
+              phone: phone ? phone.trim() : null,
+              linkedin_url: linkedin_url ? linkedin_url.trim() : null,
+              notes: notes ? notes.trim() : null,
+              created_at: now,
+              updated_at: now
+            }
+          }),
+          { status: 201, headers }
+        );
+      }
+
+      // GET /api/v1/contacts/:id/interactions (Evaluated before contactIdRegex)
+      const contactsInteractionsMatch = pathname.match(contactsInteractionsRegex);
+      if (contactsInteractionsMatch) {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        const parentContactId = contactsInteractionsMatch[1];
+
+        const parentContact = await env.DB.prepare(
+          `SELECT id FROM contacts WHERE id = ? AND user_id = ?`
+        )
+        .bind(parentContactId, userId)
+        .first();
+
+        if (!parentContact) {
+          return buildErrorResponse('NOT_FOUND', "The targeted contact does not exist or access rights are restricted.", 404, headers);
+        }
+
+        if (method === 'GET') {
+          const { results } = await env.DB.prepare(
+            `SELECT id, user_id, contact_id, interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status, created_at, updated_at
+             FROM interactions
+             WHERE contact_id = ? AND user_id = ?
+             ORDER BY interaction_date DESC, created_at DESC`
+          )
+          .bind(parentContactId, userId)
+          .all();
+
+          return new Response(
+            JSON.stringify({ success: true, data: { interactions: results } }),
+            { status: 200, headers }
+          );
+        }
+
+        if (method === 'POST') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status } = body;
+
+          if (!interaction_date || typeof interaction_date !== 'string' || interaction_date.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'interaction_date' is required.", 400, headers);
+          }
+          if (!channel || typeof channel !== 'string' || channel.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'channel' is required.", 400, headers);
+          }
+          if (!direction || (direction !== 'OUTBOUND' && direction !== 'INBOUND')) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'direction' is required and must be either 'OUTBOUND' or 'INBOUND'.", 400, headers);
+          }
+          if (!interaction_type || typeof interaction_type !== 'string' || interaction_type.trim().length === 0) {
+            return buildErrorResponse('INVALID_INPUT', "Field 'interaction_type' is required.", 400, headers);
+          }
+
+          const finalStatus = status !== undefined ? status : 'COMPLETED';
+          if (finalStatus !== 'COMPLETED' && finalStatus !== 'PLANNED' && finalStatus !== 'CANCELLED') {
+            return buildErrorResponse('INVALID_INPUT', "Field 'status' must be one of: 'COMPLETED', 'PLANNED', 'CANCELLED'.", 400, headers);
+          }
+
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `INSERT INTO interactions (id, user_id, contact_id, interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            id,
+            userId,
+            parentContactId,
+            interaction_date.trim(),
+            channel.trim(),
+            direction,
+            interaction_type.trim(),
+            message_or_notes ? message_or_notes.trim() : null,
+            template_used ? template_used.trim() : null,
+            follow_up_date ? follow_up_date.trim() : null,
+            finalStatus,
+            now,
+            now
+          )
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id,
+                user_id: userId,
+                contact_id: parentContactId,
+                interaction_date: interaction_date.trim(),
+                channel: channel.trim(),
+                direction,
+                interaction_type: interaction_type.trim(),
+                message_or_notes: message_or_notes ? message_or_notes.trim() : null,
+                template_used: template_used ? template_used.trim() : null,
+                follow_up_date: follow_up_date ? follow_up_date.trim() : null,
+                status: finalStatus,
+                created_at: now,
+                updated_at: now
+              }
+            }),
+            { status: 201, headers }
+          );
+        }
+      }
+
+      // GET / PATCH / DELETE /api/v1/contacts/:id
+      const contactIdMatch = pathname.match(contactIdRegex);
+      if (contactIdMatch) {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        const contactId = contactIdMatch[1];
+
+        const existingContact = await env.DB.prepare(
+          `SELECT * FROM contacts WHERE id = ? AND user_id = ?`
+        )
+        .bind(contactId, userId)
+        .first();
+
+        if (!existingContact) {
+          return buildErrorResponse('NOT_FOUND', "The targeted contact does not exist or access rights are restricted.", 404, headers);
+        }
+
+        if (method === 'GET') {
+          return new Response(
+            JSON.stringify({ success: true, data: existingContact }),
+            { status: 200, headers }
+          );
+        }
+
+        if (method === 'PATCH') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { person_name, company, email, phone, linkedin_url, notes } = body;
+
+          if (person_name !== undefined) {
+            if (typeof person_name !== 'string' || person_name.trim().length === 0) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'person_name' cannot be blank.", 400, headers);
+            }
+          }
+
+          const updatedName = person_name !== undefined ? person_name.trim() : existingContact.person_name;
+          const updatedCompany = company !== undefined ? (company ? company.trim() : null) : existingContact.company;
+          const updatedEmail = email !== undefined ? (email ? email.trim() : null) : existingContact.email;
+          const updatedPhone = phone !== undefined ? (phone ? phone.trim() : null) : existingContact.phone;
+          const updatedLinkedin = linkedin_url !== undefined ? (linkedin_url ? linkedin_url.trim() : null) : existingContact.linkedin_url;
+          const updatedNotes = notes !== undefined ? (notes ? notes.trim() : null) : existingContact.notes;
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `UPDATE contacts
+             SET person_name = ?, company = ?, email = ?, phone = ?, linkedin_url = ?, notes = ?, updated_at = ?
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(updatedName, updatedCompany, updatedEmail, updatedPhone, updatedLinkedin, updatedNotes, now, contactId, userId)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: contactId,
+                user_id: userId,
+                person_name: updatedName,
+                company: updatedCompany,
+                email: updatedEmail,
+                phone: updatedPhone,
+                linkedin_url: updatedLinkedin,
+                notes: updatedNotes,
+                created_at: existingContact.created_at,
+                updated_at: now
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        if (method === 'DELETE') {
+          await env.DB.prepare(`DELETE FROM contacts WHERE id = ? AND user_id = ?`)
+            .bind(contactId, userId)
+            .run();
+
+          return new Response(
+            JSON.stringify({ success: true, data: { id: contactId, deleted: true } }),
+            { status: 200, headers }
+          );
+        }
+      }
+
+      // PATCH / DELETE /api/v1/interactions/:id
+      const interactionIdMatch = pathname.match(interactionIdRegex);
+      if (interactionIdMatch) {
+        if (!userId) {
+          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
+        }
+        const interactionId = interactionIdMatch[1];
+
+        const existingInteraction = await env.DB.prepare(
+          `SELECT * FROM interactions WHERE id = ? AND user_id = ?`
+        )
+        .bind(interactionId, userId)
+        .first();
+
+        if (!existingInteraction) {
+          return buildErrorResponse('NOT_FOUND', "The targeted interaction does not exist or access rights are restricted.", 404, headers);
+        }
+
+        if (method === 'PATCH') {
+          let body;
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+          }
+
+          const { interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status } = body;
+
+          if (interaction_date !== undefined) {
+            if (typeof interaction_date !== 'string' || interaction_date.trim().length === 0) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'interaction_date' cannot be blank.", 400, headers);
+            }
+          }
+          if (channel !== undefined) {
+            if (typeof channel !== 'string' || channel.trim().length === 0) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'channel' cannot be blank.", 400, headers);
+            }
+          }
+          if (direction !== undefined) {
+            if (direction !== 'OUTBOUND' && direction !== 'INBOUND') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'direction' must be either 'OUTBOUND' or 'INBOUND'.", 400, headers);
+            }
+          }
+          if (interaction_type !== undefined) {
+            if (typeof interaction_type !== 'string' || interaction_type.trim().length === 0) {
+              return buildErrorResponse('INVALID_INPUT', "Field 'interaction_type' cannot be blank.", 400, headers);
+            }
+          }
+          if (status !== undefined) {
+            if (status !== 'COMPLETED' && status !== 'PLANNED' && status !== 'CANCELLED') {
+              return buildErrorResponse('INVALID_INPUT', "Field 'status' must be one of: 'COMPLETED', 'PLANNED', 'CANCELLED'.", 400, headers);
+            }
+          }
+
+          const updatedDate = interaction_date !== undefined ? interaction_date.trim() : existingInteraction.interaction_date;
+          const updatedChannel = channel !== undefined ? channel.trim() : existingInteraction.channel;
+          const updatedDirection = direction !== undefined ? direction : existingInteraction.direction;
+          const updatedType = interaction_type !== undefined ? interaction_type.trim() : existingInteraction.interaction_type;
+          const updatedMsgNotes = message_or_notes !== undefined ? (message_or_notes ? message_or_notes.trim() : null) : existingInteraction.message_or_notes;
+          const updatedTemplate = template_used !== undefined ? (template_used ? template_used.trim() : null) : existingInteraction.template_used;
+          const updatedFollowUp = follow_up_date !== undefined ? (follow_up_date ? follow_up_date.trim() : null) : existingInteraction.follow_up_date;
+          const updatedStatus = status !== undefined ? status : existingInteraction.status;
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `UPDATE interactions
+             SET interaction_date = ?, channel = ?, direction = ?, interaction_type = ?, message_or_notes = ?, template_used = ?, follow_up_date = ?, status = ?, updated_at = ?
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(updatedDate, updatedChannel, updatedDirection, updatedType, updatedMsgNotes, updatedTemplate, updatedFollowUp, updatedStatus, now, interactionId, userId)
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                id: interactionId,
+                user_id: userId,
+                contact_id: existingInteraction.contact_id,
+                interaction_date: updatedDate,
+                channel: updatedChannel,
+                direction: updatedDirection,
+                interaction_type: updatedType,
+                message_or_notes: updatedMsgNotes,
+                template_used: updatedTemplate,
+                follow_up_date: updatedFollowUp,
+                status: updatedStatus,
+                created_at: existingInteraction.created_at,
+                updated_at: now
+              }
+            }),
+            { status: 200, headers }
+          );
+        }
+
+        if (method === 'DELETE') {
+          await env.DB.prepare(`DELETE FROM interactions WHERE id = ? AND user_id = ?`)
+            .bind(interactionId, userId)
+            .run();
+
+          return new Response(
+            JSON.stringify({ success: true, data: { id: interactionId, deleted: true } }),
+            { status: 200, headers }
+          );
+        }
+      }
+
       if (!userId) {
         return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
       }
@@ -2286,7 +2679,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
           if (messages.length > 20) {
             return buildErrorResponse('INVALID_REQUEST', "The workspace session message history limits cannot exceed 20 blocks.", 400, headers);
           }
-          
+
           for (let i = 0; i < messages.length; i++) {
             const msg = messages[i];
             if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
@@ -2688,7 +3081,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
 
           const rawContentType = request.headers.get('content-type') || '';
           const cleanContentType = rawContentType.toLowerCase().trim();
-          
+
           const allowedMimeTypes = [
             'application/pdf',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -2703,7 +3096,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
             .replace(/[\r\n\t]/g, '')
             .replace(/["'/\\]/g, '_')
             .trim();
-          
+
           if (sanitizedFileName.length > 200) {
             sanitizedFileName = sanitizedFileName.substring(0, 200);
           }
@@ -2783,10 +3176,10 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
           if (!storedMetaFileName) {
             storedMetaFileName = detectedContentType === 'application/pdf' ? 'resume.pdf' : 'resume.docx';
           }
-          
+
           const cleanDownloadName = storedMetaFileName.replace(/["\r\n]/g, '_');
           customHeaders.set('Content-Disposition', `attachment; filename="${cleanDownloadName}"`);
-          
+
           if (fileObject.size) {
             customHeaders.set('Content-Length', fileObject.size.toString());
           }
@@ -2880,7 +3273,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         if (content !== undefined && typeof content !== 'string') {
           return buildErrorResponse('INVALID_INPUT', "Field 'content' must be a valid string configuration parameter.", 400, headers);
         }
-        
+
         const finalStatus = status || 'DRAFT';
         if (status !== undefined) {
           if (finalStatus !== 'DRAFT' && finalStatus !== 'FINAL') {
@@ -2981,398 +3374,6 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
           )
           .bind(coverLetterId, userId)
           .first();
-// =======================================================================
-      // MODULE: CONTACTS & INTERACTIONS API (Task 1.22C)
-      // =======================================================================
-      const contactsRootPattern = '/api/v1/contacts';
-      const contactIdRegex = /^\/api\/v1\/contacts\/([^\/]+)$/;
-      const contactsInteractionsRegex = /^\/api\/v1\/contacts\/([^\/]+)\/interactions$/;
-      const interactionIdRegex = /^\/api\/v1\/interactions\/([^\/]+)$/;
-
-      // GET /api/v1/contacts
-      if (pathname === contactsRootPattern && method === 'GET') {
-        if (!userId) {
-          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
-        }
-        const { results } = await env.DB.prepare(
-          `SELECT id, user_id, person_name, company, email, phone, linkedin_url, notes, created_at, updated_at
-           FROM contacts
-           WHERE user_id = ?
-           ORDER BY updated_at DESC`
-        )
-        .bind(userId)
-        .all();
-
-        return new Response(
-          JSON.stringify({ success: true, data: { contacts: results } }),
-          { status: 200, headers }
-        );
-      }
-
-      // POST /api/v1/contacts
-      if (pathname === contactsRootPattern && method === 'POST') {
-        if (!userId) {
-          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
-        }
-        let body;
-        try {
-          body = await request.json();
-        } catch (e) {
-          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
-        }
-
-        const { person_name, company, email, phone, linkedin_url, notes } = body;
-
-        if (!person_name || typeof person_name !== 'string' || person_name.trim().length === 0) {
-          return buildErrorResponse('INVALID_INPUT', "Field 'person_name' is required and cannot be blank.", 400, headers);
-        }
-
-        const id = crypto.randomUUID();
-        const now = new Date().toISOString();
-
-        await env.DB.prepare(
-          `INSERT INTO contacts (id, user_id, person_name, company, email, phone, linkedin_url, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          id,
-          userId,
-          person_name.trim(),
-          company ? company.trim() : null,
-          email ? email.trim() : null,
-          phone ? phone.trim() : null,
-          linkedin_url ? linkedin_url.trim() : null,
-          notes ? notes.trim() : null,
-          now,
-          now
-        )
-        .run();
-
-        return new Response(
-          JSON.stringify({
-            success: true,
-            data: {
-              id,
-              user_id: userId,
-              person_name: person_name.trim(),
-              company: company ? company.trim() : null,
-              email: email ? email.trim() : null,
-              phone: phone ? phone.trim() : null,
-              linkedin_url: linkedin_url ? linkedin_url.trim() : null,
-              notes: notes ? notes.trim() : null,
-              created_at: now,
-              updated_at: now
-            }
-          }),
-          { status: 201, headers }
-        );
-      }
-
-      // GET /api/v1/contacts/:id/interactions (Evaluated before contactIdRegex)
-      const contactsInteractionsMatch = pathname.match(contactsInteractionsRegex);
-      if (contactsInteractionsMatch) {
-        if (!userId) {
-          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
-        }
-        const parentContactId = contactsInteractionsMatch[1];
-
-        const parentContact = await env.DB.prepare(
-          `SELECT id FROM contacts WHERE id = ? AND user_id = ?`
-        )
-        .bind(parentContactId, userId)
-        .first();
-
-        if (!parentContact) {
-          return buildErrorResponse('NOT_FOUND', "The targeted contact does not exist or access rights are restricted.", 404, headers);
-        }
-
-        if (method === 'GET') {
-          const { results } = await env.DB.prepare(
-            `SELECT id, user_id, contact_id, interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status, created_at, updated_at
-             FROM interactions
-             WHERE contact_id = ? AND user_id = ?
-             ORDER BY interaction_date DESC, created_at DESC`
-          )
-          .bind(parentContactId, userId)
-          .all();
-
-          return new Response(
-            JSON.stringify({ success: true, data: { interactions: results } }),
-            { status: 200, headers }
-          );
-        }
-
-        if (method === 'POST') {
-          let body;
-          try {
-            body = await request.json();
-          } catch (e) {
-            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
-          }
-
-          const { interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status } = body;
-
-          if (!interaction_date || typeof interaction_date !== 'string' || interaction_date.trim().length === 0) {
-            return buildErrorResponse('INVALID_INPUT', "Field 'interaction_date' is required.", 400, headers);
-          }
-          if (!channel || typeof channel !== 'string' || channel.trim().length === 0) {
-            return buildErrorResponse('INVALID_INPUT', "Field 'channel' is required.", 400, headers);
-          }
-          if (!direction || (direction !== 'OUTBOUND' && direction !== 'INBOUND')) {
-            return buildErrorResponse('INVALID_INPUT', "Field 'direction' is required and must be either 'OUTBOUND' or 'INBOUND'.", 400, headers);
-          }
-          if (!interaction_type || typeof interaction_type !== 'string' || interaction_type.trim().length === 0) {
-            return buildErrorResponse('INVALID_INPUT', "Field 'interaction_type' is required.", 400, headers);
-          }
-
-          const finalStatus = status !== undefined ? status : 'COMPLETED';
-          if (finalStatus !== 'COMPLETED' && finalStatus !== 'PLANNED' && finalStatus !== 'CANCELLED') {
-            return buildErrorResponse('INVALID_INPUT', "Field 'status' must be one of: 'COMPLETED', 'PLANNED', 'CANCELLED'.", 400, headers);
-          }
-
-          const id = crypto.randomUUID();
-          const now = new Date().toISOString();
-
-          await env.DB.prepare(
-            `INSERT INTO interactions (id, user_id, contact_id, interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          )
-          .bind(
-            id,
-            userId,
-            parentContactId,
-            interaction_date.trim(),
-            channel.trim(),
-            direction,
-            interaction_type.trim(),
-            message_or_notes ? message_or_notes.trim() : null,
-            template_used ? template_used.trim() : null,
-            follow_up_date ? follow_up_date.trim() : null,
-            finalStatus,
-            now,
-            now
-          )
-          .run();
-
-          return new Response(
-            JSON.stringify({
-              success: true,
-              data: {
-                id,
-                user_id: userId,
-                contact_id: parentContactId,
-                interaction_date: interaction_date.trim(),
-                channel: channel.trim(),
-                direction,
-                interaction_type: interaction_type.trim(),
-                message_or_notes: message_or_notes ? message_or_notes.trim() : null,
-                template_used: template_used ? template_used.trim() : null,
-                follow_up_date: follow_up_date ? follow_up_date.trim() : null,
-                status: finalStatus,
-                created_at: now,
-                updated_at: now
-              }
-            }),
-            { status: 201, headers }
-          );
-        }
-      }
-
-      // GET / PATCH / DELETE /api/v1/contacts/:id
-      const contactIdMatch = pathname.match(contactIdRegex);
-      if (contactIdMatch) {
-        if (!userId) {
-          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
-        }
-        const contactId = contactIdMatch[1];
-
-        const existingContact = await env.DB.prepare(
-          `SELECT * FROM contacts WHERE id = ? AND user_id = ?`
-        )
-        .bind(contactId, userId)
-        .first();
-
-        if (!existingContact) {
-          return buildErrorResponse('NOT_FOUND', "The targeted contact does not exist or access rights are restricted.", 404, headers);
-        }
-
-        if (method === 'GET') {
-          return new Response(
-            JSON.stringify({ success: true, data: existingContact }),
-            { status: 200, headers }
-          );
-        }
-
-        if (method === 'PATCH') {
-          let body;
-          try {
-            body = await request.json();
-          } catch (e) {
-            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
-          }
-
-          const { person_name, company, email, phone, linkedin_url, notes } = body;
-
-          if (person_name !== undefined) {
-            if (typeof person_name !== 'string' || person_name.trim().length === 0) {
-              return buildErrorResponse('INVALID_INPUT', "Field 'person_name' cannot be blank.", 400, headers);
-            }
-          }
-
-          const updatedName = person_name !== undefined ? person_name.trim() : existingContact.person_name;
-          const updatedCompany = company !== undefined ? (company ? company.trim() : null) : existingContact.company;
-          const updatedEmail = email !== undefined ? (email ? email.trim() : null) : existingContact.email;
-          const updatedPhone = phone !== undefined ? (phone ? phone.trim() : null) : existingContact.phone;
-          const updatedLinkedin = linkedin_url !== undefined ? (linkedin_url ? linkedin_url.trim() : null) : existingContact.linkedin_url;
-          const updatedNotes = notes !== undefined ? (notes ? notes.trim() : null) : existingContact.notes;
-          const now = new Date().toISOString();
-
-          await env.DB.prepare(
-            `UPDATE contacts
-             SET person_name = ?, company = ?, email = ?, phone = ?, linkedin_url = ?, notes = ?, updated_at = ?
-             WHERE id = ? AND user_id = ?`
-          )
-          .bind(updatedName, updatedCompany, updatedEmail, updatedPhone, updatedLinkedin, updatedNotes, now, contactId, userId)
-          .run();
-
-          return new Response(
-            JSON.stringify({
-              success: true,
-              data: {
-                id: contactId,
-                user_id: userId,
-                person_name: updatedName,
-                company: updatedCompany,
-                email: updatedEmail,
-                phone: updatedPhone,
-                linkedin_url: updatedLinkedin,
-                notes: updatedNotes,
-                created_at: existingContact.created_at,
-                updated_at: now
-              }
-            }),
-            { status: 200, headers }
-          );
-        }
-
-        if (method === 'DELETE') {
-          await env.DB.prepare(`DELETE FROM contacts WHERE id = ? AND user_id = ?`)
-            .bind(contactId, userId)
-            .run();
-
-          return new Response(
-            JSON.stringify({ success: true, data: { id: contactId, deleted: true } }),
-            { status: 200, headers }
-          );
-        }
-      }
-
-      // PATCH / DELETE /api/v1/interactions/:id
-      const interactionIdMatch = pathname.match(interactionIdRegex);
-      if (interactionIdMatch) {
-        if (!userId) {
-          return buildErrorResponse('UNAUTHORIZED', "Authentication required.", 401, headers);
-        }
-        const interactionId = interactionIdMatch[1];
-
-        const existingInteraction = await env.DB.prepare(
-          `SELECT * FROM interactions WHERE id = ? AND user_id = ?`
-        )
-        .bind(interactionId, userId)
-        .first();
-
-        if (!existingInteraction) {
-          return buildErrorResponse('NOT_FOUND', "The targeted interaction does not exist or access rights are restricted.", 404, headers);
-        }
-
-        if (method === 'PATCH') {
-          let body;
-          try {
-            body = await request.json();
-          } catch (e) {
-            return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
-          }
-
-          const { interaction_date, channel, direction, interaction_type, message_or_notes, template_used, follow_up_date, status } = body;
-
-          if (interaction_date !== undefined) {
-            if (typeof interaction_date !== 'string' || interaction_date.trim().length === 0) {
-              return buildErrorResponse('INVALID_INPUT', "Field 'interaction_date' cannot be blank.", 400, headers);
-            }
-          }
-          if (channel !== undefined) {
-            if (typeof channel !== 'string' || channel.trim().length === 0) {
-              return buildErrorResponse('INVALID_INPUT', "Field 'channel' cannot be blank.", 400, headers);
-            }
-          }
-          if (direction !== undefined) {
-            if (direction !== 'OUTBOUND' && direction !== 'INBOUND') {
-              return buildErrorResponse('INVALID_INPUT', "Field 'direction' must be either 'OUTBOUND' or 'INBOUND'.", 400, headers);
-            }
-          }
-          if (interaction_type !== undefined) {
-            if (typeof interaction_type !== 'string' || interaction_type.trim().length === 0) {
-              return buildErrorResponse('INVALID_INPUT', "Field 'interaction_type' cannot be blank.", 400, headers);
-            }
-          }
-          if (status !== undefined) {
-            if (status !== 'COMPLETED' && status !== 'PLANNED' && status !== 'CANCELLED') {
-              return buildErrorResponse('INVALID_INPUT', "Field 'status' must be one of: 'COMPLETED', 'PLANNED', 'CANCELLED'.", 400, headers);
-            }
-          }
-
-          const updatedDate = interaction_date !== undefined ? interaction_date.trim() : existingInteraction.interaction_date;
-          const updatedChannel = channel !== undefined ? channel.trim() : existingInteraction.channel;
-          const updatedDirection = direction !== undefined ? direction : existingInteraction.direction;
-          const updatedType = interaction_type !== undefined ? interaction_type.trim() : existingInteraction.interaction_type;
-          const updatedMsgNotes = message_or_notes !== undefined ? (message_or_notes ? message_or_notes.trim() : null) : existingInteraction.message_or_notes;
-          const updatedTemplate = template_used !== undefined ? (template_used ? template_used.trim() : null) : existingInteraction.template_used;
-          const updatedFollowUp = follow_up_date !== undefined ? (follow_up_date ? follow_up_date.trim() : null) : existingInteraction.follow_up_date;
-          const updatedStatus = status !== undefined ? status : existingInteraction.status;
-          const now = new Date().toISOString();
-
-          await env.DB.prepare(
-            `UPDATE interactions
-             SET interaction_date = ?, channel = ?, direction = ?, interaction_type = ?, message_or_notes = ?, template_used = ?, follow_up_date = ?, status = ?, updated_at = ?
-             WHERE id = ? AND user_id = ?`
-          )
-          .bind(updatedDate, updatedChannel, updatedDirection, updatedType, updatedMsgNotes, updatedTemplate, updatedFollowUp, updatedStatus, now, interactionId, userId)
-          .run();
-
-          return new Response(
-            JSON.stringify({
-              success: true,
-              data: {
-                id: interactionId,
-                user_id: userId,
-                contact_id: existingInteraction.contact_id,
-                interaction_date: updatedDate,
-                channel: updatedChannel,
-                direction: updatedDirection,
-                interaction_type: updatedType,
-                message_or_notes: updatedMsgNotes,
-                template_used: updatedTemplate,
-                follow_up_date: updatedFollowUp,
-                status: updatedStatus,
-                created_at: existingInteraction.created_at,
-                updated_at: now
-              }
-            }),
-            { status: 200, headers }
-          );
-        }
-
-        if (method === 'DELETE') {
-          await env.DB.prepare(`DELETE FROM interactions WHERE id = ? AND user_id = ?`)
-            .bind(interactionId, userId)
-            .run();
-
-          return new Response(
-            JSON.stringify({ success: true, data: { id: interactionId, deleted: true } }),
-            { status: 200, headers }
-          );
-        }
-      }
           if (!existingRecord) {
             return buildErrorResponse('NOT_FOUND', "The targeted cover letter does not exist or access rights are restricted.", 404, headers);
           }
@@ -3455,11 +3456,11 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
       // =======================================================================
       // MODULE: INTERVIEWS API
       // =======================================================================
-      
+
       const intStatusMatch = pathname.match(interviewStatusRegex);
       if (intStatusMatch && method === 'PATCH') {
         const interviewId = intStatusMatch[1];
-        
+
         let body;
         try {
           body = await request.json();
@@ -3469,7 +3470,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
 
         const { status } = body;
         const allowedStatuses = ['SCHEDULED', 'COMPLETED', 'CANCELLED'];
-        
+
         if (!status || !allowedStatuses.includes(status)) {
           return buildErrorResponse('INVALID_INPUT', `Invalid status value provided. Allowed values: ${allowedStatuses.join(', ')}`, 400, headers);
         }
@@ -3659,7 +3660,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         const updatedRoundTitle = 'round_title' in body ? body.round_title.trim() : existingRecord.round_title;
         const updated_status = 'status' in body ? body.status : existingRecord.status;
         const updatedInterviewDate = 'interview_date' in body ? body.interview_date.trim() : existingRecord.interview_date;
-        
+
         const updatedInterviewerNames = 'interviewer_names' in body 
           ? (body.interviewer_names && body.interviewer_names.trim().length > 0 ? body.interviewer_names.trim() : null)
           : existingRecord.interviewer_names;
@@ -4330,7 +4331,7 @@ if (atsMatch) {
       const statusMatch = pathname.match(opportunityStatusRegex);
       if (statusMatch && method === 'PATCH') {
         const opportunityId = statusMatch[1];
-        
+
         let body;
         try {
           body = await request.json();
@@ -4340,7 +4341,7 @@ if (atsMatch) {
 
         const { status } = body;
         const allowedStatuses = ['CONSIDERING', 'APPLIED', 'UNDER_REVIEW', 'INTERVIEWING', 'OFFER', 'REJECTED', 'NO_RESPONSE'];
-        
+
         if (!status || !allowedStatuses.includes(status)) {
           return buildErrorResponse('INVALID_INPUT', `Invalid status value provided. Allowed values: ${allowedStatuses.join(', ')}`, 400, headers);
         }
@@ -4669,7 +4670,7 @@ if (atsMatch) {
               parsedGaps = [];
             }
           }
-          
+
           let parsedAnalysis = null;
           if (atsAnalysis.analysis_json) {
           try {
