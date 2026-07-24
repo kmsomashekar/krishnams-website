@@ -1906,12 +1906,17 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
 
         // Recent applications
         const { results: applications } = await env.DB.prepare(
-          `SELECT job_title, date_applied, status
-           FROM opportunities
-           WHERE user_id = ?
-             AND date_applied IS NOT NULL
-           ORDER BY date_applied DESC
-           LIMIT 10`
+          `SELECT 
+            o.job_title,
+            c.name AS company,
+            o.date_applied,
+            o.status
+          FROM opportunities o
+          LEFT JOIN companies c ON c.id = o.company_id
+          WHERE o.user_id = ?
+            AND o.date_applied IS NOT NULL
+          ORDER BY o.date_applied DESC
+          LIMIT 10`
         )
         .bind(userId)
         .all();
@@ -1922,6 +1927,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
               type: 'APPLICATION',
               date: app.date_applied,
               title: `Applied for ${app.job_title}`,
+              company: app.company,
               details: app.status
             });
           });

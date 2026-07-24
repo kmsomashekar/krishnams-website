@@ -62,6 +62,11 @@ function RecentActivity({ activities = [], isLoading }) {
           {activity.title}
         </div>
 
+{activity.company && (
+  <div className="text-xs text-slate-600 mt-1">
+    Company: {activity.company}
+  </div>
+)}
         <div className="text-xs text-slate-500 mt-1">
           {activity.type} · {activity.date}
         </div>
