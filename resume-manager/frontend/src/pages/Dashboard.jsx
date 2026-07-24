@@ -15,8 +15,18 @@ function getPeriodBounds(period) {
   const pad = (n) => String(n).padStart(2, '0');
   const formatDate = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 
+  
   switch (period) {
-  case 'this_week': {
+    case 'yesterday': {
+        const yesterday = new Date(Date.UTC(year, month, day));
+        yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+
+      return {
+        start: formatDate(yesterday),
+        end: formatDate(yesterday),
+      };
+    }
+    case 'this_week': {
   const today = new Date(Date.UTC(year, month, day));
 
   // Monday as the start of the week
@@ -208,14 +218,26 @@ const {
   const totalOpportunities = opportunities.length;
 
   // Jobs Applied filtering logic:
-  // - For All Time: count all opportunities with status === 'APPLIED', even if date_applied is null.
-  // - For period options: count only opportunities with status === 'APPLIED' AND a valid date_applied within the selected period.
-  const totalApplications = opportunities.filter(item => {
-    if (item.status !== 'APPLIED') return false;
-    if (period === 'all_time') return true;
-    return item.date_applied && bounds && isDateInRange(item.date_applied, bounds.start, bounds.end);
-  }).length;
+// - Counts opportunities where an application was submitted.
+// - Includes APPLIED, SCREENING, INTERVIEW, OFFER, and REJECTED statuses.
+// - For period options, uses date_applied within the selected period.
+  const appliedStatuses = [
+  'APPLIED',
+  'SCREENING',
+  'INTERVIEW',
+  'OFFER',
+  'REJECTED'
+];
 
+const totalApplications = opportunities.filter(item => {
+  if (!appliedStatuses.includes(item.status)) return false;
+
+  if (period === 'all_time') return true;
+
+  return item.date_applied &&
+    bounds &&
+    isDateInRange(item.date_applied, bounds.start, bounds.end);
+}).length;
   let totalInterviews = 0;
   let atsScoreSum = 0;
   let atsScoreCount = 0;
@@ -285,6 +307,7 @@ const {
             onChange={(e) => setPeriod(e.target.value)}
             className="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 font-medium"
           >
+            <option value="yesterday">Yesterday</option>
             <option value="this_week">This Week</option>
             <option value="this_month">This Month</option>
             <option value="last_month">Last Month</option>
@@ -312,13 +335,14 @@ const {
           </div>
           <div className="text-[11px] text-slate-500 font-medium mt-1">{outreachSummary.period_label}</div>
           <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
-            <span>LinkedIn: {outreachSummary.breakdown?.LINKEDIN || 0}</span>
-            <span>WhatsApp: {outreachSummary.breakdown?.WHATSAPP || 0}</span>
-            <span>Email: {outreachSummary.breakdown?.EMAIL || 0}</span>
-            <span>Phone: {outreachSummary.breakdown?.PHONE || 0}</span>
-            <span>Referral: {outreachSummary.breakdown?.REFERRAL || 0}</span>
-            <span>Other: {outreachSummary.breakdown?.OTHER || 0}</span>
-          </div>
+            {Object.entries(outreachSummary.breakdown || {})
+              .filter(([_, count]) => count > 0)
+              .map(([channel, count]) => (
+              <span key={channel}>
+              {channel}: {count}
+              </span>
+              ))}
+        </div>
         </div>
         <div className="bg-purple-50 p-5 border border-purple-100 border-t-4 border-purple-500 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Interviews</div>

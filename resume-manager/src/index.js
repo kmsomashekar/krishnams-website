@@ -1990,7 +1990,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         }
 
         const periodParam = url.searchParams.get('period') || 'this_month';
-        const validPeriods = ['this_week', 'this_month', 'last_month', 'last_30', 'last_90', 'all_time'];
+        const validPeriods = ['yesterday', 'this_week', 'this_month', 'last_month', 'last_30', 'last_90', 'all_time'];
         if (!validPeriods.includes(periodParam)) {
           return buildErrorResponse('INVALID_INPUT', "Invalid or unsupported period value provided.", 400, headers);
         }
@@ -2007,8 +2007,15 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         let endDate = null;
         let periodLabel = 'This Month';
 
+        if (periodParam === 'yesterday') {
+            const yesterday = new Date(Date.UTC(year, month, day));
+            yesterday.setUTCDate(yesterday.getUTCDate() - 1);
 
-        if (periodParam === 'this_week') {
+            startDate = formatDate(yesterday);
+            endDate = formatDate(yesterday);
+            periodLabel = 'Yesterday';
+
+        } else if (periodParam === 'this_week') {
           const today = new Date(Date.UTC(year, month, day));
 
           // Monday as the start of the week
@@ -2061,14 +2068,14 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         } else if (periodParam === 'all_time') {
           periodLabel = 'All Time';
         }
-        let query = `SELECT channel, COUNT(*) as count FROM interactions WHERE user_id = ?`;
+
+        let query = `SELECT channel, COUNT(DISTINCT contact_id) as count FROM interactions WHERE user_id = ?`;
         let bindParams = [userId];
 
         if (periodParam !== 'all_time' && startDate && endDate) {
           query += ` AND interaction_date >= ? AND interaction_date <= ?`;
           bindParams.push(startDate, endDate);
         }
-
         query += ` GROUP BY channel`;
 
         const { results } = await env.DB.prepare(query)
