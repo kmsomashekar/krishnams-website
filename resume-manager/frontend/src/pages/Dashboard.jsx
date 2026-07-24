@@ -296,16 +296,16 @@ const {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
-        <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
+         <div className="bg-blue-50 p-5 border border-blue-100 border-t-4 border-blue-500 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Total Opportunities</div>
           <div className="text-3xl font-bold text-slate-900 mt-2">{totalOpportunities}</div>
         </div>
-        <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
+        <div className="bg-indigo-50 p-5 border border-indigo-100 border-t-4 border-indigo-500 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Jobs Applied</div>
           <div className="text-3xl font-bold text-slate-900 mt-2">{totalApplications}</div>
         </div>
-        <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
+        <div className="bg-emerald-50 p-5 border border-emerald-100 border-t-4 border-emerald-500 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">People Contacted</div>
           <div className="text-3xl font-bold text-slate-900 mt-2">
             {isOutreachLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : outreachSummary.total_people_contacted}
@@ -320,13 +320,13 @@ const {
             <span>Other: {outreachSummary.breakdown?.OTHER || 0}</span>
           </div>
         </div>
-        <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
+        <div className="bg-purple-50 p-5 border border-purple-100 border-t-4 border-purple-500 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Interviews</div>
           <div className="text-3xl font-bold text-slate-900 mt-2">
             {isDetailsLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : totalInterviews}
           </div>
         </div>
-        <div className="bg-white p-5 border border-slate-200 rounded-lg shadow-sm">
+        <div className="bg-amber-50 p-5 border border-amber-100 border-t-4 border-amber-500 rounded-lg shadow-sm">
           <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Average ATS Match</div>
           <div className="text-3xl font-bold text-slate-900 mt-2">
             {isDetailsLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : averageAtsMatch}
@@ -391,9 +391,23 @@ const {
                             </Link>
                           </td>
                           <td className="py-4 px-4">
-                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-700 capitalize">
-                              {(op.status || '').toLowerCase()}
-                            </span>
+                            <span
+                            className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full capitalize ${
+                               op.status === 'APPLIED'
+                                ? 'bg-blue-100 text-blue-700'
+                                : op.status === 'INTERVIEW'
+                                ? 'bg-green-100 text-green-700'
+                                : op.status === 'SCREENING'
+                                ? 'bg-purple-100 text-purple-700'
+                                : op.status === 'OFFER'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : op.status === 'REJECTED'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-slate-100 text-slate-700'
+                                }`}
+>
+                                {(op.status || '').toLowerCase()}
+                          </span>
                           </td>
                            <td className="py-4 px-4 text-center">
                             {isDetailsLoading ? (
