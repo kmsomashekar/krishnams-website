@@ -58,8 +58,10 @@ function getPeriodBounds(period) {
     case 'this_month':
     default: {
       const start = new Date(Date.UTC(year, month, 1));
-      const end = new Date(Date.UTC(year, month, day));
-      return { start: formatDate(start), end: formatDate(end) };
+      const end = new Date(Date.UTC(year, month + 1, 0));
+      return { start: formatDate(start), 
+      end: formatDate(end) 
+    };
     }
   }
 }
@@ -230,6 +232,7 @@ const {
 ];
 
 const totalApplications = opportunities.filter(item => {
+  const statusMatch = appliedStatuses.includes(item.status);
   if (!appliedStatuses.includes(item.status)) return false;
 
   if (period === 'all_time') return true;
@@ -249,7 +252,7 @@ const totalApplications = opportunities.filter(item => {
 
     if (Array.isArray(detail.interviews)) {
       detail.interviews.forEach(interview => {
-        // Add all interviews to allInterviews regardless of period (for Upcoming Interviews sidebar)
+         // Add all interviews to allInterviews regardless of period (for Upcoming Interviews sidebar)
         allInterviews.push({
           ...interview,
           companyName: detail.company?.name || item.company_name || 'Unknown Company',
