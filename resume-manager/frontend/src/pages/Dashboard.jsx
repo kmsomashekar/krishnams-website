@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import RecentActivity from '../components/RecentActivity';
 
 const BASE_URL = '';
 
@@ -333,6 +334,14 @@ const {
         </div>
       </div>
 
+      {/* Recent Activity */}
+      <div className="mt-6">
+        <RecentActivity
+          activities={activityData.data?.activities || []}
+          isLoading={isActivityLoading}
+        />
+      </div>
+
       {/* Empty State for Entire Dashboard */}
       {totalOpportunities === 0 ? (
         <div className="bg-white border border-slate-200 rounded-lg p-12 text-center shadow-sm">
@@ -359,7 +368,6 @@ const {
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-xs uppercase tracking-wider">
                       <th className="py-3.5 px-4 md:px-6">Company &amp; Role</th>
                       <th className="py-3.5 px-4">Status</th>
-                      <th className="py-3.5 px-4 text-center">Priority</th>
                       <th className="py-3.5 px-4 text-center">ATS Score</th>
                       <th className="py-3.5 px-4 text-center">Interviews</th>
                     </tr>
@@ -387,10 +395,7 @@ const {
                               {(op.status || '').toLowerCase()}
                             </span>
                           </td>
-                          <td className="py-4 px-4 text-center font-medium text-slate-700">
-                            {op.priority !== null && op.priority !== undefined ? `P-${op.priority}` : '—'}
-                          </td>
-                          <td className="py-4 px-4 text-center">
+                           <td className="py-4 px-4 text-center">
                             {isDetailsLoading ? (
                               <span className="text-slate-300 animate-pulse text-xs">...</span>
                             ) : typeof score === 'number' ? (
