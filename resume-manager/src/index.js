@@ -3354,9 +3354,12 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
         }
 
         const opportunity = await env.DB.prepare(
-          `SELECT o.job_title, o.jd_text, c.name AS company_name
+          `SELECT o.job_title, 
+                  jd.raw_text AS jd_text, 
+                  c.name AS company_name
            FROM opportunities o
            JOIN companies c ON o.company_id = c.id
+           LEFT JOIN job_descriptions jd ON jd.opportunity_id = o.id
            WHERE o.id = ? AND o.user_id = ?`
         )
         .bind(opportunity_id, userId)
@@ -4503,6 +4506,7 @@ if (atsMatch) {
           `SELECT o.id, c.name AS company_name, o.job_title, o.status, o.priority, o.date_applied, o.updated_at
            FROM opportunities o
            JOIN companies c ON o.company_id = c.id
+           LEFT JOIN job_descriptions jd ON jd.opportunity_id = o.id
            WHERE o.user_id = ?
            ORDER BY o.updated_at DESC`
         )
