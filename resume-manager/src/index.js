@@ -8,7 +8,7 @@
 // --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
 const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
-async function callGemini(message, apiKey) {
+async function callGemini(message, apiKey, options = {}) {
   const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
   const requestBody = {
@@ -22,7 +22,7 @@ async function callGemini(message, apiKey) {
       }
     ],
     generationConfig: {
-      maxOutputTokens: 100
+      maxOutputTokens: options.maxOutputTokens || 100
     }
   };
 
@@ -67,11 +67,11 @@ async function callGemini(message, apiKey) {
   }
 }
 
-async function callAIProvider(message, env) {
+async function callAIProvider(message, env, options = {}) {
   if (!env.GEMINI_API_KEY) {
     return { errorType: 'MISSING_KEY' };
   }
-  return await callGemini(message, env.GEMINI_API_KEY);
+  return await callGemini(message, env.GEMINI_API_KEY, options);
 }
 
 // --- SECURE ADVANCED DOCUMENT ANALYSIS HELPER ---
@@ -1884,6 +1884,7 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
       const interviewIdRegex = /^\/api\/v1\/interviews\/([^\/]+)$/;
 
       const coverLetterRootPattern = '/api/v1/cover-letters';
+      const coverLetterGeneratePattern = '/api/v1/cover-letters/generate';
       const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
 
       // =======================================================================
@@ -3332,6 +3333,82 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
       // =======================================================================
       // MODULE: COVER LETTERS API
       // =======================================================================
+
+
+      if (pathname === coverLetterGeneratePattern && method === 'POST') {
+        let body;
+        try {
+          body = await request.json();
+        } catch (e) {
+          return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
+        }
+
+        const { opportunity_id, resume_version_id } = body;
+
+        if (!opportunity_id || typeof opportunity_id !== 'string') {
+          return buildErrorResponse('INVALID_INPUT', "Field 'opportunity_id' is required.", 400, headers);
+        }
+
+        if (!resume_version_id || typeof resume_version_id !== 'string') {
+          return buildErrorResponse('INVALID_INPUT', "Field 'resume_version_id' is required.", 400, headers);
+        }
+
+        const opportunity = await env.DB.prepare(
+          `SELECT o.job_title, o.jd_text, c.name AS company_name
+           FROM opportunities o
+           JOIN companies c ON o.company_id = c.id
+           WHERE o.id = ? AND o.user_id = ?`
+        )
+        .bind(opportunity_id, userId)
+        .first();
+
+        if (!opportunity) {
+          return buildErrorResponse('NOT_FOUND', "Opportunity not found or access denied.", 404, headers);
+        }
+
+        const resumeVersion = await env.DB.prepare(
+          `SELECT ai_context FROM resume_versions WHERE id = ?`
+        )
+        .bind(resume_version_id)
+        .first();
+
+        if (!resumeVersion) {
+          return buildErrorResponse('NOT_FOUND', "Resume version not found.", 404, headers);
+        }
+
+        const prompt = `
+Generate a professional job application cover letter.
+
+Company: ${opportunity.company_name || 'Not specified'}
+Role: ${opportunity.job_title || 'Not specified'}
+
+Job Description:
+${opportunity.jd_text || 'Not provided'}
+
+Candidate Resume Context:
+${resumeVersion.ai_context || 'Not provided'}
+
+Return only the cover letter text.
+`;
+
+        const aiResult = await callAIProvider(prompt, env, { maxOutputTokens: 1200 });
+
+        if (!aiResult.success) {
+          return buildErrorResponse('AI_PROVIDER_ERROR', "Unable to generate cover letter.", 502, headers);
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              company_name: opportunity.company_name,
+              job_title: opportunity.job_title,
+              content: aiResult.text
+            }
+          }),
+          { status: 200, headers }
+        );
+      }
 
       if (pathname === coverLetterRootPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
