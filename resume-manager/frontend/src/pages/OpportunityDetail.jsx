@@ -146,6 +146,11 @@ export default function OpportunityDetail() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [actionError, setActionError] = useState(null);
+    // Cover Letter generation UI state
+  const [isGeneratingCoverLetter, setIsGeneratingCoverLetter] = useState(false);
+  const [coverLetterPreview, setCoverLetterPreview] = useState(null);
+  const [coverLetterError, setCoverLetterError] = useState(null);
+
 
   const [editForm, setEditForm] = useState({
     company_id: '',
@@ -249,7 +254,47 @@ export default function OpportunityDetail() {
     });
     setMutationError(null);
   };
+  
+  const handleGenerateCoverLetter = async () => {
 
+    if (!resume_version?.id) {
+      setCoverLetterError('No resume version is linked to this opportunity.');
+      return;
+    }
+
+    try {
+      setIsGeneratingCoverLetter(true);
+      setCoverLetterError(null);
+
+      
+
+      const res = await fetch('/api/v1/cover-letters/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          opportunity_id: opportunityId,
+          resume_version_id: resume_version.id
+        })
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(data.error?.message || 'Failed to generate cover letter.');
+      }
+
+      setCoverLetterPreview(data.data.content);
+      
+    } catch (error) {
+      setCoverLetterError(error.message);
+    } finally {
+      setIsGeneratingCoverLetter(false);
+    }
+  };     
+  
   const handleModalOpen = () => {
     resetInterviewForm();
     setIsModalOpen(true);
@@ -372,7 +417,14 @@ export default function OpportunityDetail() {
             <span className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap">
               {priority !== null && priority !== undefined ? `P-${priority}` : '—'}
             </span>
-
+            <button
+            type="button"
+            onClick={handleGenerateCoverLetter}
+            disabled={isGeneratingCoverLetter}
+            className="px-3 py-1.5 text-xs font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+>
+            {isGeneratingCoverLetter ? 'Generating...' : 'Generate Cover Letter'}
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -838,7 +890,22 @@ export default function OpportunityDetail() {
               <p className="text-slate-400 text-sm font-medium">No resume version linked to this opportunity.</p>
             )}
           </div>
+          
+          
+          {/* Generated Cover Letter */}
+          {coverLetterPreview && (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mt-6">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-2 mb-3">
+                Generated Cover Letter
+              </h3>
 
+              <textarea
+                value={coverLetterPreview}
+                onChange={(e) => setCoverLetterPreview(e.target.value)}
+                className="w-full min-h-[400px] rounded-lg border border-slate-300 p-4 text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          )}
           {/* Interviews */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
