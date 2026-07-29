@@ -1364,7 +1364,134 @@ if (pathname === '/api/v1/auth/change-password' && method === 'POST') {
     }
   );
 }
-      // --- POST /api/v1/auth/logout ---
+
+// --- GET /api/v1/profile ---
+if (pathname === '/api/v1/profile' && method === 'GET') {
+  const sessionUser = await getAuthenticatedUser(request, env);
+
+  if (!sessionUser) {
+    return buildErrorResponse(
+      'UNAUTHORIZED',
+      'Authentication required.',
+      401,
+      headers
+    );
+  }
+
+  const profile = await env.DB.prepare(
+    `SELECT
+      display_name,
+      email,
+      phone,
+      linkedin_url,
+      location
+     FROM users
+     WHERE id = ?`
+  )
+    .bind(sessionUser.id)
+    .first();
+
+  if (!profile) {
+    return buildErrorResponse(
+      'USER_NOT_FOUND',
+      'User profile not found.',
+      404,
+      headers
+    );
+  }
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      data: {
+        profile
+      }
+    }),
+    {
+      status: 200,
+      headers
+    }
+  );
+}
+
+
+// --- PUT /api/v1/profile ---
+if (pathname === '/api/v1/profile' && method === 'PUT') {
+  const sessionUser = await getAuthenticatedUser(request, env);
+
+  if (!sessionUser) {
+    return buildErrorResponse(
+      'UNAUTHORIZED',
+      'Authentication required.',
+      401,
+      headers
+    );
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return buildErrorResponse(
+      'INVALID_REQUEST',
+      'Request payload must be a valid JSON structure.',
+      400,
+      headers
+    );
+  }
+
+  const {
+    display_name,
+    phone,
+    linkedin_url,
+    location
+  } = body || {};
+
+  if (!display_name || typeof display_name !== 'string') {
+    return buildErrorResponse(
+      'VALIDATION_ERROR',
+      'Display name is required.',
+      400,
+      headers
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(
+    `UPDATE users
+     SET
+       display_name = ?,
+       phone = ?,
+       linkedin_url = ?,
+       location = ?,
+       updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(
+      display_name.trim(),
+      phone || '',
+      linkedin_url || '',
+      location || '',
+      now,
+      sessionUser.id
+    )
+    .run();
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      data: {
+        message: 'Profile updated successfully.'
+      }
+    }),
+    {
+      status: 200,
+      headers
+    }
+  );
+}
+// --- POST /api/v1/auth/logout ---
       if (pathname === '/api/v1/auth/logout' && method === 'POST') {
         const cookieHeader = request.headers.get("Cookie");
         if (cookieHeader) {
