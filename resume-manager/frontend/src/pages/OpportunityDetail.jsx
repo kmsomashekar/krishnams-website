@@ -150,7 +150,7 @@ export default function OpportunityDetail() {
   const [isGeneratingCoverLetter, setIsGeneratingCoverLetter] = useState(false);
   const [coverLetterPreview, setCoverLetterPreview] = useState(null);
   const [coverLetterError, setCoverLetterError] = useState(null);
-
+  const [coverLetterSaveMessage, setCoverLetterSaveMessage] = useState(null);
 
   const [editForm, setEditForm] = useState({
     company_id: '',
@@ -294,7 +294,42 @@ export default function OpportunityDetail() {
       setIsGeneratingCoverLetter(false);
     }
   };     
-  
+      const handleSaveCoverLetter = async () => {
+      if (!coverLetterPreview) {
+      setCoverLetterError('No cover letter content available to save.');
+      return;
+    }
+
+      try {
+      setCoverLetterError(null);
+
+      const res = await fetch('/api/v1/cover-letters', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          company_id: company.id,
+          title: `${job_title} Cover Letter`,
+          content: coverLetterPreview,
+          status: 'DRAFT'
+        })
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(data.error?.message || 'Failed to save cover letter.');
+      }
+
+      setCoverLetterSaveMessage('Cover letter saved successfully.');
+
+    } catch (error) {
+      setCoverLetterError(error.message);
+    }
+  };
+
   const handleModalOpen = () => {
     resetInterviewForm();
     setIsModalOpen(true);
@@ -904,6 +939,21 @@ export default function OpportunityDetail() {
                 onChange={(e) => setCoverLetterPreview(e.target.value)}
                 className="w-full min-h-[400px] rounded-lg border border-slate-300 p-4 text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={handleSaveCoverLetter}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
+              >
+                Save Draft
+              </button>
+
+              {coverLetterSaveMessage && (
+                <span className="text-sm text-emerald-600 font-medium">
+                  {coverLetterSaveMessage}
+                </span>
+              )}
+            </div>
             </div>
           )}
           {/* Interviews */}
