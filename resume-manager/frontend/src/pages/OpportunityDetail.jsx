@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -151,6 +151,7 @@ export default function OpportunityDetail() {
   const [coverLetterPreview, setCoverLetterPreview] = useState(null);
   const [coverLetterError, setCoverLetterError] = useState(null);
   const [coverLetterSaveMessage, setCoverLetterSaveMessage] = useState(null);
+  const [generatedCoverLetterCompanyId, setGeneratedCoverLetterCompanyId] = useState(null);
 
   const [editForm, setEditForm] = useState({
     company_id: '',
@@ -186,6 +187,44 @@ export default function OpportunityDetail() {
     enabled: !!opportunityId
   });
 
+  const {
+    data: coverLetters = []
+  } = useQuery({
+    queryKey: ['cover-letters'],
+    queryFn: fetchCoverLetters
+  });
+  async function fetchCoverLetters() {
+    const res = await fetch('/api/v1/cover-letters', {
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to load cover letters.');
+    }
+
+    const data = await res.json();
+      return data.data.cover_letters;
+  }
+
+  useEffect(() => {
+    const savedCoverLetter = coverLetters.find(
+      cl => cl.company_id === opportunity?.company?.id
+
+      );
+
+      if (savedCoverLetter) {
+      fetch(`/api/v1/cover-letters/${savedCoverLetter.id}`, {
+        credentials: 'include'
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setCoverLetterPreview(data.data.content);
+            setGeneratedCoverLetterCompanyId(data.data.company_id);
+          }
+        });
+    }
+  }, [coverLetters, opportunity]);
   // Load companies only when the Edit Opportunity modal is open
   const {
     data: companies = [],
@@ -195,6 +234,25 @@ export default function OpportunityDetail() {
     queryFn: fetchCompanies,
     enabled: isEditOpen
   });
+  
+  useEffect(() => {
+    const savedCoverLetter = coverLetters.find(
+      cl => cl.company_id === opportunity?.company_id
+    );
+
+    if (savedCoverLetter) {
+      fetch(`/api/v1/cover-letters/${savedCoverLetter.id}`, {
+        credentials: 'include'
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setCoverLetterPreview(data.data.content);
+            setGeneratedCoverLetterCompanyId(data.data.company_id);
+         }
+        });
+    }
+  }, [coverLetters, opportunity]);
 
   // Update opportunity mutation
   const editOpportunityMutation = useMutation({
@@ -287,6 +345,7 @@ export default function OpportunityDetail() {
       }
 
       setCoverLetterPreview(data.data.content);
+      setGeneratedCoverLetterCompanyId(data.data.company_id);
       
     } catch (error) {
       setCoverLetterError(error.message);
@@ -310,7 +369,7 @@ export default function OpportunityDetail() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          company_id: company.id,
+          company_id: generatedCoverLetterCompanyId,
           title: `${job_title} Cover Letter`,
           content: coverLetterPreview,
           status: 'DRAFT'

@@ -3482,6 +3482,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
 
         const opportunity = await env.DB.prepare(
           `SELECT o.job_title, 
+                  o.company_id,
                   jd.raw_text AS jd_text, 
                   c.name AS company_name
            FROM opportunities o
@@ -3506,6 +3507,16 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
           return buildErrorResponse('NOT_FOUND', "Resume version not found.", 404, headers);
         }
 
+        const candidateProfile = await env.DB.prepare(
+          `SELECT display_name,
+                  phone,
+                  linkedin_url,
+                  location
+          FROM users
+          WHERE id = ?`
+        )
+        .bind(userId)
+        .first();
         const prompt = `
 Generate a professional job application cover letter.
 
@@ -3517,6 +3528,16 @@ ${opportunity.jd_text || 'Not provided'}
 
 Candidate Resume Context:
 ${resumeVersion.ai_context || 'Not provided'}
+
+Candidate Profile:
+Name: ${candidateProfile?.display_name || ''}
+Phone: ${candidateProfile?.phone || ''}
+LinkedIn: ${candidateProfile?.linkedin_url || ''}
+Location: ${candidateProfile?.location || ''}
+
+Instructions:
+Use the candidate profile details when creating the closing/signature section.
+Do not use placeholders like [Your Name], [Your Phone Number], or [Your LinkedIn Profile].
 
 Return only the cover letter text.
 `;
@@ -3531,6 +3552,7 @@ Return only the cover letter text.
           JSON.stringify({
             success: true,
             data: {
+              company_id: opportunity.company_id,
               company_name: opportunity.company_name,
               job_title: opportunity.job_title,
               content: aiResult.text
@@ -3542,7 +3564,7 @@ Return only the cover letter text.
 
       if (pathname === coverLetterRootPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
-          `SELECT cl.id, cl.company_id, cl.title, cl.status, cl.created_at, cl.updated_at,
+          `SELECT cl.id, cl.company_id, cl.title, cl.content, cl.status, cl.created_at, cl.updated_at,
                   c.id AS comp_id, c.name AS comp_name
            FROM cover_letters cl
            JOIN companies c ON cl.company_id = c.id
@@ -3558,6 +3580,7 @@ Return only the cover letter text.
           title: row.title,
           status: row.status,
           created_at: row.created_at,
+          content: row.content,
           updated_at: row.updated_at,
           company: {
             id: row.comp_id,
@@ -3598,6 +3621,9 @@ Return only the cover letter text.
           }
         }
 
+        const now = new Date().toISOString();
+        const finalContent = content !== undefined ? content : "";
+
         const company_check = await env.DB.prepare(
           `SELECT id FROM companies WHERE id = ? AND user_id = ?`
         )
@@ -3615,12 +3641,38 @@ Return only the cover letter text.
         .first();
 
         if (existingLetter) {
-          return buildErrorResponse('CONFLICT', "A cover letter already exists for this company.", 409, headers);
-        }
+          await env.DB.prepare(
+            `UPDATE cover_letters
+            SET title = ?, content = ?, status = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?`
+          )
+          .bind(
+          title,
+          finalContent,
+          finalStatus,
+          now,
+          existingLetter.id,
+          userId
+        )
+        .run();
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              id: existingLetter.id,
+              message: 'Cover letter updated successfully.'
+            }
+        }),
+    {
+      status: 200,
+      headers
+    }
+  );
+}
 
         const id = crypto.randomUUID();
-        const now = new Date().toISOString();
-        const finalContent = content !== undefined ? content : "";
+       
 
         await env.DB.prepare(
           `INSERT INTO cover_letters (id, user_id, company_id, title, content, status, created_at, updated_at)
