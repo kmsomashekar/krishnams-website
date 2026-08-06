@@ -74,11 +74,93 @@ async function callAIProvider(message, env, options = {}) {
   return await callGemini(message, env.GEMINI_API_KEY, options);
 }
 
+// --- JD IMAGE EXTRACTION HELPER ---
+async function callAIProviderWithJDImage(base64Data, mimeType, env) {
+  if (!env.GEMINI_API_KEY) {
+    return { errorType: 'MISSING_KEY' };
+  }
+
+  const targetUrl =
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+  const requestBody = {
+    contents: [
+      {
+        parts: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64Data
+            }
+          },
+          {
+            text:
+              "Extract the complete job description text from this image. " +
+              "Return only the extracted text. Do not summarize or add information."
+          }
+        ]
+      }
+    ]
+  };
+
+  const response = await fetch(targetUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": env.GEMINI_API_KEY
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    return {
+      errorType: "AI_ERROR",
+      details: result
+    };
+  }
+
+  return {
+    success: true,
+    text:
+      result.candidates?.[0]?.content?.[0]?.text ||
+      result.candidates?.[0]?.content?.parts?.[0]?.text ||
+      ""
+  };
+}
+
 // --- SECURE ADVANCED DOCUMENT ANALYSIS HELPER ---
 async function callAIProviderWithDocument(base64Data, env) {
   if (!env.GEMINI_API_KEY) {
     return { errorType: 'MISSING_KEY' };
   }
+
+  const response = await fetch(targetUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': env.GEMINI_API_KEY
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error("JD image extraction error:", result);
+
+    return {
+      errorType: 'AI_ERROR'
+    };
+  }
+
+  return {
+    success: true,
+    text:
+      result.candidates?.[0]?.content?.parts?.[0]?.text || ''
+  };
+
 
   const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
@@ -203,6 +285,21 @@ async function callAIProviderWithJDAnalysis(aiContext, jdText, metadata, env) {
     "  \"gaps\": [{ \"requirement\": \"...\", \"impact\": \"HIGH\" | \"MEDIUM\" | \"LOW\", \"reason\": \"...\" }],\n" +
     "  \"resume_opportunities\": [{ \"area\": \"...\", \"suggestion\": \"...\", \"evidence\": \"...\" }]\n" +
     "}\n\n" +
+    "6. SCORE CALIBRATION RULES:\n" +
+    "   - match_score must represent actual job fit based on evidence, not candidate seniority alone.\n" +
+    "   - Do not default most roles to high scores.\n" +
+    "   - Scores above 90 require direct evidence of alignment with almost all mandatory requirements.\n" +
+    "   - Scores between 80-90 require strong evidence across most critical requirements with only minor gaps.\n" +
+    "   - Scores between 70-79 represent a reasonable opportunity with transferable skills or manageable gaps.\n" +
+    "   - Scores between 60-69 represent a stretch opportunity requiring significant positioning.\n" +
+    "   - Missing mandatory requirements must reduce the score significantly.\n" +
+    "   - Leadership experience should not compensate for missing hands-on skills when those skills are mandatory.\n\n" +
+    "   - Transferable leadership experience should improve recommendation but should not inflate the match_score beyond the level supported by direct role alignment.\n" +
+    "7. MATCH SCORE WEIGHTING:\n" +
+    "   - Mandatory requirements: 50%\n" +
+    "   - Technical skills and platforms: 25%\n" +
+    "   - Leadership and scope: 15%\n" +
+    "   - Industry/domain alignment: 10%\n\n" +
     "RECOMMENDATION LOGIC:\n" +
     "- STRONG_APPLY: Strong match with core pillars; no major blocking core gaps; deep grounding evidence present.\n" +
     "- APPLY: Reasonable balance; worth effort despite partials or lower tiers; manageable transferable overlays.\n" +
@@ -3025,6 +3122,77 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         );
       }
 
+      // Extract JD text from image
+      if (
+        pathname === "/api/v1/jd-analyzer/extract-image" &&
+        method === "POST"
+      ) {
+        let body;
+
+        try {
+          body = await request.json();
+        } catch {
+          return buildErrorResponse(
+            "INVALID_INPUT",
+            "Invalid JSON payload.",
+            400,
+            headers
+          );
+        }
+
+        if (!body.image || !body.mime_type) {
+          return buildErrorResponse(
+            "INVALID_INPUT",
+            "image and mime_type are required.",
+            400,
+            headers
+          );
+        }
+
+        const allowedTypes = [
+          "image/png",
+          "image/jpeg",
+          "image/webp"
+        ];
+
+        if (!allowedTypes.includes(body.mime_type)) {
+          return buildErrorResponse(
+          "INVALID_INPUT",
+          "Only PNG, JPEG and WEBP images are supported.",
+          400,
+          headers
+          );
+        }
+
+        const result = await callAIProviderWithJDImage(
+          body.image,
+          body.mime_type,
+          env
+        );
+
+        if (result.errorType) {
+          return buildErrorResponse(
+            result.errorType,
+            "Unable to extract JD text from image.",
+            500,
+            headers
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+            jd_text: result.text
+            }
+          }),
+          {
+            status: 200,
+            headers
+          }
+        );
+      }
+      
       // =======================================================================
       // MODULE: JD ANALYZER CORE STRUCTURED ANALYSIS ENDPOINT
       // =======================================================================

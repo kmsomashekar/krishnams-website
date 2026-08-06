@@ -194,16 +194,59 @@ export default function JDAnalyzer() {
   };
 
   const handleJdImageUpload = async (e) => {
-  const file = e.target.files[0];
+    const file = e.target.files[0];
 
-  if (!file) return;
+    if (!file) return;
 
-  setJdImage(file);
-  setJdExtractError(null);
+    setJdImage(file);
+    setJdExtractError(null);
+    setIsExtractingJD(true);
 
-  // Temporary placeholder
-  console.log("JD Image selected:", file.name);
-  };
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        const result = reader.result;
+        resolve(result.split(",")[1]);
+      };
+
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const response = await fetch(
+      "/api/v1/jd-analyzer/extract-image",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          image: base64,
+          mime_type: file.type
+        })
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(
+        result.message || "Unable to extract JD text"
+      );
+    }
+
+    setJdText(result.data.jd_text);
+
+  } catch (error) {
+    console.error("JD image extraction failed:", error);
+    setJdExtractError(error.message);
+  } finally {
+    setIsExtractingJD(false);
+  }
+};
   const handleJdTextChange = (e) => {
     setJdText(e.target.value);
     if (analysisResult) {
