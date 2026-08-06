@@ -98,6 +98,9 @@ export default function JDAnalyzer() {
   const [jobTitle, setJobTitle] = useState('');
   const [jdUrl, setJdUrl] = useState('');
   const [jdText, setJdText] = useState('');
+  const [jdImage, setJdImage] = useState(null);
+  const [isExtractingJD, setIsExtractingJD] = useState(false);
+  const [jdExtractError, setJdExtractError] = useState(null);
 
   // --- WORKSPACE RESULTS & CONTEXTS ---
   const [analysisResult, setAnalysisResult] = useState(null);
@@ -190,6 +193,17 @@ export default function JDAnalyzer() {
     setPartialJdSaved(false);
   };
 
+  const handleJdImageUpload = async (e) => {
+  const file = e.target.files[0];
+
+  if (!file) return;
+
+  setJdImage(file);
+  setJdExtractError(null);
+
+  // Temporary placeholder
+  console.log("JD Image selected:", file.name);
+  };
   const handleJdTextChange = (e) => {
     setJdText(e.target.value);
     if (analysisResult) {
@@ -659,6 +673,24 @@ export default function JDAnalyzer() {
               </div>
             </div>
 
+          <div className="mb-3">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Upload JD Screenshot (Optional)
+            </label>
+
+            <input
+            type="file"
+            accept="image/*"
+            onChange={handleJdImageUpload}
+            className="text-xs"
+            />
+
+            {jdImage && (
+              <p className="text-xs text-slate-500 mt-1">
+                Selected: {jdImage.name}
+              </p>
+              )}
+          </div>
             <div className="pt-2 border-t border-slate-100">
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">
