@@ -225,11 +225,28 @@ const {
 // - For period options, uses date_applied within the selected period.
   const appliedStatuses = [
   'APPLIED',
-  'SCREENING',
-  'INTERVIEW',
+  'UNDER_REVIEW',
+  'INTERVIEWING',
   'OFFER',
-  'REJECTED'
+  'REJECTED',
+  'NO_RESPONSE'
 ];
+
+  const consideringCount = opportunities.filter(
+    item => item.status === 'CONSIDERING'
+  ).length;
+
+  const underReviewCount = opportunities.filter(
+    item => item.status === 'UNDER_REVIEW'
+  ).length;
+
+  const rejectedCount = opportunities.filter(
+    item => item.status === 'REJECTED'
+  ).length;
+
+  const offerCount = opportunities.filter(
+    item => item.status === 'OFFER'
+  ).length;
 
 const totalApplications = opportunities.filter(item => {
   const statusMatch = appliedStatuses.includes(item.status);
@@ -322,44 +339,132 @@ const totalApplications = opportunities.filter(item => {
       </div>
 
       {/* KPI Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
-         <div className="bg-blue-50 p-5 border border-blue-100 border-t-4 border-blue-500 rounded-lg shadow-sm">
-          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Total Opportunities</div>
-          <div className="text-3xl font-bold text-slate-900 mt-2">{totalOpportunities}</div>
-        </div>
-        <div className="bg-indigo-50 p-5 border border-indigo-100 border-t-4 border-indigo-500 rounded-lg shadow-sm">
-          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Jobs Applied</div>
-          <div className="text-3xl font-bold text-slate-900 mt-2">{totalApplications}</div>
-        </div>
-        <div className="bg-emerald-50 p-5 border border-emerald-100 border-t-4 border-emerald-500 rounded-lg shadow-sm">
-          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">People Contacted</div>
-          <div className="text-3xl font-bold text-slate-900 mt-2">
-            {isOutreachLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : outreachSummary.total_people_contacted}
-          </div>
-          <div className="text-[11px] text-slate-500 font-medium mt-1">{outreachSummary.period_label}</div>
-          <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
-            {Object.entries(outreachSummary.breakdown || {})
-              .filter(([_, count]) => count > 0)
-              .map(([channel, count]) => (
-              <span key={channel}>
-              {channel}: {count}
-              </span>
-              ))}
-        </div>
-        </div>
-        <div className="bg-purple-50 p-5 border border-purple-100 border-t-4 border-purple-500 rounded-lg shadow-sm">
-          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Interviews</div>
-          <div className="text-3xl font-bold text-slate-900 mt-2">
-            {isDetailsLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : totalInterviews}
-          </div>
-        </div>
-        <div className="bg-amber-50 p-5 border border-amber-100 border-t-4 border-amber-500 rounded-lg shadow-sm">
-          <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Average ATS Match</div>
-          <div className="text-3xl font-bold text-slate-900 mt-2">
-            {isDetailsLoading ? <span className="text-slate-300 text-2xl animate-pulse">...</span> : averageAtsMatch}
-          </div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
+
+      <div className="bg-blue-50 p-5 border border-blue-100 border-t-4 border-blue-500 rounded-lg shadow-sm">
+        <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+          Total Opportunities
       </div>
+        <div className="text-3xl font-bold text-slate-900 mt-2">
+        {totalOpportunities}
+      </div>
+      </div>
+
+  <div className="bg-slate-50 p-5 border border-slate-100 border-t-4 border-slate-500 rounded-lg shadow-sm">
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Considering
+    </div>
+    <div className="text-3xl font-bold text-slate-900 mt-2">
+      {consideringCount}
+    </div>
+  </div>
+
+  <div className="bg-indigo-50 p-5 border border-indigo-100 border-t-4 border-indigo-500 rounded-lg shadow-sm">
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Applied
+    </div>
+    <div className="text-3xl font-bold text-slate-900 mt-2">
+      {totalApplications}
+    </div>
+  </div>
+
+  <div className="bg-purple-50 p-5 border border-purple-100 border-t-4 border-purple-500 rounded-lg shadow-sm">
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Under Review
+    </div>
+    <div className="text-3xl font-bold text-slate-900 mt-2">
+      {underReviewCount}
+    </div>
+  </div>
+
+  <div className="bg-emerald-50 p-5 border border-emerald-100 border-t-4 border-emerald-500 rounded-lg shadow-sm">
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Interviewing
+    </div>
+    <div className="text-3xl font-bold text-slate-900 mt-2">
+      {totalInterviews}
+    </div>
+  </div>
+
+</div>
+
+{/* Secondary Metrics */}
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mt-6">
+
+  {/* Offers Card */}
+  <div className="bg-emerald-50 p-5 border border-emerald-100 border-t-4 border-emerald-500 rounded-lg shadow-sm">
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Offers
+  </div>
+  <div className="text-3xl font-bold text-slate-900 mt-2">
+    {offerCount}
+  </div>
+</div>
+
+
+  {/* Rejected Card */}
+  <div className="bg-red-50 p-5 border border-red-100 border-t-4 border-red-500 rounded-lg shadow-sm">
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Rejected
+  </div>
+  <div className="text-3xl font-bold text-slate-900 mt-2">
+    {rejectedCount}
+  </div>
+</div>
+  
+
+  {/* Outreach Summary Card */}
+  <div className="bg-teal-50 p-5 pb-6 border border-teal-100 border-t-4 border-teal-500 rounded-lg shadow-sm">
+
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Outreach Summary
+    </div>
+
+    <div className="text-3xl font-bold text-slate-900 mt-2">
+      {isOutreachLoading ? (
+        <span className="text-slate-300 text-2xl animate-pulse">...</span>
+      ) : (
+        outreachSummary.total_people_contacted
+      )}
+    </div>
+
+    <div className="text-[11px] text-slate-500 font-medium mt-1">
+      {outreachSummary.period_label}
+    </div>
+
+    {/* ADD THIS HERE */}
+    <div className="text-[11px] text-slate-400 mt-2 flex flex-wrap gap-x-2 gap-y-1">
+      {Object.entries(outreachSummary.breakdown || {})
+        .filter(([_, count]) => count > 0)
+        .map(([channel, count]) => (
+          <span key={channel}>
+            {channel}: {count}
+          </span>
+        ))}
+    </div>
+
+  </div>
+
+  {/* Average ATS Match Card */}
+  <div className="bg-amber-50 p-5 border border-amber-100 border-t-4 border-amber-500 rounded-lg shadow-sm">
+
+    <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+      Average ATS Match
+    </div>
+
+    <div className="text-3xl font-bold text-slate-900 mt-2">
+      {isDetailsLoading ? (
+        <span className="text-slate-300 text-2xl animate-pulse">...</span>
+      ) : (
+        averageAtsMatch
+      )}
+    </div>
+
+  </div>
+
+</div>
+
+  
 
       {/* Recent Activity */}
       <div className="mt-6">
