@@ -4878,7 +4878,7 @@ if (atsMatch) {
         }
 
         const { status } = body;
-        const allowedStatuses = ['CONSIDERING', 'APPLIED', 'UNDER_REVIEW', 'INTERVIEWING', 'OFFER', 'REJECTED', 'NO_RESPONSE'];
+        const allowedStatuses = ['CONSIDERING', 'APPLIED', 'UNDER_REVIEW', 'INTERVIEWING', 'OFFER', 'REJECTED', 'NO_RESPONSE', 'INTERVIEWED_NOT_SELECTED'];
 
         if (!status || !allowedStatuses.includes(status)) {
           return buildErrorResponse('INVALID_INPUT', `Invalid status value provided. Allowed values: ${allowedStatuses.join(', ')}`, 400, headers);

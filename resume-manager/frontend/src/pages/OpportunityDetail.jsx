@@ -125,6 +125,7 @@ function getStatusBadgeClass(status) {
     case 'OFFER': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     case 'REJECTED': return 'bg-rose-50 text-rose-700 border-rose-200';
     case 'NO_RESPONSE': return 'bg-zinc-100 text-zinc-600 border-zinc-200';
+    case 'INTERVIEWED_NOT_SELECTED': return 'bg-orange-50 text-orange-700 border-orange-200';
     default: return 'bg-gray-100 text-gray-700 border-gray-200';
   }
 }

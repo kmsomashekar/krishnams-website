@@ -221,7 +221,7 @@ const {
 
   // Jobs Applied filtering logic:
 // - Counts opportunities where an application was submitted.
-// - Includes APPLIED, SCREENING, INTERVIEW, OFFER, and REJECTED statuses.
+// - Includes APPLIED, SCREENING, INTERVIEW, OFFER, REJECTED AND INTERVIEWED_NOT_SELECTED statuses.
 // - For period options, uses date_applied within the selected period.
   const appliedStatuses = [
   'APPLIED',
@@ -229,7 +229,8 @@ const {
   'INTERVIEWING',
   'OFFER',
   'REJECTED',
-  'NO_RESPONSE'
+  'NO_RESPONSE',
+  'INTERVIEWED_NOT_SELECTED',
 ];
 
   const consideringCount = opportunities.filter(
@@ -242,6 +243,10 @@ const {
 
   const rejectedCount = opportunities.filter(
     item => item.status === 'REJECTED'
+  ).length;
+
+  const interviewedNotSelectedCount = opportunities.filter(
+  item => item.status === 'INTERVIEWED_NOT_SELECTED'
   ).length;
 
   const offerCount = opportunities.filter(
@@ -411,6 +416,17 @@ const totalApplications = opportunities.filter(item => {
     {rejectedCount}
   </div>
 </div>
+
+{/* Interviewed - Not Selected Card */}
+<div className="bg-orange-50 p-5 border border-orange-100 border-t-4 border-orange-500 rounded-lg shadow-sm">
+  <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+    Interviewed - Not Selected
+  </div>
+
+  <div className="text-3xl font-bold text-slate-900 mt-2">
+    {interviewedNotSelectedCount}
+  </div>
+</div>
   
 
   {/* Outreach Summary Card */}
@@ -525,7 +541,7 @@ const totalApplications = opportunities.filter(item => {
                           <td className="py-4 px-4">
                             <span
                             className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full capitalize ${
-                               op.status === 'APPLIED'
+                              op.status === 'APPLIED'
                                 ? 'bg-blue-100 text-blue-700'
                                 : op.status === 'INTERVIEW'
                                 ? 'bg-green-100 text-green-700'
@@ -535,8 +551,10 @@ const totalApplications = opportunities.filter(item => {
                                 ? 'bg-emerald-100 text-emerald-700'
                                 : op.status === 'REJECTED'
                                 ? 'bg-red-100 text-red-700'
+                                : op.status === 'INTERVIEWED_NOT_SELECTED'
+                                ? 'bg-orange-50 text-orange-700 border-orange-200'
                                 : 'bg-slate-100 text-slate-700'
-                                }`}
+                              }`}
 >
                                 {(op.status || '').toLowerCase()}
                           </span>
