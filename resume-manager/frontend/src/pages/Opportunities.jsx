@@ -10,7 +10,8 @@ const VALID_STATUSES = [
   { value: 'INTERVIEWING', label: 'Interviewing' },
   { value: 'OFFER', label: 'Offer' },
   { value: 'REJECTED', label: 'Rejected' },
-  { value: 'NO_RESPONSE', label: 'No Response' }
+  { value: 'NO_RESPONSE', label: 'No Response' },
+  { value: 'INTERVIEWED_NOT_SELECTED', label: 'Interviewed - Not Selected' },
 ];
 
 // Single-pass API response parser

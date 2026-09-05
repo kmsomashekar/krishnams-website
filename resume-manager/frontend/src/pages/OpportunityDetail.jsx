@@ -10,7 +10,8 @@ const OPPORTUNITY_STATUS_LABELS = {
   INTERVIEWING: 'Interviewing',
   OFFER: 'Offer',
   REJECTED: 'Rejected',
-  NO_RESPONSE: 'No Response'
+  NO_RESPONSE: 'No Response',
+  INTERVIEWED_NOT_SELECTED: 'Interviewed - Not Selected',
 };
 
 // Valid interview statuses
