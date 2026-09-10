@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { jsPDF } from "jspdf";
 
 // Status labels for opportunity tracking
 const OPPORTUNITY_STATUS_LABELS = {
@@ -401,6 +402,60 @@ export default function OpportunityDetail() {
     );
   };
 
+  const handleDownloadPDF = () => {
+  if (!coverLetterPreview) return;
+
+  const doc = new jsPDF();
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 20;
+  const maxWidth = pageWidth - margin * 2;
+
+  let y = 20;
+
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.text("Cover Letter", margin, y);
+
+  y += 12;
+
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+
+  const header = [
+    `Company: ${company?.name || ''}`,
+    `Position: ${job_title || ''}`,
+    `Date: ${new Date().toLocaleDateString()}`
+  ];
+
+  header.forEach((line) => {
+    doc.text(line, margin, y);
+    y += 7;
+  });
+
+  y += 8;
+
+  const lines = doc.splitTextToSize(
+    coverLetterPreview,
+    maxWidth
+  );
+
+  lines.forEach((line) => {
+    if (y > 280) {
+      doc.addPage();
+      y = 20;
+    }
+
+    doc.text(line, margin, y);
+    y += 6;
+  });
+
+  const filename =
+    `${company?.name || "Company"}_Cover_Letter.pdf`
+      .replace(/\s+/g, "_");
+
+  doc.save(filename);
+};
   const handleModalOpen = () => {
     resetInterviewForm();
     setIsModalOpen(true);
@@ -1026,6 +1081,15 @@ export default function OpportunityDetail() {
               >
                       Copy
              </button>
+
+             <button
+                type="button"
+                  onClick={handleDownloadPDF}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
+              >
+                      Download PDF
+            </button>
+
               {coverLetterSaveMessage && (
                 <span className="text-sm text-emerald-600 font-medium">
                   {coverLetterSaveMessage}
