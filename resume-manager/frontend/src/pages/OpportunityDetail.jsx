@@ -239,6 +239,7 @@ export default function OpportunityDetail() {
   });
   
   useEffect(() => {
+    
     const savedCoverLetter = coverLetters.find(
       cl => cl.company_id === opportunity?.company_id
     );
@@ -402,7 +403,7 @@ export default function OpportunityDetail() {
     );
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
   if (!coverLetterPreview) return;
 
   const doc = new jsPDF();
@@ -455,7 +456,28 @@ export default function OpportunityDetail() {
       .replace(/\s+/g, "_");
 
   doc.save(filename);
-};
+
+
+      const savedCoverLetter = coverLetters.find(
+        cl => cl.company_id === company?.id
+      );
+
+      if (savedCoverLetter) {
+        await fetch(
+          `/api/v1/cover-letters/${savedCoverLetter.id}/pdf-metadata`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              filename
+            })
+          }
+        );
+      }
+      };
   const handleModalOpen = () => {
     resetInterviewForm();
     setIsModalOpen(true);

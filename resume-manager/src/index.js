@@ -2084,6 +2084,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
       const coverLetterRootPattern = '/api/v1/cover-letters';
       const coverLetterGeneratePattern = '/api/v1/cover-letters/generate';
       const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
+      const coverLetterPdfMetadataRegex = /^\/api\/v1\/cover-letters\/([^\/]+)\/pdf-metadata$/;
 
       // =======================================================================
       // MODULE: OUTREACH LOGS API (Task 1.12)
@@ -3875,6 +3876,56 @@ Return only the cover letter text.
 
           return new Response(
             JSON.stringify({ success: true, data: formattedDetail }),
+            { status: 200, headers }
+          );
+        }
+
+                if (method === 'POST' && coverLetterPdfMetadataRegex.test(pathname)) {
+          let body;
+
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse(
+              'INVALID_INPUT',
+              "Request payload must be a valid JSON structure.",
+              400,
+              headers
+            );
+          }
+
+          if (!body.filename || typeof body.filename !== 'string') {
+            return buildErrorResponse(
+              'INVALID_INPUT',
+              "Field 'filename' is required.",
+              400,
+              headers
+            );
+          }
+
+          const now = new Date().toISOString();
+
+          await env.DB.prepare(
+            `UPDATE cover_letters
+             SET pdf_generated_at = ?,
+                 pdf_filename = ?,
+                 pdf_download_count = COALESCE(pdf_download_count, 0) + 1,
+                 updated_at = ?
+             WHERE id = ? AND user_id = ?`
+          )
+          .bind(
+            now,
+            body.filename,
+            now,
+            coverLetterId,
+            userId
+          )
+          .run();
+
+          return new Response(
+            JSON.stringify({
+              success: true
+            }),
             { status: 200, headers }
           );
         }
