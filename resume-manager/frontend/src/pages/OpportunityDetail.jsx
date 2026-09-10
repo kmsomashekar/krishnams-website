@@ -1021,11 +1021,11 @@ export default function OpportunityDetail() {
 
               <button
                 type="button"
-                  onClick={handleSaveCoverLetter}
->
-                    Save Draft
-              </button>
-
+                  onClick={handleCopyCoverLetter}
+                    className="bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-800 transition-colors"
+              >
+                      Copy
+             </button>
               {coverLetterSaveMessage && (
                 <span className="text-sm text-emerald-600 font-medium">
                   {coverLetterSaveMessage}
