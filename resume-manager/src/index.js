@@ -136,32 +136,6 @@ async function callAIProviderWithDocument(base64Data, env) {
     return { errorType: 'MISSING_KEY' };
   }
 
-  const response = await fetch(targetUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': env.GEMINI_API_KEY
-    },
-    body: JSON.stringify(requestBody)
-  });
-
-  const result = await response.json();
-
-  if (!response.ok) {
-    console.error("JD image extraction error:", result);
-
-    return {
-      errorType: 'AI_ERROR'
-    };
-  }
-
-  return {
-    success: true,
-    text:
-      result.candidates?.[0]?.content?.parts?.[0]?.text || ''
-  };
-
-
   const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
   const systemInstruction = 
