@@ -391,6 +391,16 @@ export default function OpportunityDetail() {
     }
   };
 
+  const handleCopyCoverLetter = async () => {
+    if (!coverLetterPreview) return;
+
+     await navigator.clipboard.writeText(coverLetterPreview);
+
+      setCoverLetterSaveMessage(
+        "Cover letter copied to clipboard."
+    );
+  };
+
   const handleModalOpen = () => {
     resetInterviewForm();
     setIsModalOpen(true);
@@ -1007,6 +1017,13 @@ export default function OpportunityDetail() {
                 className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
               >
                 Save Draft
+              </button>
+
+              <button
+                type="button"
+                  onClick={handleSaveCoverLetter}
+>
+                    Save Draft
               </button>
 
               {coverLetterSaveMessage && (
