@@ -3841,10 +3841,24 @@ Return only the cover letter text.
         );
       }
 
-      const clIdMatch = pathname.match(coverLetterIdRegex);
-      if (clIdMatch) {
-        const coverLetterId = clIdMatch[1];
+      if (method === 'POST' && coverLetterPdfMetadataRegex.test(pathname)) {
+          let body;
 
+          try {
+            body = await request.json();
+          } catch (e) {
+            return buildErrorResponse(
+              'INVALID_INPUT',
+              "Request payload must be a valid JSON structure.",
+              400,
+              headers
+            );
+          }
+      const pdfMatch = pathname.match(coverLetterPdfMetadataRegex);
+
+        if (pdfMatch) {
+      const coverLetterId = pdfMatch[1];
+      
         if (method === 'GET') {
           const row = await env.DB.prepare(
             `SELECT cl.id, cl.company_id, cl.title, cl.content, cl.status, cl.created_at, cl.updated_at,
@@ -3880,19 +3894,7 @@ Return only the cover letter text.
           );
         }
 
-                if (method === 'POST' && coverLetterPdfMetadataRegex.test(pathname)) {
-          let body;
-
-          try {
-            body = await request.json();
-          } catch (e) {
-            return buildErrorResponse(
-              'INVALID_INPUT',
-              "Request payload must be a valid JSON structure.",
-              400,
-              headers
-            );
-          }
+                
 
           if (!body.filename || typeof body.filename !== 'string') {
             return buildErrorResponse(

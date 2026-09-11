@@ -457,7 +457,14 @@ export default function OpportunityDetail() {
 
   doc.save(filename);
 
-
+console.log(
+  "PDF cover letter companies:",
+  coverLetters.map(cl => ({
+    id: cl.id,
+    company_id: cl.company_id,
+    company: cl.company?.name
+  }))
+);
       const savedCoverLetter = coverLetters.find(
         cl => cl.company_id === company?.id
       );
