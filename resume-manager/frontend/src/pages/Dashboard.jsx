@@ -407,10 +407,10 @@ const totalApplications = opportunities.filter(item => {
 </div>
 
 
-  {/* Rejected Card */}
+  {/* Not Shortlisted Card */}
   <div className="bg-red-50 p-5 border border-red-100 border-t-4 border-red-500 rounded-lg shadow-sm">
     <div className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
-      Rejected
+      Not Shortlisted
   </div>
   <div className="text-3xl font-bold text-slate-900 mt-2">
     {rejectedCount}
@@ -556,7 +556,14 @@ const totalApplications = opportunities.filter(item => {
                                 : 'bg-slate-100 text-slate-700'
                               }`}
 >
-                                {(op.status || '').toLowerCase()}
+                                {{
+                                    APPLIED: 'Applied',
+                                    SCREENING: 'Screening',
+                                    INTERVIEW: 'Interview',
+                                    OFFER: 'Offer',
+                                    REJECTED: 'Not Shortlisted',
+                                    INTERVIEWED_NOT_SELECTED: 'Interviewed - Not Selected'
+                                }[op.status] || op.status}
                           </span>
                           </td>
                            <td className="py-4 px-4 text-center">

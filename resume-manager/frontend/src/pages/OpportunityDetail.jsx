@@ -10,7 +10,7 @@ const OPPORTUNITY_STATUS_LABELS = {
   UNDER_REVIEW: 'Under Review',
   INTERVIEWING: 'Interviewing',
   OFFER: 'Offer',
-  REJECTED: 'Rejected',
+  REJECTED: 'Not Shortlisted',
   NO_RESPONSE: 'No Response',
   INTERVIEWED_NOT_SELECTED: 'Interviewed - Not Selected',
 };

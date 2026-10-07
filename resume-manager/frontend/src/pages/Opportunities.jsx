@@ -9,7 +9,7 @@ const VALID_STATUSES = [
   { value: 'UNDER_REVIEW', label: 'Under Review' },
   { value: 'INTERVIEWING', label: 'Interviewing' },
   { value: 'OFFER', label: 'Offer' },
-  { value: 'REJECTED', label: 'Rejected' },
+  { value: 'REJECTED', label: 'Not Shortlisted' },
   { value: 'NO_RESPONSE', label: 'No Response' },
   { value: 'INTERVIEWED_NOT_SELECTED', label: 'Interviewed - Not Selected' },
 ];
