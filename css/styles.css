@@ -1368,3 +1368,166 @@ button:focus-visible {
   display: none !important;
   content: none !important;
 }
+
+
+/* ==========================================================================
+   HOMEPAGE REFINEMENTS — NOVEMBER 2026
+   Scoped to the homepage to preserve layouts on dashboard and case-study pages.
+   ========================================================================== */
+.homepage section {
+  padding: 3rem 0;
+}
+
+.homepage .hero-section {
+  padding: 92px 0 38px;
+}
+
+.homepage .hero-container {
+  gap: 1.25rem;
+}
+
+.homepage .hero-image-wrapper {
+  width: 180px;
+}
+
+.homepage .hero-contact-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem .9rem;
+  margin: .9rem 0 1.15rem;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.homepage .hero-contact-strip a,
+.homepage .hero-contact-strip span {
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.homepage .hero-contact-strip a:hover {
+  color: var(--gold);
+}
+
+.homepage .hero-summary {
+  line-height: 1.65;
+  margin-bottom: .7rem;
+}
+
+.homepage .hero-actions {
+  margin-top: 1.15rem;
+  gap: .7rem;
+}
+
+.homepage .portfolio-section {
+  padding: 2.5rem 0 3rem;
+}
+
+.homepage .portfolio-category-header {
+  margin-bottom: 1.5rem;
+}
+
+.homepage .section-subtitle {
+  margin: .75rem auto 1.75rem;
+  line-height: 1.6;
+}
+
+.homepage .grid-2-col,
+.homepage .grid-3-col,
+.homepage .grid-4-col {
+  gap: 1rem;
+}
+
+.homepage .expertise-card,
+.homepage .cert-card,
+.homepage .timeline-item {
+  padding: 1.35rem;
+}
+
+.homepage .timeline {
+  gap: 1.25rem;
+}
+
+.homepage .impact-list {
+  margin-top: .8rem;
+}
+
+.homepage .impact-list li {
+  margin: .45rem 0;
+  line-height: 1.6;
+}
+
+.homepage .tech-stack-wrapper {
+  margin-top: 2rem;
+}
+
+.homepage .tech-stack-group {
+  margin: 1.1rem 0;
+}
+
+.homepage .contact-card {
+  padding: 1.5rem;
+}
+
+.homepage .achievement-metric {
+  color: #f2d36f;
+  font-weight: 700;
+  white-space: normal;
+}
+
+@media (min-width: 576px) {
+  .homepage .hero-contact-strip {
+    justify-content: center;
+  }
+}
+
+@media (min-width: 768px) {
+  .homepage section {
+    padding: 3.5rem 0;
+  }
+
+  .homepage .hero-section {
+    padding: 104px 0 44px;
+  }
+
+  .homepage .hero-container {
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    gap: 2.5rem;
+    align-items: center;
+    text-align: left;
+  }
+
+  .homepage .hero-image-wrapper {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    max-width: 300px;
+    justify-self: start;
+  }
+
+  .homepage .hero-content {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .homepage .hero-contact-strip {
+    justify-content: flex-start;
+  }
+
+  .homepage .hero-actions {
+    justify-content: flex-start;
+  }
+
+  .homepage .section-title {
+    font-size: 2.25rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .homepage .hero-section {
+    padding: 112px 0 48px;
+  }
+}
