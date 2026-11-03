@@ -269,7 +269,7 @@ button:focus-visible {
 
 .hero-container {
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   gap: 1.5rem;
   align-items: center;
   text-align: center;
@@ -509,6 +509,17 @@ button:focus-visible {
   flex-wrap: wrap;
   gap: .75rem;
   justify-content: center;
+}
+
+.tech-stack-group {
+  margin: 1.75rem 0;
+}
+
+.tech-stack-category {
+  color: var(--gold);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: .9rem;
 }
 
 .tech-badge {
