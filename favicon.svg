@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#07111d"/>
+  <circle cx="32" cy="29" r="23" fill="none" stroke="#c9a84c" stroke-width="1.6"/>
+  <circle cx="32" cy="29" r="19.5" fill="none" stroke="#8f7538" stroke-width=".7"/>
+  <path d="M13 43 Q32 52 51 43" fill="none" stroke="#c9a84c" stroke-width="1"/>
+  <text x="32" y="35" text-anchor="middle" font-family="Georgia,serif" font-size="21" font-style="italic" font-weight="bold" fill="#e2c56d">KMS</text>
+  <text x="32" y="48" text-anchor="middle" font-family="Arial,sans-serif" font-size="4.2" letter-spacing="1.1" fill="#e8d9a5">KRISHNA M S</text>
+</svg>
