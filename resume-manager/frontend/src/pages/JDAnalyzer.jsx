@@ -91,10 +91,10 @@ async function runJDChat(payload) {
 }
 
 function calculateClientScreening(requirements = []) {
-  const blocking = requirements.filter(item => item.category === 'MANDATORY' && item.criticality === 'CRITICAL' && item.status === 'NOT_MET');
+  const blocking = requirements.filter(item => item.jd_priority === 'MANDATORY' && item.criticality === 'CRITICAL' && item.status === 'NOT_MET');
   const review = requirements.filter(item => {
-    if (item.category === 'MANDATORY' && item.criticality === 'CRITICAL') return item.status === 'PARTIALLY_MET' || item.status === 'UNVERIFIED';
-    if (item.category === 'MANDATORY' && item.criticality === 'IMPORTANT') return item.status !== 'MET';
+    if (item.jd_priority === 'MANDATORY' && item.criticality === 'CRITICAL') return item.status === 'PARTIALLY_MET' || item.status === 'UNVERIFIED';
+    if (item.jd_priority === 'MANDATORY' && item.criticality === 'IMPORTANT') return item.status !== 'MET';
     return item.criticality === 'CRITICAL' && ['TRANSFERABLE', 'INFERRED_UNCLEAR'].includes(item.category) && item.status !== 'MET';
   });
   const result = blocking.length ? 'DO_NOT_APPLY' : review.length ? 'REVIEW_CAREFULLY' : 'APPLY';
@@ -929,7 +929,7 @@ export default function JDAnalyzer() {
                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                             <div>
                               <p className="text-xs font-bold text-slate-900">{item.requirement}</p>
-                              <p className="text-[10px] text-slate-500 mt-1">{item.category.replaceAll('_', ' ')} · {item.criticality}</p>
+                              <p className="text-[10px] text-slate-500 mt-1">JD: {item.jd_priority} · Evidence: {item.category.replaceAll('_', ' ')} · {item.criticality}</p>
                             </div>
                             <span className={'self-start px-2 py-0.5 rounded text-[10px] font-bold border ' + (item.status === 'MET' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : item.status === 'NOT_MET' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200')}>
                               {item.status.replaceAll('_', ' ')}
