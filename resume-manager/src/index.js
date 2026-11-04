@@ -300,7 +300,8 @@ async function callAIProviderWithJDAnalysis(aiContext, jdText, metadata, env) {
       }
     ],
     generationConfig: {
-      responseMimeType: "application/json"
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192
     }
   };
 
