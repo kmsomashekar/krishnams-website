@@ -18,7 +18,7 @@ vars = { ENVIRONMENT = "development" }
 [[env.dev.d1_databases]]
 binding = "DB"
 database_name = "resume-manager-dev"
-database_id = "YOUR_DEV_D1_DATABASE_ID_PLACEHOLDER"
+database_id = "5562c841-e7d3-4246-a3c5-93c878c7f500"
 
 [[env.dev.r2_buckets]]
 binding = "BUCKET"
