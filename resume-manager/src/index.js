@@ -391,10 +391,14 @@ function normalizeJDRequirements(requirements, preserveManualConfirmations = fal
   }
 
   const normalized = [];
+  const seenRequirements = new Set();
   for (let index = 0; index < requirements.length; index += 1) {
     const item = requirements[index];
     if (!item || typeof item !== 'object' || Array.isArray(item)) return { valid: false };
     if (typeof item.requirement !== 'string' || !item.requirement.trim() || item.requirement.length > 500) return { valid: false };
+    const normalizedRequirementKey = item.requirement.trim().toLowerCase().replace(/\\s+/g, ' ');
+    if (seenRequirements.has(normalizedRequirementKey)) return { valid: false };
+    seenRequirements.add(normalizedRequirementKey);
     if (!JD_REQUIREMENT_CATEGORIES.includes(item.category)) return { valid: false };
     if (!['MANDATORY', 'PREFERRED', 'UNCLEAR'].includes(item.jd_priority)) return { valid: false };
     if (!JD_REQUIREMENT_CRITICALITIES.includes(item.criticality)) return { valid: false };
