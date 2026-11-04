@@ -95,7 +95,7 @@ function calculateClientScreening(requirements = []) {
   const review = requirements.filter(item => {
     if (item.jd_priority === 'MANDATORY' && item.criticality === 'CRITICAL') return item.status === 'PARTIALLY_MET' || item.status === 'UNVERIFIED';
     if (item.jd_priority === 'MANDATORY' && item.criticality === 'IMPORTANT') return item.status !== 'MET';
-    return item.criticality === 'CRITICAL' && ['TRANSFERABLE', 'INFERRED_UNCLEAR'].includes(item.category) && item.status !== 'MET';
+    return item.criticality === 'CRITICAL' && item.jd_priority === 'UNCLEAR' && item.status !== 'MET';
   });
   const result = blocking.length ? 'DO_NOT_APPLY' : review.length ? 'REVIEW_CAREFULLY' : 'APPLY';
   return {
@@ -311,6 +311,7 @@ export default function JDAnalyzer() {
   const analyzeMutation = useMutation({
     mutationFn: runJDAnalysis,
     onSuccess: (data) => {
+      setRequirementConfirmationDrafts({});
       setAnalysisResult(data);
       setServerError(null);
       setChatMessages([]);
