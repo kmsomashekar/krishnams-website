@@ -241,11 +241,11 @@ async function callAIProviderWithJDAnalysis(aiContext, jdText, metadata, env) {
     "- Candidate facts and evidence must come only from the Candidate Saved AI Context. Never invent skills, employers, projects, certifications, metrics, dates, scope, or achievements.\n" +
     "- Do not infer age, protected characteristics, or other sensitive traits. Do not guarantee employment or interview outcomes.\n\n" +
     "REQUIREMENT CLASSIFICATION:\n" +
-    "- category MUST be one of: MANDATORY, PREFERRED, TRANSFERABLE, INFERRED_UNCLEAR.\n" +
-    "- MANDATORY: the JD explicitly says must, required, essential, mandatory, minimum, need to have, or otherwise makes the qualification a clear condition.\n" +
-    "- PREFERRED: the JD says preferred, desirable, nice to have, good to have, or an advantage. These must never create a hard screening block.\n" +
-    "- TRANSFERABLE: the saved context contains related skills or experience that may transfer, but does not directly demonstrate the exact requirement. Explain the distinction; never call it direct experience.\n" +
-    "- INFERRED_UNCLEAR: the JD lists or implies an expectation without clearly saying whether it is mandatory or preferred. Do not upgrade ambiguous wording to mandatory.\n" +
+    "- category MUST be one of: MANDATORY, PREFERRED, TRANSFERABLE, INFERRED_UNCLEAR. It describes candidate evidence fit, not employer wording.\n" +
+    "- MANDATORY means direct evidence demonstrates the requirement; PREFERRED means some alignment with a desirable requirement; TRANSFERABLE means related skills exist but do not directly demonstrate the exact requirement; INFERRED_UNCLEAR means evidence or interpretation is ambiguous.\n" +
+    "- jd_priority MUST separately be MANDATORY, PREFERRED, or UNCLEAR and describes employer wording. MANDATORY: must, required, essential, mandatory, minimum, need to have, or clear eligibility condition. PREFERRED: preferred, desirable, nice to have, good to have, or an advantage. UNCLEAR: wording does not establish priority.\n" +
+    "- An explicitly mandatory SAP requirement with AWS-only evidence must retain jd_priority MANDATORY and category TRANSFERABLE. Do not downgrade employer priority because candidate experience is transferable.\n" +
+    "- Do not classify every technology, responsibility, industry, or skill mentioned in a JD as mandatory. Assess wording and context.\n\n" +
     "- Do not classify every technology, responsibility, industry, or skill mentioned in a JD as mandatory. Assess the wording and context.\n\n" +
     "CRITICALITY:\n" +
     "- criticality MUST be CRITICAL, IMPORTANT, or LOW.\n" +
@@ -354,20 +354,18 @@ const JD_REQUIREMENT_STATUSES = ['MET', 'PARTIALLY_MET', 'NOT_MET', 'UNVERIFIED'
 function calculateMandatoryScreening(requirements) {
   const list = Array.isArray(requirements) ? requirements : [];
   const blocking = list.filter(item =>
-    item.category === 'MANDATORY' &&
+    item.jd_priority === 'MANDATORY' &&
     item.criticality === 'CRITICAL' &&
     item.status === 'NOT_MET'
   );
   const review = list.filter(item => {
-    if (item.category === 'MANDATORY' && item.criticality === 'CRITICAL') {
+    if (item.jd_priority === 'MANDATORY' && item.criticality === 'CRITICAL') {
       return item.status === 'PARTIALLY_MET' || item.status === 'UNVERIFIED';
     }
-    if (item.category === 'MANDATORY' && item.criticality === 'IMPORTANT') {
+    if (item.jd_priority === 'MANDATORY' && item.criticality === 'IMPORTANT') {
       return item.status !== 'MET';
     }
-    return item.criticality === 'CRITICAL' &&
-      (item.category === 'TRANSFERABLE' || item.category === 'INFERRED_UNCLEAR') &&
-      item.status !== 'MET';
+    return item.criticality === 'CRITICAL' && item.jd_priority === 'UNCLEAR' && item.status !== 'MET';
   });
 
   let result = 'APPLY';
@@ -399,6 +397,7 @@ function normalizeJDRequirements(requirements, preserveManualConfirmations = fal
     if (!item || typeof item !== 'object' || Array.isArray(item)) return { valid: false };
     if (typeof item.requirement !== 'string' || !item.requirement.trim() || item.requirement.length > 500) return { valid: false };
     if (!JD_REQUIREMENT_CATEGORIES.includes(item.category)) return { valid: false };
+    if (!['MANDATORY', 'PREFERRED', 'UNCLEAR'].includes(item.jd_priority)) return { valid: false };
     if (!JD_REQUIREMENT_CRITICALITIES.includes(item.criticality)) return { valid: false };
     if (!JD_REQUIREMENT_STATUSES.includes(item.status)) return { valid: false };
     if (!Array.isArray(item.evidence) || item.evidence.length > 20 || item.evidence.some(value => typeof value !== 'string' || value.length > 1000)) return { valid: false };
@@ -409,6 +408,7 @@ function normalizeJDRequirements(requirements, preserveManualConfirmations = fal
       id: 'req-' + (index + 1),
       requirement: item.requirement.trim(),
       category: item.category,
+      jd_priority: item.jd_priority,
       criticality: item.criticality,
       status: item.status,
       evidence: item.evidence.map(value => value.trim()).filter(Boolean),
