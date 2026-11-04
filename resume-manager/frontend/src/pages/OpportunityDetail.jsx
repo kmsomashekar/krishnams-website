@@ -200,6 +200,10 @@ export default function OpportunityDetail() {
     enabled: !!opportunityId
   });
 
+  useEffect(() => {
+    setRequirementConfirmationDrafts({});
+  }, [opportunityId]);
+
   const confirmRequirementMutation = useMutation({
     mutationFn: confirmSavedRequirement,
     onSuccess: () => {
