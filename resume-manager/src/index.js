@@ -396,7 +396,7 @@ function normalizeJDRequirements(requirements, preserveManualConfirmations = fal
     const item = requirements[index];
     if (!item || typeof item !== 'object' || Array.isArray(item)) return { valid: false };
     if (typeof item.requirement !== 'string' || !item.requirement.trim() || item.requirement.length > 500) return { valid: false };
-    const normalizedRequirementKey = item.requirement.trim().toLowerCase().replace(/\\s+/g, ' ');
+    const normalizedRequirementKey = item.requirement.trim().toLowerCase().replace(/\s+/g, ' ');
     if (seenRequirements.has(normalizedRequirementKey)) return { valid: false };
     seenRequirements.add(normalizedRequirementKey);
     if (!JD_REQUIREMENT_CATEGORIES.includes(item.category)) return { valid: false };
