@@ -246,7 +246,6 @@ async function callAIProviderWithJDAnalysis(aiContext, jdText, metadata, env) {
     "- jd_priority MUST separately be MANDATORY, PREFERRED, or UNCLEAR and describes employer wording. MANDATORY: must, required, essential, mandatory, minimum, need to have, or clear eligibility condition. PREFERRED: preferred, desirable, nice to have, good to have, or an advantage. UNCLEAR: wording does not establish priority.\n" +
     "- An explicitly mandatory SAP requirement with AWS-only evidence must retain jd_priority MANDATORY and category TRANSFERABLE. Do not downgrade employer priority because candidate experience is transferable.\n" +
     "- Do not classify every technology, responsibility, industry, or skill mentioned in a JD as mandatory. Assess wording and context.\n\n" +
-    "- Do not classify every technology, responsibility, industry, or skill mentioned in a JD as mandatory. Assess the wording and context.\n\n" +
     "CRITICALITY:\n" +
     "- criticality MUST be CRITICAL, IMPORTANT, or LOW.\n" +
     "- CRITICAL is reserved for an explicit non-negotiable eligibility condition or a genuinely essential capability whose absence would prevent the candidate from performing the core role.\n" +
@@ -266,7 +265,7 @@ async function callAIProviderWithJDAnalysis(aiContext, jdText, metadata, env) {
     "  \"match_score\": <integer 0-100>,\n" +
     "  \"recommendation\": \"STRONG_APPLY\" | \"APPLY\" | \"LOW_MATCH\",\n" +
     "  \"summary\": \"<concise evidence-based summary>\",\n" +
-    "  \"requirements\": [{ \"requirement\": \"...\", \"category\": \"MANDATORY\" | \"PREFERRED\" | \"TRANSFERABLE\" | \"INFERRED_UNCLEAR\", \"criticality\": \"CRITICAL\" | \"IMPORTANT\" | \"LOW\", \"status\": \"MET\" | \"PARTIALLY_MET\" | \"NOT_MET\" | \"UNVERIFIED\", \"evidence\": [\"...\"], \"reasoning\": \"...\", \"confidence\": <number 0-1> }],\n" +
+    "  \"requirements\": [{ \"requirement\": \"...\", \"category\": \"MANDATORY\" | \"PREFERRED\" | \"TRANSFERABLE\" | \"INFERRED_UNCLEAR\", \"jd_priority\": \"MANDATORY\" | \"PREFERRED\" | \"UNCLEAR\", \"criticality\": \"CRITICAL\" | \"IMPORTANT\" | \"LOW\", \"status\": \"MET\" | \"PARTIALLY_MET\" | \"NOT_MET\" | \"UNVERIFIED\", \"evidence\": [\"...\"], \"reasoning\": \"...\", \"confidence\": <number 0-1> }],\n" +
     "  \"strong_matches\": [{ \"requirement\": \"...\", \"evidence\": \"...\", \"reason\": \"...\" }],\n" +
     "  \"partial_matches\": [{ \"requirement\": \"...\", \"evidence\": \"...\", \"reason\": \"...\", \"positioning\": \"...\" }],\n" +
     "  \"gaps\": [{ \"requirement\": \"...\", \"impact\": \"HIGH\" | \"MEDIUM\" | \"LOW\", \"reason\": \"...\" }],\n" +
