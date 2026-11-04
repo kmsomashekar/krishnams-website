@@ -869,7 +869,7 @@ export default function JDAnalyzer() {
                 </div>
                 
                 <div className="text-center space-y-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Recommendation</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">AI Fit Recommendation</span>
                   <span className={`inline-block px-3 py-1 text-xs font-bold tracking-wider uppercase border rounded ${getRecommendationClass(analysisResult.analysis.recommendation)}`}>
                     {getRecommendationLabel(analysisResult.analysis.recommendation)}
                   </span>
