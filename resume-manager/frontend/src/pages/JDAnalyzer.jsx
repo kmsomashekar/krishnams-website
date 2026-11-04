@@ -90,6 +90,31 @@ async function runJDChat(payload) {
   return handleResponse(res, 'Failed to retrieve AI advice.');
 }
 
+function calculateClientScreening(requirements = []) {
+  const blocking = requirements.filter(item => item.jd_priority === 'MANDATORY' && item.criticality === 'CRITICAL' && item.status === 'NOT_MET');
+  const review = requirements.filter(item => {
+    if (item.jd_priority === 'MANDATORY' && item.criticality === 'CRITICAL') return item.status === 'PARTIALLY_MET' || item.status === 'UNVERIFIED';
+    if (item.jd_priority === 'MANDATORY' && item.criticality === 'IMPORTANT') return item.status !== 'MET';
+    return item.criticality === 'CRITICAL' && item.jd_priority === 'UNCLEAR' && item.status !== 'MET';
+  });
+  const result = blocking.length ? 'DO_NOT_APPLY' : review.length ? 'REVIEW_CAREFULLY' : 'APPLY';
+  return {
+    result,
+    blocking_requirements: blocking.map(item => item.requirement),
+    review_requirements: review.map(item => item.requirement),
+    explanation: blocking.length ? 'At least one critical mandatory requirement is confirmed not met.' :
+      review.length ? 'One or more important or critical requirements need confirmation or further review.' :
+      'No confirmed critical mandatory gap was identified.'
+  };
+}
+
+function getScreeningLabel(result) {
+  if (result === 'DO_NOT_APPLY') return 'Do Not Apply';
+  if (result === 'REVIEW_CAREFULLY') return 'Review Carefully';
+  if (result === 'APPLY') return 'Apply';
+  return 'Not assessed';
+}
+
 export default function JDAnalyzer() {
   // --- FORM STATES ---
   const [selectedResumeId, setSelectedResumeId] = useState('');
@@ -104,6 +129,7 @@ export default function JDAnalyzer() {
 
   // --- WORKSPACE RESULTS & CONTEXTS ---
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [requirementConfirmationDrafts, setRequirementConfirmationDrafts] = useState({});
   const [validationError, setValidationError] = useState(null);
   const [serverError, setServerError] = useState(null);
 
@@ -170,6 +196,7 @@ export default function JDAnalyzer() {
     setSelectedResumeId(e.target.value);
     setSelectedVersionId('');
     setAnalysisResult(null);
+    setRequirementConfirmationDrafts({});
     setChatMessages([]);
     setChatQuestion('');
     setChatError(null);
@@ -183,6 +210,7 @@ export default function JDAnalyzer() {
   const handleVersionChange = (e) => {
     setSelectedVersionId(e.target.value);
     setAnalysisResult(null);
+    setRequirementConfirmationDrafts({});
     setChatMessages([]);
     setChatQuestion('');
     setChatError(null);
@@ -283,6 +311,7 @@ export default function JDAnalyzer() {
   const analyzeMutation = useMutation({
     mutationFn: runJDAnalysis,
     onSuccess: (data) => {
+      setRequirementConfirmationDrafts({});
       setAnalysisResult(data);
       setServerError(null);
       setChatMessages([]);
@@ -297,6 +326,36 @@ export default function JDAnalyzer() {
       setServerError(err.message || 'AI Fit Assessment is temporarily unavailable. Please try again.');
     }
   });
+
+  const updateRequirementDraft = (requirementId, field, value) => {
+    setRequirementConfirmationDrafts(previous => ({
+      ...previous,
+      [requirementId]: { ...(previous[requirementId] || {}), [field]: value }
+    }));
+  };
+
+  const confirmRequirement = (requirement) => {
+    const draft = requirementConfirmationDrafts[requirement.id] || {};
+    if (!['MET', 'PARTIALLY_MET', 'NOT_MET'].includes(draft.status)) return;
+    setAnalysisResult(previous => {
+      if (!previous?.analysis) return previous;
+      const requirements = previous.analysis.requirements.map(item => item.id !== requirement.id ? item : ({
+        ...item,
+        status: draft.status,
+        manual_confirmation: {
+          source: 'USER_CONFIRMED',
+          note: (draft.note || '').trim(),
+          confirmed_at: new Date().toISOString()
+        }
+      }));
+      return { ...previous, analysis: { ...previous.analysis, requirements, screening: calculateClientScreening(requirements) } };
+    });
+    setRequirementConfirmationDrafts(previous => {
+      const next = { ...previous };
+      delete next[requirement.id];
+      return next;
+    });
+  };
 
   // --- CONVERSATIONAL CHAT MUTATION ---
   const chatMutation = useMutation({
@@ -810,7 +869,7 @@ export default function JDAnalyzer() {
                 </div>
                 
                 <div className="text-center space-y-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Recommendation</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">AI Fit Recommendation</span>
                   <span className={`inline-block px-3 py-1 text-xs font-bold tracking-wider uppercase border rounded ${getRecommendationClass(analysisResult.analysis.recommendation)}`}>
                     {getRecommendationLabel(analysisResult.analysis.recommendation)}
                   </span>
@@ -849,6 +908,60 @@ export default function JDAnalyzer() {
                   </p>
                 </div>
               </div>
+
+              {/* Mandatory Screening and Requirement Confirmation */}
+              {Array.isArray(analysisResult.analysis.requirements) && (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Mandatory Screening</h3>
+                      <p className="text-[11px] text-slate-500 mt-1">This decision is separate from the ATS match score.</p>
+                    </div>
+                    <span className={'px-3 py-1 rounded-full text-xs font-bold border ' + (analysisResult.analysis.screening?.result === 'DO_NOT_APPLY' ? 'bg-rose-50 text-rose-700 border-rose-200' : analysisResult.analysis.screening?.result === 'REVIEW_CAREFULLY' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200')}>
+                      {getScreeningLabel(analysisResult.analysis.screening?.result)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">{analysisResult.analysis.screening?.explanation}</p>
+                  <div className="space-y-3">
+                    {analysisResult.analysis.requirements.map((item) => {
+                      const draft = requirementConfirmationDrafts[item.id] || {};
+                      return (
+                        <div key={item.id} className="border border-slate-200 rounded-lg p-3 space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-bold text-slate-900">{item.requirement}</p>
+                              <p className="text-[10px] text-slate-500 mt-1">JD: {item.jd_priority} · Evidence: {item.category.replaceAll('_', ' ')} · {item.criticality}</p>
+                            </div>
+                            <span className={'self-start px-2 py-0.5 rounded text-[10px] font-bold border ' + (item.status === 'MET' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : item.status === 'NOT_MET' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200')}>
+                              {item.status.replaceAll('_', ' ')}
+                            </span>
+                          </div>
+                          {item.evidence?.length > 0 && <p className="text-[11px] text-slate-600">Evidence: {item.evidence.join(' · ')}</p>}
+                          <p className="text-[11px] text-slate-500">{item.reasoning}</p>
+                          {item.manual_confirmation && (
+                            <p className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded p-2">
+                              Manually confirmed{item.manual_confirmation.note ? ': ' + item.manual_confirmation.note : ''}
+                            </p>
+                          )}
+                          {item.status === 'UNVERIFIED' && !item.manual_confirmation && (
+                            <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_auto] gap-2 pt-1">
+                              <select aria-label={'Confirm ' + item.requirement + ' status'} value={draft.status || ''} onChange={(e) => updateRequirementDraft(item.id, 'status', e.target.value)} className="rounded border border-slate-300 px-2 py-1.5 text-[11px]">
+                                <option value="">Confirm status...</option>
+                                <option value="MET">Met</option>
+                                <option value="PARTIALLY_MET">Partially met</option>
+                                <option value="NOT_MET">Not met</option>
+                              </select>
+                              <input type="text" aria-label={'Evidence note for ' + item.requirement} maxLength={1000} placeholder="Optional note about your experience" value={draft.note || ''} onChange={(e) => updateRequirementDraft(item.id, 'note', e.target.value)} className="rounded border border-slate-300 px-2 py-1.5 text-[11px]" />
+                              <button type="button" disabled={!draft.status} onClick={() => confirmRequirement(item)} className="rounded bg-indigo-600 text-white px-3 py-1.5 text-[11px] font-bold disabled:opacity-40">Confirm</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-500">Manual confirmations are clearly labelled and do not change the ATS match score. They are saved when you save this analysis as an Opportunity.</p>
+                </div>
+              )}
 
               {/* Strong Matches Block Group */}
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
