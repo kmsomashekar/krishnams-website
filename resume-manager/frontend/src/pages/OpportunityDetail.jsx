@@ -65,6 +65,15 @@ async function fetchOpportunityDetail(id) {
   return handleResponse(res, 'Failed to load opportunity details.');
 }
 
+async function confirmSavedRequirement({ opportunityId, requirementId, status, note }) {
+  const res = await fetch('/api/v1/opportunities/' + opportunityId + '/ats-analysis', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requirement_id: requirementId, status, note })
+  });
+  return handleResponse(res, 'Failed to confirm requirement.');
+}
+
 async function createInterview({ opportunityId, payload }) {
   const res = await fetch(`/api/v1/opportunities/${opportunityId}/interviews`, {
     method: 'POST',
@@ -149,6 +158,7 @@ export default function OpportunityDetail() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [requirementConfirmationDrafts, setRequirementConfirmationDrafts] = useState({});
     // Cover Letter generation UI state
   const [isGeneratingCoverLetter, setIsGeneratingCoverLetter] = useState(false);
   const [coverLetterPreview, setCoverLetterPreview] = useState(null);
@@ -190,6 +200,14 @@ export default function OpportunityDetail() {
     enabled: !!opportunityId
   });
 
+  const confirmRequirementMutation = useMutation({
+    mutationFn: confirmSavedRequirement,
+    onSuccess: () => {
+      setRequirementConfirmationDrafts({});
+      queryClient.invalidateQueries({ queryKey: ['opportunity-details', opportunityId] });
+    }
+  });
+
   const {
     data: coverLetters = []
   } = useQuery({
@@ -228,6 +246,24 @@ export default function OpportunityDetail() {
         });
     }
   }, [coverLetters, opportunity]);
+  const updateRequirementDraft = (requirementId, field, value) => {
+    setRequirementConfirmationDrafts(previous => ({
+      ...previous,
+      [requirementId]: { ...(previous[requirementId] || {}), [field]: value }
+    }));
+  };
+
+  const submitRequirementConfirmation = (requirement) => {
+    const draft = requirementConfirmationDrafts[requirement.id] || {};
+    if (!['MET', 'PARTIALLY_MET', 'NOT_MET'].includes(draft.status)) return;
+    confirmRequirementMutation.mutate({
+      opportunityId,
+      requirementId: requirement.id,
+      status: draft.status,
+      note: draft.note || ''
+    });
+  };
+
   // Load companies only when the Edit Opportunity modal is open
   const {
     data: companies = [],
@@ -810,6 +846,62 @@ console.log(
                     </div>
                   )}
                 </div>
+
+                {Array.isArray(ats_analysis.analysis_json?.requirements) && (
+                  <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Mandatory Screening</h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Separate from the ATS match score.</p>
+                      </div>
+                      <span className={'px-3 py-1 rounded-full text-xs font-bold border ' + (ats_analysis.analysis_json.screening?.result === 'DO_NOT_APPLY' ? 'bg-rose-50 text-rose-700 border-rose-200' : ats_analysis.analysis_json.screening?.result === 'REVIEW_CAREFULLY' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200')}>
+                        {ats_analysis.analysis_json.screening?.result === 'DO_NOT_APPLY' ? 'Do Not Apply' : ats_analysis.analysis_json.screening?.result === 'REVIEW_CAREFULLY' ? 'Review Carefully' : 'Apply'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600">{ats_analysis.analysis_json.screening?.explanation}</p>
+                    {ats_analysis.analysis_json.requirements.map(item => {
+                      const draft = requirementConfirmationDrafts[item.id] || {};
+                      return (
+                        <div key={item.id} className="border border-slate-100 rounded-md p-3 space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-bold text-slate-900">{item.requirement}</p>
+                              <p className="text-[10px] text-slate-500 mt-1">{item.category?.replaceAll('_', ' ')} · {item.criticality}</p>
+                            </div>
+                            <span className={'self-start px-2 py-0.5 rounded text-[10px] font-bold border ' + (item.status === 'MET' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : item.status === 'NOT_MET' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200')}>
+                              {item.status?.replaceAll('_', ' ')}
+                            </span>
+                          </div>
+                          {item.evidence?.length > 0 && <p className="text-[11px] text-slate-600">Evidence: {item.evidence.join(' · ')}</p>}
+                          <p className="text-[11px] text-slate-500">{item.reasoning}</p>
+                          {item.manual_confirmation && (
+                            <p className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded p-2">
+                              Manually confirmed{item.manual_confirmation.note ? ': ' + item.manual_confirmation.note : ''}
+                            </p>
+                          )}
+                          {item.status === 'UNVERIFIED' && !item.manual_confirmation && (
+                            <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_auto] gap-2 pt-1">
+                              <select aria-label={'Confirm ' + item.requirement + ' status'} value={draft.status || ''} onChange={(e) => updateRequirementDraft(item.id, 'status', e.target.value)} className="rounded border border-slate-300 px-2 py-1.5 text-[11px]">
+                                <option value="">Confirm status...</option>
+                                <option value="MET">Met</option>
+                                <option value="PARTIALLY_MET">Partially met</option>
+                                <option value="NOT_MET">Not met</option>
+                              </select>
+                              <input type="text" aria-label={'Evidence note for ' + item.requirement} maxLength={1000} placeholder="Optional note about your experience" value={draft.note || ''} onChange={(e) => updateRequirementDraft(item.id, 'note', e.target.value)} className="rounded border border-slate-300 px-2 py-1.5 text-[11px]" />
+                              <button type="button" disabled={!draft.status || confirmRequirementMutation.isPending} onClick={() => submitRequirementConfirmation(item)} className="rounded bg-indigo-600 text-white px-3 py-1.5 text-[11px] font-bold disabled:opacity-40">
+                                {confirmRequirementMutation.isPending ? 'Saving...' : 'Confirm'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {confirmRequirementMutation.isError && (
+                      <p className="text-xs text-rose-700">{confirmRequirementMutation.error?.message || 'Unable to save requirement confirmation.'}</p>
+                    )}
+                    <p className="text-[10px] text-slate-500">Manual confirmations are labelled separately from AI evidence. They do not alter the ATS match score.</p>
+                  </div>
+                )}
 
                 {ats_analysis.analysis_json && (
                   <div className="space-y-4">
