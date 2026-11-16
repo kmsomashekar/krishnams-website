@@ -159,7 +159,12 @@ export default function OpportunityDetail() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [actionError, setActionError] = useState(null);
   const [requirementConfirmationDrafts, setRequirementConfirmationDrafts] = useState({});
-    // Cover Letter generation UI state
+    // Company Research UI state
+  const [companyResearch, setCompanyResearch] = useState(null);
+  const [companyResearchError, setCompanyResearchError] = useState(null);
+  const [isGeneratingCompanyResearch, setIsGeneratingCompanyResearch] = useState(false);
+  const [showCompanyResearch, setShowCompanyResearch] = useState(false);
+  // Cover Letter generation UI state
   const [isGeneratingCoverLetter, setIsGeneratingCoverLetter] = useState(false);
   const [coverLetterPreview, setCoverLetterPreview] = useState(null);
   const [coverLetterError, setCoverLetterError] = useState(null);
@@ -250,6 +255,40 @@ export default function OpportunityDetail() {
         });
     }
   }, [coverLetters, opportunity]);
+  useEffect(() => {
+    if (!opportunityId) return;
+    let cancelled = false;
+    fetch(`/api/v1/opportunities/${opportunityId}/company-research`).then(res => handleResponse(res, 'Failed to load company research.')).then(data => { if (!cancelled) setCompanyResearch(data.report || null); }).catch(err => { if (!cancelled) setCompanyResearchError(err.message); });
+    return () => { cancelled = true; };
+  }, [opportunityId]);
+
+  const handleGenerateCompanyResearch = async () => {
+    try { setIsGeneratingCompanyResearch(true); setCompanyResearchError(null);
+      const res = await fetch(`/api/v1/opportunities/${opportunityId}/company-research`, { method: 'POST', credentials: 'include' });
+      const data = await handleResponse(res, 'Failed to generate company research.'); setCompanyResearch(data.report); setShowCompanyResearch(true);
+    } catch (err) { setCompanyResearchError(err.message); } finally { setIsGeneratingCompanyResearch(false); }
+  };
+
+  const downloadCompanyResearchPDF = () => {
+    if (!companyResearch?.report) return;
+    const doc = new jsPDF(); const margin = 16; const width = doc.internal.pageSize.getWidth() - margin * 2; const height = doc.internal.pageSize.getHeight(); let y = 18;
+    const space = (n=8) => { if (y+n > height-16) { doc.addPage(); y=18; } };
+    const heading = (s) => { space(12); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text(String(s),margin,y); y+=7; };
+    const para = (s) => { if (!s) return; doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.splitTextToSize(String(s),width).forEach(line => { space(5); doc.text(line,margin,y); y+=4.5; }); y+=2; };
+    const list = (a) => (Array.isArray(a)?a:[]).forEach(x => para('• '+(typeof x==='string'?x:JSON.stringify(x))));
+    const r=companyResearch.report; doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text('Company Research',margin,y); y+=10;
+    para('Company: '+(companyResearch.company||company?.name||'')); para('Role: '+(companyResearch.job_title||job_title||'')); para('Generated: '+formatDateTime(companyResearch.generated_at)+' | News window: '+(companyResearch.period?.start||'')+' to '+(companyResearch.period?.end||''));
+    heading('Company Overview'); list(r.company_overview?.facts); para(r.company_overview?.business_model);
+    heading('Industry Position, Products and Markets'); list(r.industry_position?.facts); list(r.industry_position?.products_markets);
+    heading('Leadership and Key Executives'); (r.leadership||[]).forEach(x=>para((x.name||'')+' — '+(x.role||'')+'. '+(x.context||'')));
+    heading('Recent News - Last Six Months'); (r.recent_news||[]).forEach(x=>para((x.date||'')+' | '+(x.headline||'')+' | '+(x.summary||'')+' ('+(x.publisher||'')+')'));
+    heading('Technology Landscape'); list(r.technology_landscape?.facts); para(r.technology_landscape?.confidence_note);
+    heading('Cybersecurity, Risk and Regulatory Developments'); list(r.cybersecurity_risk_regulatory?.facts); list(r.cybersecurity_risk_regulatory?.analysis);
+    heading('Business Challenges and Strategic Priorities'); list(r.business_challenges_priorities?.confirmed); list(r.business_challenges_priorities?.analysis);
+    heading('Likely Priorities for This Role - Analysis'); list(r.role_specific_priorities); heading('Interview Talking Points'); list(r.interview_talking_points); heading('Questions to Prepare'); list(r.questions_to_prepare); heading('Research Limitations'); list(r.limitations);
+    heading('Grounded Sources'); (companyResearch.sources||[]).forEach((s,i)=>{ para('['+(i+1)+'] '+(s.title||s.url)); space(5); doc.setTextColor(0,0,180); doc.textWithLink(s.url,{x:margin,y,url:s.url}); doc.setTextColor(0,0,0); y+=5; });
+    const safe=(companyResearch.company||company?.name||'Company').replace(/[^a-z0-9_-]+/gi,'_'); const stamp=new Date(companyResearch.generated_at||Date.now()).toISOString().slice(0,10).replace(/-/g,''); doc.save(`${safe}_Research_${stamp}.pdf`);
+  };
   const updateRequirementDraft = (requirementId, field, value) => {
     setRequirementConfirmationDrafts(previous => ({
       ...previous,
@@ -647,6 +686,7 @@ console.log(
             <span className="bg-slate-100 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap">
               {priority !== null && priority !== undefined ? `P-${priority}` : '—'}
             </span>
+            <button type="button" onClick={handleGenerateCompanyResearch} disabled={isGeneratingCompanyResearch} className="px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">{isGeneratingCompanyResearch ? 'Researching...' : 'Company Research'}</button>
             <button
             type="button"
             onClick={handleGenerateCoverLetter}
@@ -807,6 +847,19 @@ console.log(
             )}
           </div>
 
+          {/* Company Research */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+            <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-100 pb-3 mb-4"><div><h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Company Research</h3><p className="text-xs text-slate-500 mt-1">Grounded company and role research covering the latest six months.</p></div>{companyResearch?.generated_at && <span className="text-xs text-slate-500">Generated {formatDateTime(companyResearch.generated_at)}</span>}</div>
+            {companyResearchError && <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded p-2 mb-3">{companyResearchError}</p>}
+            {companyResearch ? <div className="flex flex-wrap gap-2 mb-4"><button type="button" onClick={()=>setShowCompanyResearch(v=>!v)} className="px-3 py-1.5 text-xs rounded border border-indigo-200 text-indigo-700">{showCompanyResearch?'Hide Report':'View Report'}</button><button type="button" onClick={downloadCompanyResearchPDF} className="px-3 py-1.5 text-xs rounded border border-slate-300">Download PDF</button><button type="button" onClick={handleGenerateCompanyResearch} disabled={isGeneratingCompanyResearch} className="px-3 py-1.5 text-xs rounded border border-emerald-200 text-emerald-700">{isGeneratingCompanyResearch?'Regenerating...':'Regenerate'}</button></div> : <p className="text-sm text-slate-500 mb-3">No report generated for this opportunity yet.</p>}
+            {isGeneratingCompanyResearch && <p className="text-xs text-indigo-600 mb-3">Searching sources and preparing the report. This may take up to 90 seconds.</p>}
+            {showCompanyResearch && companyResearch?.report && <div className="space-y-4 border-t pt-4">
+              {Object.entries({ 'Company Overview':companyResearch.report.company_overview?.facts, 'Industry Position':companyResearch.report.industry_position?.facts, 'Technology Landscape':companyResearch.report.technology_landscape?.facts, 'Cybersecurity, Risk and Regulatory':companyResearch.report.cybersecurity_risk_regulatory?.facts, 'Confirmed Business Priorities':companyResearch.report.business_challenges_priorities?.confirmed, 'Role-Specific Priorities (Analysis)':companyResearch.report.role_specific_priorities, 'Interview Talking Points':companyResearch.report.interview_talking_points, 'Questions to Prepare':companyResearch.report.questions_to_prepare, 'Limitations':companyResearch.report.limitations }).map(([heading,items])=><div key={heading}><h4 className="text-xs font-bold uppercase text-slate-700 mb-2">{heading}</h4>{Array.isArray(items)&&items.length?<ul className="list-disc pl-5 space-y-1 text-sm text-slate-700">{items.map((x,i)=><li key={i}>{x}</li>)}</ul>:<p className="text-xs text-slate-400">No reliable information available.</p>}</div>)}
+              <div><h4 className="text-xs font-bold uppercase text-slate-700 mb-2">Leadership</h4>{(companyResearch.report.leadership||[]).map((x,i)=><p key={i} className="text-sm mb-1">{x.name} — {x.role}. {x.context}</p>)}</div>
+              <div><h4 className="text-xs font-bold uppercase text-slate-700 mb-2">Recent News (Last Six Months)</h4>{(companyResearch.report.recent_news||[]).map((x,i)=><div key={i} className="border-l-2 border-indigo-200 pl-3 mb-3"><p className="text-xs font-semibold">{x.date} · {x.headline}</p><p className="text-sm mt-1">{x.summary}</p><p className="text-xs text-slate-500">{x.publisher}</p></div>)}</div>
+              <div><h4 className="text-xs font-bold uppercase text-slate-700 mb-2">Grounded Sources</h4><ol className="list-decimal pl-5 text-xs space-y-1">{(companyResearch.sources||[]).map((x,i)=><li key={i}><a href={x.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline break-all">{x.title||x.url}</a></li>)}</ol></div>
+            </div>}
+          </div>
           {/* ATS Analysis */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">
