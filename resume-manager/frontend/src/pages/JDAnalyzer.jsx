@@ -221,60 +221,64 @@ export default function JDAnalyzer() {
     setPartialJdSaved(false);
   };
 
-  const handleJdImageUpload = async (e) => {
-    const file = e.target.files[0];
-
+  const handleJdFileUpload = async (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    setJdImage(file);
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const mimeType = isPdf ? "application/pdf" : file.type;
+    const allowedTypes = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
+
     setJdExtractError(null);
+
+    if (!allowedTypes.includes(mimeType)) {
+      setJdExtractError("Please upload a PDF, PNG, JPEG or WEBP file.");
+      e.target.value = "";
+      return;
+    }
+
+    if (isPdf && file.size > 10 * 1024 * 1024) {
+      setJdExtractError("PDF files must be 10 MB or smaller.");
+      e.target.value = "";
+      return;
+    }
+
+    setJdImage(file);
     setIsExtractingJD(true);
 
     try {
       const base64 = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () => reject(new Error("Unable to read the selected file."));
+        reader.readAsDataURL(file);
+      });
 
-      reader.onload = () => {
-        const result = reader.result;
-        resolve(result.split(",")[1]);
-      };
-
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const response = await fetch(
-      "/api/v1/jd-analyzer/extract-image",
-      {
+      const response = await fetch("/api/v1/jd-analyzer/extract-document", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          image: base64,
-          mime_type: file.type
+          file_data: base64,
+          mime_type: mimeType
         })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || result.message || "Unable to extract JD text.");
       }
-    );
 
-    const result = await response.json();
-
-    if (!response.ok || !result.success) {
-      throw new Error(
-        result.message || "Unable to extract JD text"
-      );
+      setJdText(result.data.jd_text);
+    } catch (error) {
+      console.error("JD file extraction failed:", error);
+      setJdExtractError(error.message || "Unable to extract JD text.");
+    } finally {
+      setIsExtractingJD(false);
+      e.target.value = "";
     }
-
-    setJdText(result.data.jd_text);
-
-  } catch (error) {
-    console.error("JD image extraction failed:", error);
-    setJdExtractError(error.message);
-  } finally {
-    setIsExtractingJD(false);
-  }
-};
+  };
   const handleJdTextChange = (e) => {
     setJdText(e.target.value);
     if (analysisResult) {
@@ -777,13 +781,13 @@ export default function JDAnalyzer() {
 
           <div className="mb-3">
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Upload JD Screenshot (Optional)
+              Upload JD Screenshot or PDF (Optional)
             </label>
 
             <input
             type="file"
-            accept="image/*"
-            onChange={handleJdImageUpload}
+            accept=".pdf,application/pdf,image/png,image/jpeg,image/webp"
+            onChange={handleJdFileUpload}
             className="text-xs"
             />
 
