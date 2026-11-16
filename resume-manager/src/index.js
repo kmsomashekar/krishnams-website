@@ -121,6 +121,32 @@ async function fetchResearchRss(query, start, end) {
   }).filter(Boolean);
 }
 
+async function fetchResearchBingRss(query, start, end) {
+  const params = new URLSearchParams({ q: query, format: 'rss', setlang: 'en-IN' });
+  const response = await fetch('https://www.bing.com/news/search?' + params.toString(), {
+    headers: { 'Accept': 'application/rss+xml, application/xml, text/xml', 'User-Agent': 'Mozilla/5.0 (compatible; ResumeManagerResearch/1.0)' }
+  });
+  if (!response.ok) return [];
+  const xml = await response.text();
+  return [...xml.matchAll(/<item\\b[^>]*>([\\s\\S]*?)<\\/item>/gi)].map(match => {
+    const item = match[1];
+    const title = extractResearchXmlValue(item, 'title');
+    let link = extractResearchXmlValue(item, 'link');
+    const pubDate = extractResearchXmlValue(item, 'pubDate');
+    const source = extractResearchXmlValue(item, 'news:source') || extractResearchXmlValue(item, 'source');
+    try {
+      const parsed = new URL(link);
+      const realUrl = parsed.searchParams.get('url');
+      if (realUrl) link = realUrl;
+    } catch (_) {}
+    const timestamp = Date.parse(pubDate);
+    if (!title || !link || !Number.isFinite(timestamp)) return null;
+    const date = new Date(timestamp).toISOString().slice(0, 10);
+    if (date < start || date > end || !/^https?:\\/\\//i.test(link)) return null;
+    return { title, url: link, date, publisher: source || new URL(link).hostname, origin: 'Bing News RSS' };
+  }).filter(Boolean);
+}
+
 async function fetchResearchGdelt(query) {
   const params = new URLSearchParams({
     query, mode: 'ArtList', format: 'json', timespan: '3months', maxrecords: '75', sort: 'DateDesc'
@@ -192,9 +218,12 @@ async function generateCompanyResearchWithGrounding(context, env) {
   const rssResults = await Promise.all(searchQueries.map(query =>
     fetchResearchRss(query, start, end).catch(() => [])
   ));
+  const bingResults = await Promise.all(searchQueries.map(query =>
+    fetchResearchBingRss(query, start, end).catch(() => [])
+  ));
   const gdeltResults = await fetchResearchGdelt('"' + company.replace(/"/g, '') + '"')
     .catch(() => []);
-  const combined = [...rssResults.flat(), ...gdeltResults]
+  const combined = [...rssResults.flat(), ...bingResults.flat(), ...gdeltResults]
     .filter(item => item.date >= start && item.date <= end)
     .filter((item, index, all) => all.findIndex(other =>
       other.url === item.url || (other.title.toLowerCase() === item.title.toLowerCase() && other.date === item.date)
@@ -228,7 +257,7 @@ async function generateCompanyResearchWithGrounding(context, env) {
       sources.push({ title: item.headline, url: item.url });
     }
   }
-  if (!sources.length) return { errorType: 'NO_RESEARCH_SOURCES' };
+  if (!sources.length) return { errorType: 'NO_RESEARCH_SOURCES', providerMessage: 'Feed counts: Google News RSS=' + rssResults.reduce((n, x) => n + x.length, 0) + ', Bing News RSS=' + bingResults.reduce((n, x) => n + x.length, 0) + ', GDELT=' + gdeltResults.length + '. Official website fetch=' + (officialWebsiteEvidence ? 'success' : 'unavailable') + '.' };
 
   const sourceMaterial = {
     official_website: officialWebsiteEvidence ? {
@@ -5379,7 +5408,7 @@ if (atsMatch) {
         }
         const result = await generateCompanyResearchWithGrounding({ company: context.company_name, jobTitle: context.job_title, website: context.website, location: context.location, jobDescription: context.job_description }, env);
         if (!result.success) {
-          const message = result.errorType === 'PROVIDER_ERROR' ? (result.status === 429 ? 'Gemini API quota or billing limit reached. Check the Gemini API project quota and billing status.' : `Gemini research request failed (HTTP ${result.status}). ${result.providerMessage || ''}`) : ({ MISSING_KEY: 'Gemini API key is not configured.', TIMEOUT: 'Company research timed out. Please try again.', NETWORK_FAILURE: 'Unable to connect to the research service.', BAD_STRUCTURE: 'The research service returned an incomplete response.', INVALID_JSON: 'The research service returned an invalid report. Please regenerate.', NO_RESEARCH_SOURCES: 'No public company or news sources could be retrieved. Check the company website and try again.' }[result.errorType] || 'Company research could not be generated.');
+          const message = result.errorType === 'PROVIDER_ERROR' ? (result.status === 429 ? 'Gemini API quota or billing limit reached. Check the Gemini API project quota and billing status.' : `Gemini research request failed (HTTP ${result.status}). ${result.providerMessage || ''}`) : ({ MISSING_KEY: 'Gemini API key is not configured.', TIMEOUT: 'Company research timed out. Please try again.', NETWORK_FAILURE: 'Unable to connect to the research service.', BAD_STRUCTURE: 'The research service returned an incomplete response.', INVALID_JSON: 'The research service returned an invalid report. Please regenerate.', NO_RESEARCH_SOURCES: 'No public company or news sources could be retrieved. ' + (result.providerMessage || 'Check the company website and try again.') }[result.errorType] || 'Company research could not be generated.');
           return buildErrorResponse(result.errorType, message, result.status === 429 ? 429 : 502, headers);
         }
         const savedReport = { report: result.report, sources: result.sources, search_queries: result.searchQueries, period: result.period, generated_at: result.generatedAt, company: context.company_name, job_title: context.job_title };
