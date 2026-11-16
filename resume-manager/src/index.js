@@ -74,8 +74,8 @@ async function callAIProvider(message, env, options = {}) {
   return await callGemini(message, env.GEMINI_API_KEY, options);
 }
 
-// --- JD IMAGE EXTRACTION HELPER ---
-async function callAIProviderWithJDImage(base64Data, mimeType, env) {
+// --- JD IMAGE / PDF EXTRACTION HELPER ---
+async function callAIProviderWithJDFile(base64Data, mimeType, env) {
   if (!env.GEMINI_API_KEY) {
     return { errorType: 'MISSING_KEY' };
   }
@@ -95,39 +95,57 @@ async function callAIProviderWithJDImage(base64Data, mimeType, env) {
           },
           {
             text:
-              "Extract the complete job description text from this image. " +
-              "Return only the extracted text. Do not summarize or add information."
+              "Extract the complete job description text from this image or PDF. " +
+              "For PDFs, process every page in its original order, including scanned or image-only pages. " +
+              "Preserve the wording and relevant headings, bullets, and requirements. " +
+              "Return only the extracted job description text. Do not summarize, omit content, or add information."
           }
         ]
       }
     ]
   };
 
-  const response = await fetch(targetUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": env.GEMINI_API_KEY
-    },
-    body: JSON.stringify(requestBody)
-  });
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), 60000);
 
-  const result = await response.json();
+  try {
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": env.GEMINI_API_KEY
+      },
+      body: JSON.stringify(requestBody),
+      signal: abortController.signal
+    });
 
-  if (!response.ok) {
+    const result = await response.json();
+
+    if (!response.ok) {
+      return {
+        errorType: "AI_ERROR",
+        details: result
+      };
+    }
+
+    const extractedText =
+      result.candidates?.[0]?.content?.parts
+        ?.map(part => part.text || "")
+        .join("\n")
+        .trim() || "";
+
+    if (!extractedText) {
+      return { errorType: "EMPTY_EXTRACTION" };
+    }
+
+    return { success: true, text: extractedText };
+  } catch (error) {
     return {
-      errorType: "AI_ERROR",
-      details: result
+      errorType: error.name === "AbortError" ? "TIMEOUT" : "NETWORK_FAILURE"
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return {
-    success: true,
-    text:
-      result.candidates?.[0]?.content?.[0]?.text ||
-      result.candidates?.[0]?.content?.parts?.[0]?.text ||
-      ""
-  };
 }
 
 // --- SECURE ADVANCED DOCUMENT ANALYSIS HELPER ---
@@ -3194,9 +3212,9 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         );
       }
 
-      // Extract JD text from image
+      // Extract JD text from an image or PDF. Keep the legacy image route compatible.
       if (
-        pathname === "/api/v1/jd-analyzer/extract-image" &&
+        ["/api/v1/jd-analyzer/extract-image", "/api/v1/jd-analyzer/extract-document"].includes(pathname) &&
         method === "POST"
       ) {
         let body;
@@ -3204,64 +3222,71 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         try {
           body = await request.json();
         } catch {
+          return buildErrorResponse("INVALID_INPUT", "Invalid JSON payload.", 400, headers);
+        }
+
+        const fileData = body.file_data || body.image;
+        const mimeType = body.mime_type;
+
+        if (typeof fileData !== "string" || !fileData || !mimeType) {
           return buildErrorResponse(
             "INVALID_INPUT",
-            "Invalid JSON payload.",
+            "file_data and mime_type are required.",
             400,
             headers
           );
         }
 
-        if (!body.image || !body.mime_type) {
+        const allowedTypes = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
+        if (!allowedTypes.includes(mimeType)) {
           return buildErrorResponse(
             "INVALID_INPUT",
-            "image and mime_type are required.",
+            "Supported formats are PDF, PNG, JPEG and WEBP.",
             400,
             headers
           );
         }
 
-        const allowedTypes = [
-          "image/png",
-          "image/jpeg",
-          "image/webp"
-        ];
+        if (mimeType === "application/pdf") {
+          const maxPdfBytes = 10 * 1024 * 1024;
+          const maxBase64Length = Math.ceil(maxPdfBytes * 4 / 3) + 4;
 
-        if (!allowedTypes.includes(body.mime_type)) {
-          return buildErrorResponse(
-          "INVALID_INPUT",
-          "Only PNG, JPEG and WEBP images are supported.",
-          400,
-          headers
-          );
+          if (fileData.length > maxBase64Length) {
+            return buildErrorResponse(
+              "FILE_TOO_LARGE",
+              "PDF files must be 10 MB or smaller.",
+              413,
+              headers
+            );
+          }
+
+          if (!fileData.startsWith("JVBERi0")) {
+            return buildErrorResponse(
+              "INVALID_INPUT",
+              "The uploaded file does not appear to be a valid PDF.",
+              400,
+              headers
+            );
+          }
         }
 
-        const result = await callAIProviderWithJDImage(
-          body.image,
-          body.mime_type,
-          env
-        );
+        const result = await callAIProviderWithJDFile(fileData, mimeType, env);
 
         if (result.errorType) {
-          return buildErrorResponse(
-            result.errorType,
-            "Unable to extract JD text from image.",
-            500,
-            headers
-          );
+          const status = result.errorType === "TIMEOUT" ? 504 : 502;
+          const message = result.errorType === "EMPTY_EXTRACTION"
+            ? "No readable job description text was found in the uploaded file."
+            : "Unable to extract JD text from the uploaded file. Please try another file.";
+
+          return buildErrorResponse(result.errorType, message, status, headers);
         }
 
         return new Response(
           JSON.stringify({
             success: true,
-            data: {
-            jd_text: result.text
-            }
+            data: { jd_text: result.text }
           }),
-          {
-            status: 200,
-            headers
-          }
+          { status: 200, headers }
         );
       }
       
