@@ -128,7 +128,7 @@ async function fetchResearchBingRss(query, start, end) {
   });
   if (!response.ok) return [];
   const xml = await response.text();
-  return [...xml.matchAll(/<item\\b[^>]*>([\\s\\S]*?)<\\/item>/gi)].map(match => {
+  return [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map(match => {
     const item = match[1];
     const title = extractResearchXmlValue(item, 'title');
     let link = extractResearchXmlValue(item, 'link');
@@ -142,7 +142,7 @@ async function fetchResearchBingRss(query, start, end) {
     const timestamp = Date.parse(pubDate);
     if (!title || !link || !Number.isFinite(timestamp)) return null;
     const date = new Date(timestamp).toISOString().slice(0, 10);
-    if (date < start || date > end || !/^https?:\\/\\//i.test(link)) return null;
+    if (date < start || date > end || !/^https?:\/\//i.test(link)) return null;
     return { title, url: link, date, publisher: source || new URL(link).hostname, origin: 'Bing News RSS' };
   }).filter(Boolean);
 }
