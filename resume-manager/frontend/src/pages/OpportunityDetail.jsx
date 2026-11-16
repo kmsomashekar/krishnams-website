@@ -286,7 +286,7 @@ export default function OpportunityDetail() {
     heading('Cybersecurity, Risk and Regulatory Developments'); list(r.cybersecurity_risk_regulatory?.facts); list(r.cybersecurity_risk_regulatory?.analysis);
     heading('Business Challenges and Strategic Priorities'); list(r.business_challenges_priorities?.confirmed); list(r.business_challenges_priorities?.analysis);
     heading('Likely Priorities for This Role - Analysis'); list(r.role_specific_priorities); heading('Interview Talking Points'); list(r.interview_talking_points); heading('Questions to Prepare'); list(r.questions_to_prepare); heading('Research Limitations'); list(r.limitations);
-    heading('Grounded Sources'); (companyResearch.sources||[]).forEach((s,i)=>{ para('['+(i+1)+'] '+(s.title||s.url)); space(5); doc.setTextColor(0,0,180); doc.textWithLink(s.url,{x:margin,y,url:s.url}); doc.setTextColor(0,0,0); y+=5; });
+    heading('Grounded Sources'); (companyResearch.sources||[]).forEach((s,i)=>{ para('['+(i+1)+'] '+(s.title||s.url)); space(5); doc.setTextColor(0,0,180); const urlLines=doc.splitTextToSize(s.url,width); urlLines.forEach(line=>{space(5); doc.text(line,margin,y); doc.link(margin,y-3,width,5,{url:s.url}); y+=4.5;}); doc.setTextColor(0,0,0); y+=2; });
     const safe=(companyResearch.company||company?.name||'Company').replace(/[^a-z0-9_-]+/gi,'_'); const stamp=new Date(companyResearch.generated_at||Date.now()).toISOString().slice(0,10).replace(/-/g,''); doc.save(`${safe}_Research_${stamp}.pdf`);
   };
   const updateRequirementDraft = (requirementId, field, value) => {
