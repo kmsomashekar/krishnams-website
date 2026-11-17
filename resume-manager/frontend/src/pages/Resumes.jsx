@@ -124,6 +124,9 @@ export default function Resumes() {
   const [isExtractingEvidence, setIsExtractingEvidence] = useState(false);
   const [evidenceError, setEvidenceError] = useState('');
   const [evidenceNotice, setEvidenceNotice] = useState('');
+  const [showEvidenceForm, setShowEvidenceForm] = useState(false);
+  const [editingEvidenceId, setEditingEvidenceId] = useState(null);
+  const [evidenceForm, setEvidenceForm] = useState({ evidence_type: 'ACHIEVEMENT', title: '', organisation: '', role: '', description: '', responsibilities: '', actions_taken: '', outcomes: '', classification: 'DIRECT', technologies: '', skills: '' });
 
 
   // --- DATA QUERIES ---
@@ -181,6 +184,44 @@ export default function Resumes() {
     } catch (error) {
       setEvidenceError(error.message || 'Could not save this evidence item.');
     }
+  };
+
+  const resetEvidenceForm = () => {
+    setEvidenceForm({ evidence_type: 'ACHIEVEMENT', title: '', organisation: '', role: '', description: '', responsibilities: '', actions_taken: '', outcomes: '', classification: 'DIRECT', technologies: '', skills: '' });
+    setEditingEvidenceId(null);
+    setShowEvidenceForm(false);
+  };
+
+  const handleEvidenceSave = async (event) => {
+    event.preventDefault();
+    setEvidenceError('');
+    const payload = { ...evidenceForm, technologies: evidenceForm.technologies.split(',').map(v => v.trim()).filter(Boolean), skills: evidenceForm.skills.split(',').map(v => v.trim()).filter(Boolean) };
+    try {
+      const response = await fetch(editingEvidenceId ? `/api/v1/resume-evidence/${editingEvidenceId}` : '/api/v1/resume-evidence', {
+        method: editingEvidenceId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      await handleResponse(response, 'Could not save evidence.');
+      await refetchEvidence();
+      resetEvidenceForm();
+      setEvidenceNotice(editingEvidenceId ? 'Evidence updated.' : 'Evidence added as pending verification.');
+    } catch (error) { setEvidenceError(error.message || 'Could not save evidence.'); }
+  };
+
+  const handleEvidenceEdit = (item) => {
+    setEvidenceForm({ evidence_type: item.evidence_type || 'ACHIEVEMENT', title: item.title || '', organisation: item.organisation || '', role: item.role || '', description: item.description || '', responsibilities: item.responsibilities || '', actions_taken: item.actions_taken || '', outcomes: item.outcomes || '', classification: item.classification || 'DIRECT', technologies: (item.technologies || []).join(', '), skills: (item.skills || []).join(', ') });
+    setEditingEvidenceId(item.id);
+    setShowEvidenceForm(true);
+  };
+
+  const handleEvidenceVerify = async (item) => {
+    setEvidenceError('');
+    try {
+      const response = await fetch(`/api/v1/resume-evidence/${item.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verification_status: item.verification_status === 'VERIFIED' ? 'PENDING' : 'VERIFIED' }) });
+      await handleResponse(response, 'Could not update verification status.');
+      await refetchEvidence();
+    } catch (error) { setEvidenceError(error.message || 'Could not update verification status.'); }
   };
 
   // Auto-select first resume if there is a list and no current selection exists
@@ -841,6 +882,20 @@ export default function Resumes() {
                 </div>
                 {evidenceError && <div className="p-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs">{evidenceError}</div>}
                 {evidenceNotice && <div className="p-3 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs">{evidenceNotice}</div>}
+                {showEvidenceForm && (
+                  <form onSubmit={handleEvidenceSave} className="border border-indigo-200 rounded-lg p-4 bg-indigo-50/30 space-y-3">
+                    <div className="flex items-center justify-between"><strong className="text-xs text-slate-800">{editingEvidenceId ? 'Edit evidence' : 'Add evidence manually'}</strong><button type="button" onClick={resetEvidenceForm} className="text-xs text-slate-500">Cancel</button></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <select value={evidenceForm.evidence_type} onChange={e=>setEvidenceForm({...evidenceForm,evidence_type:e.target.value})} className="rounded border px-2 py-2 text-xs"><option value="EXPERIENCE">Experience</option><option value="PROJECT">Project</option><option value="ACHIEVEMENT">Achievement</option></select>
+                      <select value={evidenceForm.classification} onChange={e=>setEvidenceForm({...evidenceForm,classification:e.target.value})} className="rounded border px-2 py-2 text-xs"><option value="DIRECT">Direct</option><option value="TEAM">Team</option><option value="ADVISORY">Advisory</option><option value="INDEPENDENT">Independent</option><option value="TRANSFERABLE">Transferable</option></select>
+                    </div>
+                    <input required maxLength={300} placeholder="Title *" value={evidenceForm.title} onChange={e=>setEvidenceForm({...evidenceForm,title:e.target.value})} className="w-full rounded border px-3 py-2 text-xs"/>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><input placeholder="Organisation" value={evidenceForm.organisation} onChange={e=>setEvidenceForm({...evidenceForm,organisation:e.target.value})} className="rounded border px-3 py-2 text-xs"/><input placeholder="Role" value={evidenceForm.role} onChange={e=>setEvidenceForm({...evidenceForm,role:e.target.value})} className="rounded border px-3 py-2 text-xs"/></div>
+                    {['description','responsibilities','actions_taken','outcomes'].map(key=><textarea key={key} rows="2" placeholder={key.replace('_',' ').replace(/\b\w/g,m=>m.toUpperCase())} value={evidenceForm[key]} onChange={e=>setEvidenceForm({...evidenceForm,[key]:e.target.value})} className="w-full rounded border px-3 py-2 text-xs"/>)}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><input placeholder="Technologies (comma-separated)" value={evidenceForm.technologies} onChange={e=>setEvidenceForm({...evidenceForm,technologies:e.target.value})} className="rounded border px-3 py-2 text-xs"/><input placeholder="Skills (comma-separated)" value={evidenceForm.skills} onChange={e=>setEvidenceForm({...evidenceForm,skills:e.target.value})} className="rounded border px-3 py-2 text-xs"/></div>
+                    <div className="flex justify-end"><button type="submit" className="px-4 py-2 rounded bg-indigo-600 text-white text-xs font-semibold">{editingEvidenceId ? 'Save Changes' : 'Save as Pending'}</button></div>
+                  </form>
+                )}
                 {evidenceDraft.length > 0 && (
                   <div className="space-y-3">
                     <div className="text-xs font-bold text-slate-700">Review extracted draft ({evidenceDraft.length} items)</div>
@@ -866,6 +921,7 @@ export default function Resumes() {
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-700">Saved evidence: {evidenceItems.length}</span>
+                  <button type="button" onClick={() => { resetEvidenceForm(); setShowEvidenceForm(true); }} className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 rounded">+ Add Evidence</button>
                   <span className="text-[10px] text-slate-400">Pending verification is not approved resume content</span>
                 </div>
                 {evidenceItems.length > 0 ? (
@@ -879,6 +935,10 @@ export default function Resumes() {
                         <div className="text-[11px] text-slate-500 mt-1">{[item.organisation,item.role,item.evidence_type].filter(Boolean).join(' · ')}</div>
                         {item.description && <p className="text-xs text-slate-600 mt-1">{item.description}</p>}
                         {item.source_name && <div className="text-[10px] text-slate-400 mt-1">Source: {item.source_name}</div>}
+                        <div className="flex gap-2 mt-2">
+                          <button type="button" onClick={() => handleEvidenceEdit(item)} className="text-[10px] font-semibold text-indigo-600 underline">Edit</button>
+                          <button type="button" onClick={() => handleEvidenceVerify(item)} className="text-[10px] font-semibold text-emerald-700 underline">{item.verification_status === 'VERIFIED' ? 'Mark pending' : 'Mark verified'}</button>
+                        </div>
                       </div>
                     ))}
                   </div>
