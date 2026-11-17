@@ -5544,22 +5544,29 @@ ${JSON.stringify(answered)}`;
           }
           const weights = { situation: 0.15, task: 0.20, action: 0.30, result: 0.25, clarity_relevance: 0.10 };
           const answeredIndices = new Set(answered.map(q => q.question_index));
-          const normalised = feedback.map(item => {
-            const index = Number(item.question_index);
-            if (!answeredIndices.has(index) || !item.scores) throw new Error('Invalid assessment question index');
-            const scores = {};
-            for (const key of Object.keys(weights)) {
-              const n = Number(item.scores[key]);
-              if (!Number.isFinite(n)) throw new Error('Invalid assessment dimension score');
-              scores[key] = Math.max(0, Math.min(100, n));
-            }
-            const score = Object.keys(weights).reduce((sum, key) => sum + scores[key] * weights[key], 0);
-            const rating = score >= 90 ? 'Excellent' : score >= 80 ? 'Very Good' : score >= 65 ? 'Good' : score >= 50 ? 'Developing' : 'Needs More Detail';
-            return { question_index: index, scores, score: Math.round(score * 10) / 10, rating,
-              what_worked_well: String(item.what_worked_well || ''), what_could_improve: String(item.what_could_improve || ''),
-              suggestions: Array.isArray(item.suggestions) ? item.suggestions.map(String) : [],
-              improved_example: String(item.improved_example || '') };
-          });
+          let normalised;
+          try {
+            normalised = feedback.map(item => {
+              const index = Number(item.question_index);
+              if (!answeredIndices.has(index) || !item.scores) throw new Error('Invalid assessment question index');
+              const scores = {};
+              for (const key of Object.keys(weights)) {
+                const n = Number(item.scores[key]);
+                if (!Number.isFinite(n)) throw new Error('Invalid assessment dimension score');
+                scores[key] = Math.max(0, Math.min(100, n));
+              }
+              const score = Object.keys(weights).reduce((sum, key) => sum + scores[key] * weights[key], 0);
+              const rating = score >= 90 ? 'Excellent' : score >= 80 ? 'Very Good' : score >= 65 ? 'Good' : score >= 50 ? 'Developing' : 'Needs More Detail';
+              return { question_index: index, scores, score: Math.round(score * 10) / 10, rating,
+                what_worked_well: String(item.what_worked_well || ''), what_could_improve: String(item.what_could_improve || ''),
+                suggestions: Array.isArray(item.suggestions) ? item.suggestions.map(String) : [],
+                improved_example: String(item.improved_example || '') };
+            });
+            if (new Set(normalised.map(item => item.question_index)).size !== answered.length) throw new Error('Duplicate assessment question index');
+          } catch (_) {
+            await env.DB.prepare(`UPDATE star_interview_sessions SET assessment_status = 'FAILED', updated_at = ? WHERE id = ? AND assessment_status = 'RUNNING'`).bind(new Date().toISOString(), sessionId).run();
+            return buildErrorResponse('ASSESSMENT_INVALID_RESPONSE', 'The assessment result contained invalid scoring data. Your answers are retained; please retry.', 502, headers);
+          }
           const overallScore = normalised.reduce((sum, item) => sum + item.score, 0) / normalised.length;
           const roundedScore = Math.round(overallScore * 10) / 10;
           const overallRating = roundedScore >= 90 ? 'Excellent' : roundedScore >= 80 ? 'Very Good' : roundedScore >= 65 ? 'Good' : roundedScore >= 50 ? 'Developing' : 'Needs More Detail';
