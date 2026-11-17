@@ -36,6 +36,10 @@ function downloadAssessmentPdf(company, role, session, assessment) {
   addText('Overall score: ' + assessment.overall_score + '/100 — ' + assessment.overall_rating, { bold: true, fontSize: 13, lineHeight: 7 });
   addText('Completion: ' + assessment.answered_count + '/' + assessment.total_questions + ' answered (' + assessment.completion_coverage + '%)', { bold: true });
   addText(assessment.scoring_note || '');
+  if (assessment.unanswered_questions?.length) {
+    addText('UNANSWERED QUESTIONS', { bold: true, fontSize: 11, lineHeight: 6 });
+    assessment.unanswered_questions.forEach(q => addText('Q' + (q.question_index + 1) + ': ' + q.question));
+  }
   addText('INTERVIEW READINESS SUMMARY', { bold: true, fontSize: 12, lineHeight: 7 });
   addText(assessment.overall?.interview_readiness_summary || '—');
   for (const [heading, items] of [
@@ -152,7 +156,14 @@ export default function StarInterview() {
       });
       const data = await readApi(res, 'Unable to complete the assessment. Please try again.');
       setSession(data.session);
-    } catch (err) { setError(err.message); }
+    } catch (err) {
+      setError(err.message);
+      try {
+        const latest = await fetch('/api/v1/opportunities/' + opportunityId + '/star-interviews/' + session.id, { credentials: 'include' });
+        const latestData = await readApi(latest, 'Unable to refresh assessment status.');
+        setSession({ ...latestData.session, questions: latestData.session.questions, answers: latestData.session.answers, assessment: latestData.session.assessment_json ? JSON.parse(latestData.session.assessment_json) : latestData.session.assessment || null });
+      } catch (_) {}
+    }
     finally { setAssessmentBusy(false); }
   };
 
@@ -202,6 +213,7 @@ export default function StarInterview() {
               <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold text-slate-900">Interview assessment</h2><p className="text-sm text-slate-500 mt-1">Assessed {new Date(session.assessment.assessed_at || session.assessed_at).toLocaleString()}</p></div><span className="rounded-full bg-emerald-50 text-emerald-800 px-3 py-1 text-sm font-semibold">{session.assessment.overall_rating}</span></div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><div className="rounded-lg bg-violet-50 p-4"><p className="text-xs text-violet-700 font-semibold">Overall score</p><p className="text-3xl font-bold text-violet-900">{session.assessment.overall_score}<span className="text-base font-medium">/100</span></p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500 font-semibold">Completion</p><p className="text-3xl font-bold text-slate-900">{session.assessment.completion_coverage}%</p><p className="text-xs text-slate-500">{session.assessment.answered_count} of {session.assessment.total_questions} answered</p></div><div className="rounded-lg bg-slate-50 p-4"><p className="text-xs text-slate-500 font-semibold">Assessment</p><p className="text-lg font-bold text-slate-900">{session.assessment.overall_rating}</p><p className="text-xs text-slate-500">Supportive interview review</p></div></div>
               <p className="text-sm text-slate-600">{session.assessment.scoring_note}</p>
+              {session.assessment.unanswered_questions?.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4"><h3 className="font-semibold text-amber-900">Unanswered questions</h3><ul className="list-disc pl-5 mt-2 text-sm text-amber-900">{session.assessment.unanswered_questions.map(q => <li key={q.question_index}>Q{q.question_index + 1}: {q.question}</li>)}</ul></div>}
               <div className="rounded-lg border border-slate-200 p-4"><h3 className="font-semibold text-slate-900">Interview readiness summary</h3><p className="text-sm text-slate-700 mt-2 whitespace-pre-wrap">{session.assessment.overall?.interview_readiness_summary}</p></div>
               {[
                 ['Strongest answers', session.assessment.overall?.strongest_answers?.map(x => 'Q' + (x.question_index + 1) + ': ' + x.reason)],
