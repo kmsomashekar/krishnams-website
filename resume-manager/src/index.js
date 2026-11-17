@@ -85,7 +85,7 @@ function decodeResearchEntities(value) {
 }
 
 function extractResearchXmlValue(xml, tag) {
-  const match = xml.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)<\\/' + tag + '>', 'i'));
+  const match = xml.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)<\/' + tag + '>', 'i'));
   return match ? decodeResearchEntities(match[1]).replace(/<[^>]+>/g, '').trim() : '';
 }
 
@@ -6051,8 +6051,8 @@ ${JSON.stringify(answered)}`;
       // MODULE: RESUME EVIDENCE REPOSITORY API
       // =======================================================================
       const evidenceCollectionPath = '/api/v1/resume-evidence';
-      const evidenceItemMatch = pathname.match(/^\\/api\\/v1\\/resume-evidence\\/([^/]+)$/);
-      const evidenceExtractMatch = pathname.match(/^\\/api\\/v1\\/resumes\\/([^/]+)\\/extract-evidence$/);
+      const evidenceItemMatch = pathname.match(/^\/api\/v1\/resume-evidence\/([^/]+)$/);
+      const evidenceExtractMatch = pathname.match(/^\/api\/v1\/resumes\/([^/]+)\/extract-evidence$/);
 
       if (pathname === evidenceCollectionPath && method === 'GET') {
         const { results } = await env.DB.prepare(
