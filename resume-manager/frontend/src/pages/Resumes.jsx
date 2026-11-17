@@ -1034,15 +1034,16 @@ export default function Resumes() {
                                   </button>
                                   <button
                                     type="button"
-                                    disabled={isUploading}
+                                    disabled={isUploading || Boolean(resumeDetail.is_master)}
                                     onClick={() => handleTriggerReplace(ver.id)}
-                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-600 transition-colors disabled:opacity-50"
+                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     {currentUploadActive && isReplaceAction ? 'Uploading...' : 'Replace'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteFileClick(ver.id)}
+                                    disabled={Boolean(resumeDetail.is_master)}
                                     className="text-[10px] font-bold px-2 py-1 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded text-rose-600 transition-colors"
                                   >
                                     Delete File
@@ -1055,6 +1056,7 @@ export default function Resumes() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditVersion(ver)}
+                                disabled={Boolean(resumeDetail.is_master)}
                                 className="text-slate-600 hover:text-slate-900 font-bold text-[10px] border-r border-slate-200 pr-2 text-right"
                               >
                                 Edit Version
@@ -1062,6 +1064,7 @@ export default function Resumes() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditAiContext(ver)}
+                                disabled={Boolean(resumeDetail.is_master)}
                                 className="text-indigo-600 hover:text-indigo-900 font-bold text-[10px] border-r border-slate-200 pr-2 text-right"
                               >
                                 Edit AI Context
