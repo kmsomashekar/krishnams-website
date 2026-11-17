@@ -5396,6 +5396,95 @@ if (atsMatch) {
         );
       }
 
+      // STAR Interview Practice — Sprint 1: question generation and resumable answer capture.
+      const starInterviewMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/star-interviews$/);
+      const starSessionMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/star-interviews\/([^/]+)$/);
+      if (starInterviewMatch || starSessionMatch) {
+        const opportunityId = (starInterviewMatch || starSessionMatch)[1];
+        const context = await env.DB.prepare(`SELECT o.id, o.job_title, c.name AS company_name, jd.raw_text AS job_description
+          FROM opportunities o JOIN companies c ON c.id = o.company_id
+          LEFT JOIN job_descriptions jd ON jd.opportunity_id = o.id
+          WHERE o.id = ? AND o.user_id = ? ORDER BY jd.created_at DESC LIMIT 1`).bind(opportunityId, userId).first();
+        if (!context) return buildErrorResponse('NOT_FOUND', 'Opportunity not found or access restricted.', 404, headers);
+
+        if (starInterviewMatch && method === 'GET') {
+          const saved = await env.DB.prepare(`SELECT id, question_count, difficulty, questions_json, answers_json, current_index, status, created_at, updated_at
+            FROM star_interview_sessions WHERE opportunity_id = ? AND user_id = ? AND status IN ('IN_PROGRESS','REVIEW') ORDER BY updated_at DESC LIMIT 1`).bind(opportunityId, userId).first();
+          const history = await env.DB.prepare(`SELECT id, question_count, difficulty, status, created_at, updated_at
+            FROM star_interview_sessions WHERE opportunity_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 10`).bind(opportunityId, userId).all();
+          const session = saved ? { ...saved, questions: JSON.parse(saved.questions_json), answers: JSON.parse(saved.answers_json) } : null;
+          return new Response(JSON.stringify({ success: true, data: { session, history: history.results || [] } }), { status: 200, headers });
+        }
+
+        if (starInterviewMatch && method === 'POST') {
+          let body;
+          try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'A valid JSON request is required.', 400, headers); }
+          const questionCount = Number(body?.question_count);
+          const difficulty = body?.difficulty;
+          if (![10, 15, 20].includes(questionCount) || !['Medium', 'High'].includes(difficulty)) return buildErrorResponse('VALIDATION_ERROR', 'Choose 10, 15 or 20 questions and Medium or High difficulty.', 400, headers);
+          if (!context.job_description || !context.job_description.trim()) return buildErrorResponse('JD_REQUIRED', 'Add a job description to this opportunity before starting STAR Interview Practice.', 400, headers);
+          if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
+          const prompt = `Create exactly ${questionCount} distinct behavioural and situational interview questions for this opportunity.
+Company: ${context.company_name}
+Role: ${context.job_title}
+Difficulty: ${difficulty}
+Job description:
+${context.job_description.slice(0, 24000)}
+
+Question design:
+- Make questions specific to the responsibilities and competencies in this job description.
+- Cover leadership, ownership, decision-making, problem-solving, stakeholders, delivery, risk and change where relevant; avoid forcing irrelevant categories.
+- Medium means realistic standard professional interview questions. High means more probing leadership, ambiguity, trade-offs and complex scenarios.
+- Questions should invite real examples and can be answered naturally using STAR, without demanding the candidate say the STAR labels.
+- Avoid trick questions, duplicate questions, trivia, and questions requiring facts not present in the JD.
+- Do not provide model answers or evaluate the candidate.
+Return only valid JSON in this exact shape: {"questions":[{"category":"Leadership","question":"..."}]}.
+The questions array must contain exactly ${questionCount} items.`;
+          const generated = await callGemini(prompt, env.GEMINI_API_KEY, { maxOutputTokens: 5000 });
+          if (!generated.success) {
+            const status = generated.status === 429 ? 429 : 502;
+            return buildErrorResponse('AI_PROVIDER_ERROR', generated.errorType === 'TIMEOUT' ? 'Question generation timed out. Please try again.' : generated.status === 429 ? 'Gemini API quota or billing limit reached.' : 'Unable to generate interview questions right now.', status, headers);
+          }
+          let parsed;
+          try {
+            const raw = generated.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/,'').trim();
+            parsed = JSON.parse(raw);
+          } catch (_) { return buildErrorResponse('AI_INVALID_RESPONSE', 'The question generator returned an unreadable response. Please try again.', 502, headers); }
+          if (!Array.isArray(parsed.questions) || parsed.questions.length !== questionCount || parsed.questions.some(q => !q || typeof q.question !== 'string' || !q.question.trim())) return buildErrorResponse('AI_INVALID_RESPONSE', 'The question generator did not return the requested number of valid questions. Please try again.', 502, headers);
+          const now = new Date().toISOString();
+          const sessionId = crypto.randomUUID();
+          const questions = parsed.questions.map((q, index) => ({ number: index + 1, category: String(q.category || 'General'), question: q.question.trim() }));
+          const answers = Array(questionCount).fill('');
+          await env.DB.prepare(`INSERT INTO star_interview_sessions
+            (id, opportunity_id, user_id, question_count, difficulty, questions_json, answers_json, current_index, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'IN_PROGRESS', ?, ?)`).bind(sessionId, opportunityId, userId, questionCount, difficulty, JSON.stringify(questions), JSON.stringify(answers), now, now).run();
+          return new Response(JSON.stringify({ success: true, data: { session: { id: sessionId, question_count: questionCount, difficulty, questions, answers, current_index: 0, status: 'IN_PROGRESS', created_at: now, updated_at: now } } }), { status: 201, headers });
+        }
+
+        if (starSessionMatch && (method === 'PATCH' || method === 'GET')) {
+          const sessionId = starSessionMatch[2];
+          const saved = await env.DB.prepare(`SELECT * FROM star_interview_sessions WHERE id = ? AND opportunity_id = ? AND user_id = ?`).bind(sessionId, opportunityId, userId).first();
+          if (!saved) return buildErrorResponse('NOT_FOUND', 'Interview session not found.', 404, headers);
+          if (method === 'GET') return new Response(JSON.stringify({ success: true, data: { session: { ...saved, questions: JSON.parse(saved.questions_json), answers: JSON.parse(saved.answers_json) } } }), { status: 200, headers });
+          if (saved.status !== 'IN_PROGRESS' && saved.status !== 'REVIEW') return buildErrorResponse('SESSION_LOCKED', 'This interview session is no longer editable.', 409, headers);
+          let body;
+          try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'A valid JSON request is required.', 400, headers); }
+          const questions = JSON.parse(saved.questions_json);
+          let answers;
+          try { answers = JSON.parse(saved.answers_json); } catch (_) { answers = Array(saved.question_count).fill(''); }
+          if (Array.isArray(body.answers)) {
+            if (body.answers.length !== saved.question_count || body.answers.some(a => typeof a !== 'string' || a.length > 12000)) return buildErrorResponse('VALIDATION_ERROR', 'Answers must match the session question count and stay within 12,000 characters each.', 400, headers);
+            answers = body.answers.map(a => a.trim());
+          }
+          const currentIndex = body.current_index === undefined ? saved.current_index : Number(body.current_index);
+          if (!Number.isInteger(currentIndex) || currentIndex < 0 || currentIndex >= saved.question_count) return buildErrorResponse('VALIDATION_ERROR', 'Invalid current question position.', 400, headers);
+          const status = body.status === 'REVIEW' ? 'REVIEW' : 'IN_PROGRESS';
+          const now = new Date().toISOString();
+          await env.DB.prepare(`UPDATE star_interview_sessions SET answers_json = ?, current_index = ?, status = ?, updated_at = ? WHERE id = ? AND opportunity_id = ? AND user_id = ?`).bind(JSON.stringify(answers), currentIndex, status, now, sessionId, opportunityId, userId).run();
+          return new Response(JSON.stringify({ success: true, data: { session: { id: sessionId, question_count: saved.question_count, difficulty: saved.difficulty, questions, answers, current_index: currentIndex, status, created_at: saved.created_at, updated_at: now } } }), { status: 200, headers });
+        }
+      }
+
       const companyResearchMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/company-research$/);
       if (companyResearchMatch && (method === 'GET' || method === 'POST')) {
         const opportunityId = companyResearchMatch[1];
