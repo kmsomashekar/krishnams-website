@@ -6157,6 +6157,7 @@ ${JSON.stringify(answered)}`;
           try { body = await request.json(); } catch (_) {
             return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers);
           }
+          if (!body || typeof body !== 'object' || Array.isArray(body)) return buildErrorResponse('INVALID_INPUT', 'Request payload must be a JSON object.', 400, headers);
           const allowedTypes = ['EXPERIENCE','PROJECT','ACHIEVEMENT'];
           const allowedClasses = ['DIRECT','TEAM','ADVISORY','INDEPENDENT','TRANSFERABLE'];
           const type = body.evidence_type ?? existing.evidence_type;
@@ -6215,7 +6216,7 @@ ${JSON.stringify(answered)}`;
 
       if (evidenceExtractMatch && method === 'POST') {
         const resumeId = evidenceExtractMatch[1];
-        const parent = await env.DB.prepare('SELECT id,name FROM resumes WHERE id = ? AND user_id = ?').bind(resumeId,userId).first();
+        const parent = await env.DB.prepare('SELECT id,name,is_master FROM resumes WHERE id = ? AND user_id = ?').bind(resumeId,userId).first();
         if (!parent) return buildErrorResponse('NOT_FOUND', 'Resume not found.', 404, headers);
         if (!env.BUCKET || !env.GEMINI_API_KEY) return buildErrorResponse('CONFIGURATION_ERROR', 'Document storage or AI configuration is unavailable.', 500, headers);
         const { results: versions } = await env.DB.prepare(
@@ -6268,7 +6269,7 @@ ${JSON.stringify(answered)}`;
                 start_date:typeof item.start_date==='string'?item.start_date:null,
                 end_date:typeof item.end_date==='string'?item.end_date:null,
                 source_excerpt:typeof item.source_excerpt==='string'?item.source_excerpt.slice(0,2000):null,
-                resume_id:resumeId,resume_version_id:version.id,source_name:`${parent.name} / ${version.version_label}`,source_type:'MASTER_RESUME'
+                resume_id:resumeId,resume_version_id:version.id,source_name:`${parent.name} / ${version.version_label}`,source_type:parent.is_master?'MASTER_RESUME':'USER_ADDED'
               });
             }
           } catch (error) {
