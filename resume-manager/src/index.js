@@ -3369,7 +3369,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         }
 
         const parentResume = await env.DB.prepare(
-          `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
+          `SELECT id, is_master FROM resumes WHERE id = ? AND user_id = ?`
         )
         .bind(resume_id, userId)
         .first();
@@ -3706,7 +3706,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         }
 
         const ownershipCheck = await env.DB.prepare(
-          `SELECT rv.id, rv.r2_object_key FROM resume_versions rv
+          `SELECT rv.id, rv.r2_object_key, r.is_master FROM resume_versions rv
            JOIN resumes r ON r.id = rv.resume_id
            WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?`
         )
@@ -3810,6 +3810,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         if (!ownershipCheck) {
           return buildErrorResponse('NOT_FOUND', "The targeted resume version portfolio tracking record does not exist or access rights are restricted.", 404, headers);
         }
+        if (ownershipCheck.is_master && ownershipCheck.r2_object_key && (method === 'PUT' || method === 'DELETE')) return buildErrorResponse('MASTER_RESUME_FILE_LOCKED', 'The master source file is protected and cannot be replaced or deleted.', 409, headers);
 
         if (method === 'PUT') {
           const contentLengthHeader = request.headers.get('content-length');
@@ -6121,6 +6122,7 @@ ${JSON.stringify(answered)}`;
           } }), { status: 200, headers });
         }
         if (method === 'PUT') {
+          if (parentResume.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resume versions cannot be modified.', 409, headers);
           let body;
           try { body = await request.json(); } catch (_) {
             return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers);
@@ -6228,6 +6230,8 @@ ${JSON.stringify(answered)}`;
         }
 
         const { name, notes } = body;
+        const isMaster = body.is_master === true;
+        if (isMaster && !['Master – IT Operations','Master – Cybersecurity'].includes(name)) return buildErrorResponse('INVALID_INPUT', 'Master resumes must use the approved master resume names.', 400, headers);
         if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
           return buildErrorResponse('INVALID_INPUT', "Field 'name' cannot be empty when provided.", 400, headers);
         }
@@ -6236,16 +6240,16 @@ ${JSON.stringify(answered)}`;
         const now = new Date().toISOString();
 
         await env.DB.prepare(
-          `INSERT INTO resumes (id, user_id, name, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
+          `INSERT INTO resumes (id, user_id, name, notes, is_master, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
-        .bind(id, userId, name.trim(), notes ? notes.trim() : null, now, now)
+        .bind(id, userId, name.trim(), notes ? notes.trim() : null, isMaster ? 1 : 0, now, now)
         .run();
 
         return new Response(
           JSON.stringify({
             success: true,
-            data: { id, name: name.trim(), notes: notes ? notes.trim() : null, created_at: now, updated_at: now }
+            data: { id, name: name.trim(), notes: notes ? notes.trim() : null, is_master: isMaster ? 1 : 0, created_at: now, updated_at: now }
           }),
           { status: 201, headers }
           );
@@ -6253,7 +6257,7 @@ ${JSON.stringify(answered)}`;
 
       if (pathname === resumeRootPattern && method === 'GET') {
         const { results } = await env.DB.prepare(
-          `SELECT id, name, notes, created_at, updated_at 
+          `SELECT id, name, notes, is_master, created_at, updated_at 
            FROM resumes 
            WHERE user_id = ? 
            ORDER BY created_at DESC`
@@ -6489,7 +6493,7 @@ ${JSON.stringify(answered)}`;
 
         if (method === 'GET') {
           const resume = await env.DB.prepare(
-            `SELECT id, name, notes, created_at, updated_at 
+            `SELECT id, name, notes, is_master, created_at, updated_at 
              FROM resumes 
              WHERE id = ? AND user_id = ?`
           )
@@ -6543,7 +6547,7 @@ ${JSON.stringify(answered)}`;
           }
 
           const existing = await env.DB.prepare(
-            `SELECT id, name, notes, created_at FROM resumes WHERE id = ? AND user_id = ?`
+            `SELECT id, name, notes, is_master, created_at FROM resumes WHERE id = ? AND user_id = ?`
           )
           .bind(resumeId, userId)
           .first();
@@ -6551,6 +6555,7 @@ ${JSON.stringify(answered)}`;
           if (!existing) {
             return buildErrorResponse('NOT_FOUND', "The targeted resource does not exist or access rights are restricted.", 404, headers);
           }
+          if (existing.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resumes are protected from metadata changes.', 409, headers);
 
           const updatedName = name !== undefined ? name.trim() : existing.name;
           const updatedNotes = notes !== undefined ? (notes ? notes.trim() : null) : existing.notes;
@@ -6583,6 +6588,7 @@ ${JSON.stringify(answered)}`;
           if (!existing) {
             return buildErrorResponse('NOT_FOUND', "The targeted resource does not exist or access rights are restricted.", 404, headers);
           }
+          if (existing.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resumes cannot be deleted.', 409, headers);
 
           await env.DB.prepare(`DELETE FROM resumes WHERE id = ? AND user_id = ?`)
             .bind(resumeId, userId)
