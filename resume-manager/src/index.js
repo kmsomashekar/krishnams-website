@@ -6057,11 +6057,13 @@ ${JSON.stringify(answered)}`;
 
       if (pathname === evidenceCollectionPath && method === 'GET') {
         const { results } = await env.DB.prepare(
-          `SELECT e.*, s.source_name, s.source_type, s.source_excerpt, s.resume_id, s.resume_version_id
-           FROM resume_evidence e
-           LEFT JOIN resume_evidence_sources s ON s.evidence_id = e.id AND s.user_id = e.user_id
-           WHERE e.user_id = ?
-           ORDER BY e.updated_at DESC`
+          `SELECT e.*,
+             (SELECT s.source_name FROM resume_evidence_sources s WHERE s.evidence_id=e.id AND s.user_id=e.user_id ORDER BY s.created_at ASC LIMIT 1) AS source_name,
+             (SELECT s.source_type FROM resume_evidence_sources s WHERE s.evidence_id=e.id AND s.user_id=e.user_id ORDER BY s.created_at ASC LIMIT 1) AS source_type,
+             (SELECT s.source_excerpt FROM resume_evidence_sources s WHERE s.evidence_id=e.id AND s.user_id=e.user_id ORDER BY s.created_at ASC LIMIT 1) AS source_excerpt,
+             (SELECT s.resume_id FROM resume_evidence_sources s WHERE s.evidence_id=e.id AND s.user_id=e.user_id ORDER BY s.created_at ASC LIMIT 1) AS resume_id,
+             (SELECT s.resume_version_id FROM resume_evidence_sources s WHERE s.evidence_id=e.id AND s.user_id=e.user_id ORDER BY s.created_at ASC LIMIT 1) AS resume_version_id
+           FROM resume_evidence e WHERE e.user_id = ? ORDER BY e.updated_at DESC`
         ).bind(userId).all();
         return new Response(JSON.stringify({ success: true, data: { evidence: results.map(row => ({
           ...row,
@@ -6082,6 +6084,11 @@ ${JSON.stringify(answered)}`;
         }
         if (body.classification && !allowedClasses.includes(body.classification)) {
           return buildErrorResponse('INVALID_INPUT', 'Unsupported evidence classification.', 400, headers);
+        }
+        if (body.resume_id || body.resume_version_id) {
+          if (!body.resume_id || !body.resume_version_id) return buildErrorResponse('INVALID_INPUT', 'Both source resume and version references are required together.', 400, headers);
+          const sourceOwner = await env.DB.prepare(`SELECT rv.id FROM resume_versions rv JOIN resumes r ON r.id=rv.resume_id WHERE rv.id=? AND rv.resume_id=? AND r.user_id=?`).bind(body.resume_version_id,body.resume_id,userId).first();
+          if (!sourceOwner) return buildErrorResponse('INVALID_SOURCE', 'The selected source resume/version does not belong to this account.', 400, headers);
         }
         const id = crypto.randomUUID(), sourceId = crypto.randomUUID(), now = new Date().toISOString();
         const listJson = value => JSON.stringify(Array.isArray(value) ? value.filter(v => typeof v === 'string').slice(0, 100) : []);
@@ -6167,10 +6174,14 @@ ${JSON.stringify(answered)}`;
         ).bind(resumeId).all();
         if (!versions.length) return buildErrorResponse('RESUME_FILE_NOT_FOUND', 'Upload a source PDF to a resume version before extracting evidence.', 400, headers);
         const extracted = [];
-        for (const version of versions) {
-          if (!version.r2_object_key.toLowerCase().endsWith('.pdf')) continue;
+        const pdfVersions = versions.filter(v => v.r2_object_key.toLowerCase().endsWith('.pdf'));
+        if (!pdfVersions.length) return buildErrorResponse('PDF_REQUIRED', 'No PDF source file is available. Upload a PDF version to extract evidence.', 415, headers);
+        for (const version of pdfVersions) {
           const file = await env.BUCKET.get(version.r2_object_key);
-          if (!file || file.size > 5 * 1024 * 1024) continue;
+          if (!file) return buildErrorResponse('RESUME_FILE_NOT_FOUND', 'A source PDF could not be retrieved from storage.', 404, headers);
+          const fileType = (file.httpMetadata?.contentType || '').toLowerCase();
+          if (fileType && fileType !== 'application/pdf') return buildErrorResponse('PDF_REQUIRED', 'Evidence extraction supports PDF source files only.', 415, headers);
+          if (file.size > 5 * 1024 * 1024) return buildErrorResponse('FILE_TOO_LARGE', 'A source PDF exceeds the 5 MB extraction limit.', 413, headers);
           const bytes = new Uint8Array(await file.arrayBuffer());
           let binary = '';
           for (let i=0;i<bytes.length;i+=8192) binary += String.fromCharCode(...bytes.subarray(i,i+8192));
