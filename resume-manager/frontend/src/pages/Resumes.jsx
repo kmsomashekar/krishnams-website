@@ -913,7 +913,7 @@ export default function Resumes() {
                         {item.responsibilities && <p className="text-xs text-slate-600"><strong>Responsibilities:</strong> {item.responsibilities}</p>}
                         {item.actions_taken && <p className="text-xs text-slate-600"><strong>Actions:</strong> {item.actions_taken}</p>}
                         {item.outcomes && <p className="text-xs text-slate-600"><strong>Outcomes:</strong> {item.outcomes}</p>}
-                        {item.source_excerpt && <p className="text-[11px] text-slate-500 italic">Source: “{item.source_excerpt}”</p>}
+                        {item.source_excerpt && <p className="text-[11px] text-slate-500 italic">AI-extracted source reference (verify against PDF): {item.source_excerpt}</p>}
                         <div className="text-[10px] text-slate-500">Source: {item.source_name} · Not yet verified</div>
                       </div>
                     ))}
