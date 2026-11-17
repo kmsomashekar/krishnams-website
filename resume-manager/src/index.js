@@ -6129,7 +6129,6 @@ ${JSON.stringify(answered)}`;
           } }), { status: 200, headers });
         }
         if (method === 'PUT') {
-          if (parentResume.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resume versions cannot be modified.', 409, headers);
           let body;
           try { body = await request.json(); } catch (_) {
             return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers);
@@ -6367,7 +6366,7 @@ ${JSON.stringify(answered)}`;
         const versionId = versionIdMatch[2];
 
         const parentResume = await env.DB.prepare(
-          `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
+          `SELECT id, is_master FROM resumes WHERE id = ? AND user_id = ?`
         )
         .bind(resumeId, userId)
         .first();
@@ -6377,6 +6376,7 @@ ${JSON.stringify(answered)}`;
         }
 
         if (method === 'PUT') {
+          if (parentResume.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resume versions cannot be modified.', 409, headers);
           let body;
           try {
             body = await request.json();
