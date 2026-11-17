@@ -6291,6 +6291,7 @@ ${JSON.stringify(answered)}`;
           return buildErrorResponse('INVALID_INPUT', "Request payload must be a valid JSON structure.", 400, headers);
         }
 
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return buildErrorResponse('INVALID_INPUT', 'Request payload must be a JSON object.', 400, headers);
         const { name, notes } = body;
         const isMaster = body.is_master === true;
         if (isMaster && !['Master – IT Operations','Master – Cybersecurity'].includes(name)) return buildErrorResponse('INVALID_INPUT', 'Master resumes must use the approved master resume names.', 400, headers);
