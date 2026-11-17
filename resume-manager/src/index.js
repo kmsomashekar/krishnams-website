@@ -3800,7 +3800,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         }
 
         const ownershipCheck = await env.DB.prepare(
-          `SELECT rv.id, rv.r2_object_key FROM resume_versions rv
+          `SELECT rv.id, rv.r2_object_key, r.is_master FROM resume_versions rv
            JOIN resumes r ON r.id = rv.resume_id
            WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?`
         )
