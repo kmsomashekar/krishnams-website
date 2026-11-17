@@ -231,6 +231,12 @@ export default function StarInterview() {
               <p className="text-sm text-slate-600 bg-violet-50 rounded-lg p-4">Review your responses and edit any answer before submitting. Your assessment will not begin until you select {session.assessment_status === 'FAILED' ? 'Retry Assessment' : 'Submit for Assessment'}. {session.assessment_status === 'FAILED' ? 'The retry uses the exact answers captured during your previous submission.' : ''}</p>
               <p className="text-sm text-slate-600">{session.answers.filter(a => a && a.trim()).length} of {session.question_count} answers completed. Unanswered questions are allowed and will be flagged separately; they will not be treated as zero-quality answers.</p>
               <div className="space-y-3">{session.questions.map((q, i) => <article key={i} className="border border-slate-200 rounded-lg p-4"><div className="flex justify-between gap-3"><div><p className="text-xs font-semibold uppercase text-violet-700">{q.category}</p><h3 className="text-sm font-semibold mt-1">{i + 1}. {q.question}</h3></div>{session.assessment_status !== 'FAILED' && <button type="button" disabled={busy} onClick={() => editAnswer(i)} className="text-sm font-semibold text-violet-700 hover:text-violet-900">Edit</button>}</div><p className="text-sm text-slate-600 mt-3 whitespace-pre-wrap">{session.answers[i] || 'No answer entered yet.'}</p></article>)}</div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+                <p className="text-xs text-slate-500">Your answers are saved. You can submit them when you are ready.</p>
+                <button type="button" onClick={submitAssessment} disabled={assessmentBusy || busy || session.assessment_status === 'RUNNING'} className="rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-5 py-2.5 text-sm font-semibold">
+                  {assessmentBusy || session.assessment_status === 'RUNNING' ? 'Assessing...' : session.assessment_status === 'FAILED' ? 'Retry Assessment' : 'Submit for Assessment'}
+                </button>
+              </div>
             </>
           ) : (
             <>
