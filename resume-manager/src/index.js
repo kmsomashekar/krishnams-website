@@ -5575,6 +5575,7 @@ ${JSON.stringify(answered)}`;
             rubric: { weights, rating_bands: { excellent: '90-100', very_good: '80-89', good: '65-79', developing: '50-64', needs_more_detail: 'Below 50' } },
             overall_score: roundedScore, overall_rating: overallRating,
             answered_count: answered.length, total_questions: snapshot.question_count,
+            unanswered_questions: snapshot.questions.filter(q => !q.answer || !q.answer.trim()).map(q => ({ question_index: q.question_index, question: q.question })),
             completion_coverage: Math.round((answered.length / snapshot.question_count) * 100),
             scoring_note: 'The score reflects answered questions only. Unanswered questions are flagged separately and are not treated as zero-quality answers.',
             question_feedback: normalised, overall: parsed.overall, assessed_at: completedAt
