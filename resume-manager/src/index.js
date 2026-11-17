@@ -85,7 +85,7 @@ function decodeResearchEntities(value) {
 }
 
 function extractResearchXmlValue(xml, tag) {
-  const match = xml.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)<\/' + tag + '>', 'i'));
+  const match = xml.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)<\\/' + tag + '>', 'i'));
   return match ? decodeResearchEntities(match[1]).replace(/<[^>]+>/g, '').trim() : '';
 }
 
@@ -6079,19 +6079,44 @@ ${JSON.stringify(answered)}`;
         }
         const allowedTypes = ['EXPERIENCE', 'PROJECT', 'ACHIEVEMENT'];
         const allowedClasses = ['DIRECT', 'TEAM', 'ADVISORY', 'INDEPENDENT', 'TRANSFERABLE'];
-        if (!body || !allowedTypes.includes(body.evidence_type) || typeof body.title !== 'string' || !body.title.trim()) {
-          return buildErrorResponse('INVALID_INPUT', 'A valid evidence_type and non-empty title are required.', 400, headers);
+        const textLimits = { title:300, organisation:200, role:200, description:10000, responsibilities:10000, actions_taken:10000, outcomes:10000, source_name:250, source_excerpt:2000 };
+        const optionalText = (key, limit) => body[key] === undefined || body[key] === null ||
+          (typeof body[key] === 'string' && body[key].length <= limit);
+        const validDate = value => value === undefined || value === null || value === '' ||
+          (typeof value === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+           !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value);
+        if (!body || !allowedTypes.includes(body.evidence_type) || typeof body.title !== 'string' ||
+            !body.title.trim() || body.title.trim().length > textLimits.title) {
+          return buildErrorResponse('INVALID_INPUT', 'A valid evidence_type and title (maximum 300 characters) are required.', 400, headers);
         }
-        if (body.classification && !allowedClasses.includes(body.classification)) {
+        if (body.classification !== undefined && !allowedClasses.includes(body.classification)) {
           return buildErrorResponse('INVALID_INPUT', 'Unsupported evidence classification.', 400, headers);
         }
+        for (const [key, limit] of Object.entries(textLimits)) {
+          if (!optionalText(key, limit)) return buildErrorResponse('INVALID_INPUT', `Field '${key}' must be text or null and not exceed ${limit} characters.`, 400, headers);
+        }
+        for (const key of ['technologies','skills']) {
+          if (body[key] !== undefined && (!Array.isArray(body[key]) || body[key].length > 50 ||
+              body[key].some(value => typeof value !== 'string' || value.length > 100))) {
+            return buildErrorResponse('INVALID_INPUT', `Field '${key}' must be an array of up to 50 strings (maximum 100 characters each).`, 400, headers);
+          }
+        }
+        if (!validDate(body.start_date) || !validDate(body.end_date) ||
+            (body.start_date && body.end_date && body.start_date > body.end_date)) {
+          return buildErrorResponse('INVALID_INPUT', 'Dates must be valid YYYY-MM-DD values and start_date cannot be after end_date.', 400, headers);
+        }
+        if (body.source_type !== undefined && !['MASTER_RESUME','USER_ADDED'].includes(body.source_type)) {
+          return buildErrorResponse('INVALID_INPUT', 'Unsupported evidence source type.', 400, headers);
+        }
         if (body.resume_id || body.resume_version_id) {
-          if (!body.resume_id || !body.resume_version_id) return buildErrorResponse('INVALID_INPUT', 'Both source resume and version references are required together.', 400, headers);
+          if (!body.resume_id || !body.resume_version_id || !body.source_name) {
+            return buildErrorResponse('INVALID_INPUT', 'Source resume, version and source name are required together.', 400, headers);
+          }
           const sourceOwner = await env.DB.prepare(`SELECT rv.id FROM resume_versions rv JOIN resumes r ON r.id=rv.resume_id WHERE rv.id=? AND rv.resume_id=? AND r.user_id=?`).bind(body.resume_version_id,body.resume_id,userId).first();
           if (!sourceOwner) return buildErrorResponse('INVALID_SOURCE', 'The selected source resume/version does not belong to this account.', 400, headers);
         }
         const id = crypto.randomUUID(), sourceId = crypto.randomUUID(), now = new Date().toISOString();
-        const listJson = value => JSON.stringify(Array.isArray(value) ? value.filter(v => typeof v === 'string').slice(0, 100) : []);
+        const listJson = value => JSON.stringify(Array.isArray(value) ? value : []);
         await env.DB.prepare(
           `INSERT INTO resume_evidence
            (id,user_id,evidence_type,title,organisation,role,description,responsibilities,actions_taken,outcomes,
@@ -6107,8 +6132,7 @@ ${JSON.stringify(answered)}`;
              (id,evidence_id,user_id,resume_id,resume_version_id,source_name,source_type,source_excerpt,created_at)
              VALUES (?,?,?,?,?,?,?,?,?)`
           ).bind(sourceId,id,userId,body.resume_id || null,body.resume_version_id || null,
-            String(body.source_name).slice(0,250),body.source_type || 'USER_ADDED',
-            body.source_excerpt || null,now).run();
+            body.source_name,body.source_type || 'USER_ADDED',body.source_excerpt || null,now).run();
         }
         return new Response(JSON.stringify({ success: true, data: { id, verification_status: 'PENDING' } }), { status: 201, headers });
       }
@@ -6138,10 +6162,36 @@ ${JSON.stringify(answered)}`;
           const type = body.evidence_type ?? existing.evidence_type;
           const classification = body.classification ?? existing.classification;
           const title = body.title ?? existing.title;
-          if (!allowedTypes.includes(type) || !allowedClasses.includes(classification) || typeof title !== 'string' || !title.trim()) {
+          const limits = { title:300, organisation:200, role:200, description:10000, responsibilities:10000, actions_taken:10000, outcomes:10000 };
+          if (!allowedTypes.includes(type) || !allowedClasses.includes(classification) ||
+              typeof title !== 'string' || !title.trim() || title.trim().length > limits.title) {
             return buildErrorResponse('INVALID_INPUT', 'Evidence type, classification or title is invalid.', 400, headers);
           }
-          const jsonList = (value, oldValue) => value === undefined ? oldValue : JSON.stringify(Array.isArray(value) ? value.filter(v => typeof v === 'string').slice(0,100) : []);
+          for (const [key, limit] of Object.entries(limits)) {
+            if (body[key] !== undefined && body[key] !== null &&
+                (typeof body[key] !== 'string' || body[key].length > limit)) {
+              return buildErrorResponse('INVALID_INPUT', `Field '${key}' must be text or null and not exceed ${limit} characters.`, 400, headers);
+            }
+          }
+          for (const key of ['technologies','skills']) {
+            if (body[key] !== undefined && (!Array.isArray(body[key]) || body[key].length > 50 ||
+                body[key].some(value => typeof value !== 'string' || value.length > 100))) {
+              return buildErrorResponse('INVALID_INPUT', `Field '${key}' must be an array of up to 50 strings (maximum 100 characters each).`, 400, headers);
+            }
+          }
+          const validDate = value => value === undefined || value === null || value === '' ||
+            (typeof value === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+             !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value);
+          const startDate = body.start_date ?? existing.start_date;
+          const endDate = body.end_date ?? existing.end_date;
+          if (!validDate(startDate) || !validDate(endDate) ||
+              (startDate && endDate && startDate > endDate)) {
+            return buildErrorResponse('INVALID_INPUT', 'Dates must be valid YYYY-MM-DD values and start_date cannot be after end_date.', 400, headers);
+          }
+          if (body.verification_status !== undefined && !['PENDING','VERIFIED'].includes(body.verification_status)) {
+            return buildErrorResponse('INVALID_INPUT', 'verification_status must be PENDING or VERIFIED.', 400, headers);
+          }
+          const jsonList = (value, oldValue) => value === undefined ? oldValue : JSON.stringify(value);
           const now = new Date().toISOString();
           await env.DB.prepare(
             `UPDATE resume_evidence SET evidence_type=?,title=?,organisation=?,role=?,description=?,responsibilities=?,
@@ -6151,8 +6201,8 @@ ${JSON.stringify(answered)}`;
             body.description ?? existing.description,body.responsibilities ?? existing.responsibilities,
             body.actions_taken ?? existing.actions_taken,body.outcomes ?? existing.outcomes,
             jsonList(body.technologies,existing.technologies_json),jsonList(body.skills,existing.skills_json),
-            classification,body.start_date ?? existing.start_date,body.end_date ?? existing.end_date,
-            body.verification_status === 'VERIFIED' ? 'VERIFIED' : (body.verification_status === 'PENDING' ? 'PENDING' : existing.verification_status),
+            classification,startDate || null,endDate || null,
+            body.verification_status ?? existing.verification_status,
             now,evidenceId,userId).run();
           return new Response(JSON.stringify({ success: true, data: { id: evidenceId, updated_at: now } }), { status: 200, headers });
         }
@@ -6246,6 +6296,12 @@ ${JSON.stringify(answered)}`;
           return buildErrorResponse('INVALID_INPUT', "Field 'name' cannot be empty when provided.", 400, headers);
         }
 
+        if (typeof name !== 'string' || name.trim().length > 200) return buildErrorResponse('INVALID_INPUT', 'Resume name is required and must not exceed 200 characters.', 400, headers);
+        if (notes !== undefined && notes !== null && (typeof notes !== 'string' || notes.length > 5000)) return buildErrorResponse('INVALID_INPUT', 'Resume notes must be text and not exceed 5,000 characters.', 400, headers);
+        if (isMaster) {
+          const duplicateMaster = await env.DB.prepare('SELECT id FROM resumes WHERE user_id = ? AND is_master = 1 AND name = ?').bind(userId, name.trim()).first();
+          if (duplicateMaster) return buildErrorResponse('MASTER_RESUME_EXISTS', 'This master resume is already registered.', 409, headers);
+        }
         const id = crypto.randomUUID();
         const now = new Date().toISOString();
 
