@@ -164,6 +164,14 @@ export default function OpportunityDetail() {
   const [companyResearchError, setCompanyResearchError] = useState(null);
   const [isGeneratingCompanyResearch, setIsGeneratingCompanyResearch] = useState(false);
   const [showCompanyResearch, setShowCompanyResearch] = useState(false);
+  // STAR Interview Practice — Sprint 1 state
+  const [showStarInterview, setShowStarInterview] = useState(false);
+  const [starQuestionCount, setStarQuestionCount] = useState(15);
+  const [starDifficulty, setStarDifficulty] = useState('Medium');
+  const [starSession, setStarSession] = useState(null);
+  const [starAnswerDraft, setStarAnswerDraft] = useState('');
+  const [starInterviewError, setStarInterviewError] = useState('');
+  const [starInterviewBusy, setStarInterviewBusy] = useState(false);
   // Cover Letter generation UI state
   const [isGeneratingCoverLetter, setIsGeneratingCoverLetter] = useState(false);
   const [coverLetterPreview, setCoverLetterPreview] = useState(null);
@@ -269,6 +277,33 @@ export default function OpportunityDetail() {
     } catch (err) { setCompanyResearchError(err.message); } finally { setIsGeneratingCompanyResearch(false); }
   };
 
+  const openStarInterview = async () => {
+    setShowStarInterview(true); setStarInterviewError(''); setStarInterviewBusy(true);
+    try {
+      const res = await fetch('/api/v1/opportunities/' + opportunityId + '/star-interviews', { credentials: 'include' });
+      const data = await handleResponse(res, 'Unable to load STAR Interview Practice.');
+      setStarSession(data.session || null); setStarAnswerDraft(data.session?.answers?.[data.session.current_index] || '');
+    } catch (err) { setStarInterviewError(err.message); } finally { setStarInterviewBusy(false); }
+  };
+  const startStarInterview = async () => {
+    setStarInterviewBusy(true); setStarInterviewError('');
+    try {
+      const res = await fetch('/api/v1/opportunities/' + opportunityId + '/star-interviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ question_count: starQuestionCount, difficulty: starDifficulty }) });
+      const data = await handleResponse(res, 'Unable to start STAR Interview Practice.');
+      setStarSession(data.session); setStarAnswerDraft('');
+    } catch (err) { setStarInterviewError(err.message); } finally { setStarInterviewBusy(false); }
+  };
+  const moveStarQuestion = async (nextIndex, review = false) => {
+    if (!starSession) return;
+    setStarInterviewBusy(true); setStarInterviewError('');
+    try {
+      const answers = [...starSession.answers]; answers[starSession.current_index] = starAnswerDraft;
+      const res = await fetch('/api/v1/opportunities/' + opportunityId + '/star-interviews/' + starSession.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ answers, current_index: nextIndex, status: review ? 'REVIEW' : 'IN_PROGRESS' }) });
+      const data = await handleResponse(res, 'Unable to save your answer. Please try again.');
+      setStarSession(data.session); setStarAnswerDraft(data.session.answers[data.session.current_index] || '');
+    } catch (err) { setStarInterviewError(err.message); } finally { setStarInterviewBusy(false); }
+  };
+  const editStarAnswer = (index) => { setStarSession(previous => ({ ...previous, current_index: index, status: 'IN_PROGRESS' })); setStarAnswerDraft(starSession.answers[index] || ''); };
   const downloadCompanyResearchPDF = () => {
     if (!companyResearch?.report) return;
     const doc = new jsPDF(); const margin = 16; const width = doc.internal.pageSize.getWidth() - margin * 2; const height = doc.internal.pageSize.getHeight(); let y = 18;
@@ -687,6 +722,7 @@ console.log(
               {priority !== null && priority !== undefined ? `P-${priority}` : '—'}
             </span>
             <button type="button" onClick={handleGenerateCompanyResearch} disabled={isGeneratingCompanyResearch} className="px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">{isGeneratingCompanyResearch ? 'Researching...' : 'Company Research'}</button>
+            <button type="button" onClick={openStarInterview} className="px-3 py-1.5 text-xs font-semibold rounded-md bg-violet-600 text-white hover:bg-violet-700">STAR Interview</button>
             <button
             type="button"
             onClick={handleGenerateCoverLetter}
@@ -846,6 +882,17 @@ console.log(
               <p className="text-slate-400 text-sm font-medium">No job description available.</p>
             )}
           </div>
+
+          {showStarInterview && (
+            <div className="bg-white border border-violet-200 rounded-xl shadow-sm p-6">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4"><div><h3 className="text-sm font-bold text-slate-900">STAR Interview Practice</h3><p className="text-xs text-slate-500 mt-1">Supportive practice tailored to this role. Your progress is saved as you go.</p></div><button type="button" onClick={() => setShowStarInterview(false)} className="text-xs text-slate-500">Close</button></div>
+              {starInterviewError && <p className="text-xs text-rose-700 bg-rose-50 p-3 rounded mb-3">{starInterviewError}</p>}
+              {starInterviewBusy && !starSession && <p className="text-sm text-indigo-600">Loading interview practice...</p>}
+              {!starSession && !starInterviewBusy && <div className="max-w-xl space-y-4"><p className="text-sm text-slate-600">Choose a session length and difficulty. Questions are based on this opportunity's saved job description.</p><div><label className="block text-xs font-semibold mb-2">Number of questions</label><div className="flex gap-2">{[10,15,20].map(n => <button key={n} type="button" onClick={() => setStarQuestionCount(n)} className={'px-4 py-2 rounded border text-sm ' + (starQuestionCount === n ? 'bg-violet-50 border-violet-400 text-violet-700' : 'border-slate-300')}>{n}</button>)}</div></div><div><label className="block text-xs font-semibold mb-2">Difficulty</label><div className="flex gap-2">{['Medium','High'].map(level => <button key={level} type="button" onClick={() => setStarDifficulty(level)} className={'px-4 py-2 rounded border text-sm ' + (starDifficulty === level ? 'bg-violet-50 border-violet-400 text-violet-700' : 'border-slate-300')}>{level}</button>)}</div></div><button type="button" onClick={startStarInterview} disabled={starInterviewBusy} className="px-4 py-2 rounded bg-violet-600 text-white text-sm font-semibold">Start Interview Practice</button></div>}
+              {starSession && <div className="space-y-4"><div className="flex justify-between text-xs text-slate-500"><span>{starSession.difficulty} · {starSession.question_count} questions</span><span>Question {starSession.current_index + 1} of {starSession.question_count}</span></div><div className="h-2 bg-slate-100 rounded overflow-hidden"><div className="h-full bg-violet-500" style={{ width: (((starSession.current_index + 1) / starSession.question_count) * 100) + '%' }} /></div>
+                {starSession.status === 'REVIEW' ? <><div className="rounded bg-violet-50 p-4 text-sm text-violet-900">Review your answers. You can revisit and edit any response before the final assessment is added in Sprint 2.</div><div className="space-y-2">{starSession.questions.map((q,index) => <div key={index} className="border rounded p-3"><div className="flex justify-between gap-3"><p className="text-sm font-semibold">{index + 1}. {q.question}</p><button type="button" onClick={() => editStarAnswer(index)} className="text-xs text-violet-700">Edit</button></div><p className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">{starSession.answers[index] || 'No answer entered yet.'}</p></div>)}</div></> : <><div className="rounded-lg bg-slate-50 border p-4"><p className="text-[11px] uppercase text-violet-700 font-bold mb-2">{starSession.questions[starSession.current_index].category}</p><h4 className="text-base font-semibold">{starSession.questions[starSession.current_index].question}</h4></div><div><label className="block text-xs font-semibold mb-2">Your answer</label><textarea rows={7} maxLength={12000} value={starAnswerDraft} onChange={e => setStarAnswerDraft(e.target.value)} placeholder="Take your time. Describe the situation, your responsibility, what you did and the outcome. Answer naturally in your own words." className="w-full rounded-lg border border-slate-300 p-3 text-sm resize-y" /><p className="text-[11px] text-slate-400 text-right">{starAnswerDraft.length}/12,000 characters</p></div><div className="flex justify-between gap-2"><button type="button" disabled={starInterviewBusy || starSession.current_index === 0} onClick={() => moveStarQuestion(starSession.current_index - 1)} className="px-3 py-2 rounded border text-sm">Previous</button><div className="flex gap-2"><button type="button" disabled={starInterviewBusy} onClick={() => moveStarQuestion(starSession.current_index, true)} className="px-3 py-2 rounded border border-violet-200 text-violet-700 text-sm">Review answers</button><button type="button" disabled={starInterviewBusy} onClick={() => moveStarQuestion(Math.min(starSession.current_index + 1, starSession.question_count - 1))} className="px-4 py-2 rounded bg-violet-600 text-white text-sm font-semibold">{starInterviewBusy ? 'Saving...' : 'Save & Next'}</button></div></div></>}</div>}
+            </div>
+          )}
 
           {/* Company Research */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
