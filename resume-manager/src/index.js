@@ -5399,8 +5399,9 @@ if (atsMatch) {
       // STAR Interview Practice — Sprint 1: question generation and resumable answer capture.
       const starInterviewMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/star-interviews$/);
       const starSessionMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/star-interviews\/([^/]+)$/);
-      if (starInterviewMatch || starSessionMatch) {
-        const opportunityId = (starInterviewMatch || starSessionMatch)[1];
+      const starAssessmentMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/star-interviews\/([^/]+)\/assessment$/);
+      if (starInterviewMatch || starSessionMatch || starAssessmentMatch) {
+        const opportunityId = (starInterviewMatch || starSessionMatch || starAssessmentMatch)[1];
         const context = await env.DB.prepare(`SELECT o.id, o.job_title, c.name AS company_name, jd.raw_text AS job_description
           FROM opportunities o JOIN companies c ON c.id = o.company_id
           LEFT JOIN job_descriptions jd ON jd.opportunity_id = o.id
@@ -5408,11 +5409,10 @@ if (atsMatch) {
         if (!context) return buildErrorResponse('NOT_FOUND', 'Opportunity not found or access restricted.', 404, headers);
 
         if (starInterviewMatch && method === 'GET') {
-          const saved = await env.DB.prepare(`SELECT id, question_count, difficulty, questions_json, answers_json, current_index, status, created_at, updated_at
-            FROM star_interview_sessions WHERE opportunity_id = ? AND user_id = ? AND status IN ('IN_PROGRESS','REVIEW') ORDER BY updated_at DESC LIMIT 1`).bind(opportunityId, userId).first();
-          const history = await env.DB.prepare(`SELECT id, question_count, difficulty, status, created_at, updated_at
+          const saved = await env.DB.prepare(`SELECT * FROM star_interview_sessions WHERE opportunity_id = ? AND user_id = ? AND status IN ('IN_PROGRESS','REVIEW','COMPLETED') ORDER BY CASE WHEN status IN ('IN_PROGRESS','REVIEW') THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`).bind(opportunityId, userId).first();
+          const history = await env.DB.prepare(`SELECT id, question_count, difficulty, status, assessment_status, assessment_score, assessment_rating, assessed_at, created_at, updated_at
             FROM star_interview_sessions WHERE opportunity_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 10`).bind(opportunityId, userId).all();
-          const session = saved ? { ...saved, questions: JSON.parse(saved.questions_json), answers: JSON.parse(saved.answers_json) } : null;
+          const session = saved ? { ...saved, questions: JSON.parse(saved.questions_json), answers: JSON.parse(saved.answers_json), assessment: saved.assessment_json ? JSON.parse(saved.assessment_json) : null } : null;
           return new Response(JSON.stringify({ success: true, data: { session, history: history.results || [] } }), { status: 200, headers });
         }
 
@@ -5461,11 +5461,128 @@ The questions array must contain exactly ${questionCount} items.`;
           return new Response(JSON.stringify({ success: true, data: { session: { id: sessionId, question_count: questionCount, difficulty, questions, answers, current_index: 0, status: 'IN_PROGRESS', created_at: now, updated_at: now } } }), { status: 201, headers });
         }
 
+
+        if (starAssessmentMatch && method === 'POST') {
+          const sessionId = starAssessmentMatch[2];
+          const saved = await env.DB.prepare(`SELECT * FROM star_interview_sessions WHERE id = ? AND opportunity_id = ? AND user_id = ?`).bind(sessionId, opportunityId, userId).first();
+          if (!saved) return buildErrorResponse('NOT_FOUND', 'Interview session not found.', 404, headers);
+          if (saved.assessment_status === 'COMPLETED' && saved.assessment_json) {
+            return new Response(JSON.stringify({ success: true, data: { session: { ...saved, questions: JSON.parse(saved.questions_json), answers: JSON.parse(saved.answers_json), assessment: JSON.parse(saved.assessment_json) }, already_completed: true } }), { status: 200, headers });
+          }
+          if (saved.assessment_status === 'RUNNING') return buildErrorResponse('ASSESSMENT_RUNNING', 'Your assessment is already being processed. Please wait.', 409, headers);
+          if (!['REVIEW', 'COMPLETED'].includes(saved.status) && saved.assessment_status !== 'FAILED') return buildErrorResponse('REVIEW_REQUIRED', 'Please review your answers before submitting for assessment.', 409, headers);
+          if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
+
+          let snapshot;
+          if (saved.assessment_status === 'FAILED' && saved.assessment_snapshot_json) {
+            try { snapshot = JSON.parse(saved.assessment_snapshot_json); } catch (_) { return buildErrorResponse('SNAPSHOT_ERROR', 'The saved assessment snapshot could not be read. Please contact support.', 500, headers); }
+          } else {
+            let questions, answers;
+            try { questions = JSON.parse(saved.questions_json); answers = JSON.parse(saved.answers_json); } catch (_) { return buildErrorResponse('SESSION_DATA_ERROR', 'The saved interview answers could not be read.', 500, headers); }
+            snapshot = {
+              session_id: saved.id, opportunity_id: opportunityId, company: context.company_name, role: context.job_title,
+              difficulty: saved.difficulty, question_count: saved.question_count,
+              questions: questions.map((q, i) => ({ question_index: i, question: q.question, category: q.category || 'General', answer: String(answers[i] || '').trim() })),
+              submitted_at: new Date().toISOString()
+            };
+          }
+          const answered = snapshot.questions.filter(q => q.answer && q.answer.trim());
+          if (!answered.length) return buildErrorResponse('NO_ANSWERS', 'Please provide at least one answer before requesting an assessment.', 400, headers);
+          const now = new Date().toISOString();
+          const claimed = await env.DB.prepare(`UPDATE star_interview_sessions SET assessment_status = 'RUNNING', assessment_snapshot_json = ?, status = 'REVIEW', updated_at = ? WHERE id = ? AND opportunity_id = ? AND user_id = ? AND assessment_status IN ('NOT_STARTED','FAILED')`).bind(JSON.stringify(snapshot), now, sessionId, opportunityId, userId).run();
+          if (!claimed.meta || claimed.meta.changes !== 1) return buildErrorResponse('ASSESSMENT_RUNNING', 'Your assessment is already being processed. Please wait.', 409, headers);
+
+          const rubric = 'Situation 15%, Task 20%, Action 30%, Result 25%, Clarity & Relevance 10%. Each dimension score is 0-100. Rating bands: 90-100 Excellent; 80-89 Very Good; 65-79 Good; 50-64 Developing; below 50 Needs More Detail.';
+          const prompt = `You are a supportive senior interview coach assessing a candidate's STAR interview practice.
+Company: ${snapshot.company}
+Role: ${snapshot.role}
+Difficulty: ${snapshot.difficulty}
+Assessment rubric: ${rubric}
+
+Evaluate ONLY the answered questions below. Do not score unanswered questions. Be fair and supportive: recognise real experience, ownership, judgement, leadership and practical knowledge. Accept natural conversational answers and implied STAR structure. Do not penalise grammar, minor wording, vocabulary or missing formal STAR labels. Distinguish missing detail from genuinely weak reasoning. Do not mistake concise answers for poor answers. Never invent achievements, outcomes, metrics or facts. Improved examples must use only details actually present in the candidate's answer; use bracketed prompts such as [add a measurable outcome if available] where evidence is missing. Do not claim a result that the candidate did not state.
+
+For each answered question provide:
+- question_index (zero-based index from input)
+- scores: situation, task, action, result, clarity_relevance (each 0-100)
+- what_worked_well (specific)
+- what_could_improve (specific; say when already strong)
+- suggestions (array of practical suggestions)
+- improved_example (a clearer structure based strictly on supplied answer; do not add facts)
+
+Also provide overall:
+- interview_readiness_summary
+- strongest_answers (array of question indexes and short reasons)
+- areas_needing_detail (array)
+- recurring_strengths (array)
+- recurring_gaps (array)
+- recommendations (array of actionable interview preparation priorities)
+
+Return ONLY valid JSON in this shape:
+{"question_feedback":[{"question_index":0,"scores":{"situation":0,"task":0,"action":0,"result":0,"clarity_relevance":0},"what_worked_well":"...","what_could_improve":"...","suggestions":["..."],"improved_example":"..."}],"overall":{"interview_readiness_summary":"...","strongest_answers":[{"question_index":0,"reason":"..."}],"areas_needing_detail":["..."],"recurring_strengths":["..."],"recurring_gaps":["..."],"recommendations":["..."]}}
+
+Interview snapshot:
+${JSON.stringify(answered)}`;
+          const generated = await callGemini(prompt, env.GEMINI_API_KEY, { maxOutputTokens: 16000 });
+          if (!generated.success) {
+            await env.DB.prepare(`UPDATE star_interview_sessions SET assessment_status = 'FAILED', updated_at = ? WHERE id = ? AND opportunity_id = ? AND user_id = ? AND assessment_status = 'RUNNING'`).bind(new Date().toISOString(), sessionId, opportunityId, userId).run();
+            const status = generated.status === 429 ? 429 : 502;
+            return buildErrorResponse('ASSESSMENT_FAILED', generated.status === 429 ? 'Gemini API quota or billing limit reached. Your submitted answers are safely retained; you can retry later.' : 'Assessment could not be generated. Your submitted answers are safely retained; please retry.', status, headers);
+          }
+
+          let parsed;
+          try {
+            const raw = generated.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+            parsed = JSON.parse(raw);
+          } catch (_) {
+            await env.DB.prepare(`UPDATE star_interview_sessions SET assessment_status = 'FAILED', updated_at = ? WHERE id = ? AND assessment_status = 'RUNNING'`).bind(new Date().toISOString(), sessionId).run();
+            return buildErrorResponse('ASSESSMENT_INVALID_RESPONSE', 'The assessment service returned an unreadable result. Your answers are retained; please retry.', 502, headers);
+          }
+          const feedback = parsed.question_feedback;
+          if (!Array.isArray(feedback) || feedback.length !== answered.length || !parsed.overall || typeof parsed.overall.interview_readiness_summary !== 'string') {
+            await env.DB.prepare(`UPDATE star_interview_sessions SET assessment_status = 'FAILED', updated_at = ? WHERE id = ? AND assessment_status = 'RUNNING'`).bind(new Date().toISOString(), sessionId).run();
+            return buildErrorResponse('ASSESSMENT_INVALID_RESPONSE', 'The assessment result was incomplete. Your answers are retained; please retry.', 502, headers);
+          }
+          const weights = { situation: 0.15, task: 0.20, action: 0.30, result: 0.25, clarity_relevance: 0.10 };
+          const answeredIndices = new Set(answered.map(q => q.question_index));
+          const normalised = feedback.map(item => {
+            const index = Number(item.question_index);
+            if (!answeredIndices.has(index) || !item.scores) throw new Error('Invalid assessment question index');
+            const scores = {};
+            for (const key of Object.keys(weights)) {
+              const n = Number(item.scores[key]);
+              if (!Number.isFinite(n)) throw new Error('Invalid assessment dimension score');
+              scores[key] = Math.max(0, Math.min(100, n));
+            }
+            const score = Object.keys(weights).reduce((sum, key) => sum + scores[key] * weights[key], 0);
+            const rating = score >= 90 ? 'Excellent' : score >= 80 ? 'Very Good' : score >= 65 ? 'Good' : score >= 50 ? 'Developing' : 'Needs More Detail';
+            return { question_index: index, scores, score: Math.round(score * 10) / 10, rating,
+              what_worked_well: String(item.what_worked_well || ''), what_could_improve: String(item.what_could_improve || ''),
+              suggestions: Array.isArray(item.suggestions) ? item.suggestions.map(String) : [],
+              improved_example: String(item.improved_example || '') };
+          });
+          const overallScore = normalised.reduce((sum, item) => sum + item.score, 0) / normalised.length;
+          const roundedScore = Math.round(overallScore * 10) / 10;
+          const overallRating = roundedScore >= 90 ? 'Excellent' : roundedScore >= 80 ? 'Very Good' : roundedScore >= 65 ? 'Good' : roundedScore >= 50 ? 'Developing' : 'Needs More Detail';
+          const completedAt = new Date().toISOString();
+          const assessment = {
+            rubric: { weights, rating_bands: { excellent: '90-100', very_good: '80-89', good: '65-79', developing: '50-64', needs_more_detail: 'Below 50' } },
+            overall_score: roundedScore, overall_rating: overallRating,
+            answered_count: answered.length, total_questions: snapshot.question_count,
+            completion_coverage: Math.round((answered.length / snapshot.question_count) * 100),
+            scoring_note: 'The score reflects answered questions only. Unanswered questions are flagged separately and are not treated as zero-quality answers.',
+            question_feedback: normalised, overall: parsed.overall, assessed_at: completedAt
+          };
+          await env.DB.prepare(`UPDATE star_interview_sessions SET assessment_json = ?, assessment_score = ?, assessment_rating = ?, assessed_at = ?, assessment_status = 'COMPLETED', status = 'COMPLETED', updated_at = ? WHERE id = ? AND opportunity_id = ? AND user_id = ? AND assessment_status = 'RUNNING'`).bind(JSON.stringify(assessment), roundedScore, overallRating, completedAt, completedAt, sessionId, opportunityId, userId).run();
+          const finalSession = await env.DB.prepare(`SELECT * FROM star_interview_sessions WHERE id = ? AND opportunity_id = ? AND user_id = ?`).bind(sessionId, opportunityId, userId).first();
+          return new Response(JSON.stringify({ success: true, data: { session: { ...finalSession, questions: JSON.parse(finalSession.questions_json), answers: JSON.parse(finalSession.answers_json), assessment }, already_completed: false } }), { status: 200, headers });
+        }
+
         if (starSessionMatch && (method === 'PATCH' || method === 'GET')) {
           const sessionId = starSessionMatch[2];
           const saved = await env.DB.prepare(`SELECT * FROM star_interview_sessions WHERE id = ? AND opportunity_id = ? AND user_id = ?`).bind(sessionId, opportunityId, userId).first();
           if (!saved) return buildErrorResponse('NOT_FOUND', 'Interview session not found.', 404, headers);
-          if (method === 'GET') return new Response(JSON.stringify({ success: true, data: { session: { ...saved, questions: JSON.parse(saved.questions_json), answers: JSON.parse(saved.answers_json) } } }), { status: 200, headers });
+          if (method === 'GET') return new Response(JSON.stringify({ success: true, data: { session: { ...saved, questions: JSON.parse(saved.questions_json), answers: JSON.parse(saved.answers_json), assessment: saved.assessment_json ? JSON.parse(saved.assessment_json) : null } } }), { status: 200, headers });
+          if (saved.assessment_status === 'RUNNING' || saved.assessment_status === 'COMPLETED' || saved.status === 'COMPLETED') return buildErrorResponse('SESSION_LOCKED', 'This interview has been submitted for assessment and can no longer be edited.', 409, headers);
           if (saved.status !== 'IN_PROGRESS' && saved.status !== 'REVIEW') return buildErrorResponse('SESSION_LOCKED', 'This interview session is no longer editable.', 409, headers);
           let body;
           try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'A valid JSON request is required.', 400, headers); }
