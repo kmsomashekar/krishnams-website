@@ -6366,6 +6366,10 @@ ${JSON.stringify(answered)}`;
           if (!version_label || typeof version_label !== 'string' || version_label.trim().length === 0) {
             return buildErrorResponse('INVALID_INPUT', "Field 'version_label' is a required non-empty string.", 400, headers);
           }
+          if (parentResume.is_master) {
+            const existingMasterVersion = await env.DB.prepare('SELECT id FROM resume_versions WHERE resume_id = ? LIMIT 1').bind(resumeId).first();
+            if (existingMasterVersion) return buildErrorResponse('MASTER_RESUME_LOCKED', 'A master resume can contain only its original source version.', 409, headers);
+          }
 
           const id = crypto.randomUUID();
           const now = new Date().toISOString();
