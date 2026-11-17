@@ -5499,7 +5499,17 @@ Role: ${snapshot.role}
 Difficulty: ${snapshot.difficulty}
 Assessment rubric: ${rubric}
 
-Evaluate ONLY the answered questions below. Do not score unanswered questions. Be fair and supportive: recognise real experience, ownership, judgement, leadership and practical knowledge. Accept natural conversational answers and implied STAR structure. Do not penalise grammar, minor wording, vocabulary or missing formal STAR labels. Distinguish missing detail from genuinely weak reasoning. Do not mistake concise answers for poor answers. Never invent achievements, outcomes, metrics or facts. Improved examples must use only details actually present in the candidate's answer; use bracketed prompts such as [add a measurable outcome if available] where evidence is missing. Do not claim a result that the candidate did not state.
+Evaluate ONLY the answered questions below. Do not score unanswered questions. Be fair and supportive: recognise real experience, ownership, judgement, leadership and practical knowledge. Accept natural conversational answers and implied STAR structure. Do not penalise grammar, minor wording, vocabulary or missing formal STAR labels. Distinguish missing detail from genuinely weak reasoning. Do not mistake concise answers for poor answers.
+
+STRICT EVIDENCE-GROUNDING RULES (must be followed in every part of the assessment):
+- Treat the candidate's answer as the only source of facts about what the candidate personally did, led, decided, delivered or achieved. The job description and general professional knowledge are not evidence that the candidate performed an activity.
+- Keep three things clearly separate: (1) actions the candidate explicitly says they personally took, (2) actions or outcomes explicitly attributed to their team or organisation, and (3) general approaches, recommendations or hypothetical statements about what they would do. Never rewrite category (2) or (3) as a personal action or completed achievement.
+- Do not infer that a process was implemented, an assessment was conducted, a test was completed, a target was met, a service level was maintained, or a business outcome was achieved unless the candidate explicitly says so.
+- Every sentence in improved_example must be traceable to the candidate's answer. You may reorganise, clarify and condense the candidate's own facts, but must not add new actions, scope, ownership, timelines, metrics, results or causal claims.
+- If a STAR element lacks evidence, state that the answer does not specify it, or insert a clearly labelled bracketed prompt such as [add the actual recovery time achieved, if known] or [describe the specific task you personally owned]. Never fill the gap with a plausible example or an assumed result.
+- Suggestions may recommend useful evidence to add, but examples must be explicitly hypothetical prompts, not statements of fact. Do not insert illustrative metrics or scenarios in a way that could be mistaken for the candidate's actual experience.
+- When the candidate describes a general method using phrases such as "I would", "my approach is" or "I believe", preserve it as an approach or recommendation. Do not convert it into past-tense execution.
+- Before returning JSON, check every claim in improved_example, what_worked_well, strongest_answers and the overall summary against the supplied answer. Remove or qualify anything that is not directly supported. Do not describe unsupported outcomes as achieved.
 
 For each answered question provide:
 - question_index (zero-based index from input)
