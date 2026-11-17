@@ -6266,8 +6266,8 @@ ${JSON.stringify(answered)}`;
                 technologies:Array.isArray(item.technologies)?item.technologies.filter(x=>typeof x==='string').slice(0,50):[],
                 skills:Array.isArray(item.skills)?item.skills.filter(x=>typeof x==='string').slice(0,50):[],
                 classification:classes.includes(item.classification)?item.classification:'DIRECT',
-                start_date:typeof item.start_date==='string'?item.start_date:null,
-                end_date:typeof item.end_date==='string'?item.end_date:null,
+                start_date:typeof item.start_date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(item.start_date) && !Number.isNaN(Date.parse(item.start_date)) && new Date(item.start_date).toISOString().slice(0,10)===item.start_date?item.start_date:null,
+                end_date:typeof item.end_date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(item.end_date) && !Number.isNaN(Date.parse(item.end_date)) && new Date(item.end_date).toISOString().slice(0,10)===item.end_date?item.end_date:null,
                 source_excerpt:typeof item.source_excerpt==='string'?item.source_excerpt.slice(0,2000):null,
                 resume_id:resumeId,resume_version_id:version.id,source_name:`${parent.name} / ${version.version_label}`,source_type:parent.is_master?'MASTER_RESUME':'USER_ADDED'
               });
