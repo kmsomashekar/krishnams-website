@@ -117,7 +117,7 @@ export default function Resumes() {
   const [hasInitializedAiContext, setHasInitializedAiContext] = useState(false);
 
   // --- FORM STATES ---
-  const [resumeForm, setResumeForm] = useState({ name: '', notes: '' });
+  const [resumeForm, setResumeForm] = useState({ name: '', notes: '', is_master: false });
   const [versionForm, setVersionForm] = useState({ version_label: '', target_role: '' });
   const [aiContextForm, setAiContextForm] = useState({ version_label: '', ai_context: '' });
   const [evidenceDraft, setEvidenceDraft] = useState([]);
@@ -311,7 +311,7 @@ export default function Resumes() {
   };
 
   const handleOpenAddResume = () => {
-    setResumeForm({ name: '', notes: '' });
+    setResumeForm({ name: '', notes: '', is_master: false });
     setModalError(null);
     setIsAddResumeOpen(true);
   };
@@ -368,7 +368,8 @@ export default function Resumes() {
     }
     createResumeMutation.mutate({
       name: resumeForm.name.trim(),
-      notes: resumeForm.notes.trim() || undefined
+      notes: resumeForm.notes.trim() || undefined,
+      is_master: resumeForm.is_master
     });
   };
 
@@ -751,7 +752,7 @@ export default function Resumes() {
                         : 'bg-white border-slate-200 hover:bg-slate-50/50'
                     }`}
                   >
-                    <h3 className="font-bold text-slate-900 text-sm truncate">{res.name}</h3>
+                    <div className="flex items-center gap-2"><h3 className="font-bold text-slate-900 text-sm truncate">{res.name}</h3>{res.is_master ? <span className="text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-amber-100 text-amber-800">Protected master</span> : null}</div>
                     {res.notes && (
                       <p className="text-slate-500 text-xs mt-1 line-clamp-2 font-medium">
                         {res.notes}
@@ -799,9 +800,10 @@ export default function Resumes() {
                     <button
                       type="button"
                       onClick={handleOpenEditResume}
-                      className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors"
+                      disabled={Boolean(resumeDetail.is_master)}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      Edit Resume
+                      {resumeDetail.is_master ? 'Master Protected' : 'Edit Resume'}
                     </button>
                     <button
                       type="button"
@@ -1071,6 +1073,20 @@ export default function Resumes() {
                   onChange={(e) => setResumeForm({ ...resumeForm, notes: e.target.value })}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-medium focus:outline-indigo-500 resize-none disabled:bg-slate-50"
                 />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">Master resume registration</label>
+                <select
+                  value={resumeForm.is_master ? resumeForm.name : ''}
+                  onChange={(e) => setResumeForm({ ...resumeForm, is_master: Boolean(e.target.value), name: e.target.value || resumeForm.name })}
+                  disabled={createResumeMutation.isPending}
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-xs"
+                >
+                  <option value="">Regular resume</option>
+                  <option value="Master – IT Operations">Master – IT Operations</option>
+                  <option value="Master – Cybersecurity">Master – Cybersecurity</option>
+                </select>
+                <p className="text-[10px] text-slate-500">Master resumes are protected from editing and deletion. Add a version and upload the original PDF once registered.</p>
               </div>
 
               <div className="pt-3 border-t border-slate-150 flex justify-end space-x-2">
