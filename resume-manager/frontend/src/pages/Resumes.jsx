@@ -117,9 +117,17 @@ export default function Resumes() {
   const [hasInitializedAiContext, setHasInitializedAiContext] = useState(false);
 
   // --- FORM STATES ---
-  const [resumeForm, setResumeForm] = useState({ name: '', notes: '' });
+  const [resumeForm, setResumeForm] = useState({ name: '', notes: '', is_master: false });
   const [versionForm, setVersionForm] = useState({ version_label: '', target_role: '' });
   const [aiContextForm, setAiContextForm] = useState({ version_label: '', ai_context: '' });
+  const [evidenceDraft, setEvidenceDraft] = useState([]);
+  const [isExtractingEvidence, setIsExtractingEvidence] = useState(false);
+  const [evidenceError, setEvidenceError] = useState('');
+  const [evidenceNotice, setEvidenceNotice] = useState('');
+  const [showEvidenceForm, setShowEvidenceForm] = useState(false);
+  const [editingEvidenceId, setEditingEvidenceId] = useState(null);
+  const [evidenceForm, setEvidenceForm] = useState({ evidence_type: 'ACHIEVEMENT', title: '', organisation: '', role: '', description: '', responsibilities: '', actions_taken: '', outcomes: '', classification: 'DIRECT', technologies: '', skills: '' });
+
 
   // --- DATA QUERIES ---
   const {
@@ -133,6 +141,88 @@ export default function Resumes() {
   });
 
   const resumesList = resumesData?.resumes || [];
+
+  const { data: evidenceData, refetch: refetchEvidence } = useQuery({
+    queryKey: ['resume-evidence'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/resume-evidence');
+      return handleResponse(res, 'Failed to load the evidence repository.');
+    }
+  });
+  const evidenceItems = evidenceData?.evidence || [];
+
+  const handleExtractEvidence = async () => {
+    if (!selectedResumeId) return;
+    setEvidenceError('');
+    setEvidenceNotice('');
+    setEvidenceDraft([]);
+    setIsExtractingEvidence(true);
+    try {
+      const res = await fetch(`/api/v1/resumes/${selectedResumeId}/extract-evidence`, { method: 'POST' });
+      const data = await handleResponse(res, 'Evidence extraction failed.');
+      setEvidenceDraft(data.evidence_draft || []);
+      if (!(data.evidence_draft || []).length) setEvidenceNotice('No extractable evidence was returned from the uploaded PDF versions.');
+    } catch (error) {
+      setEvidenceError(error.message || 'Evidence extraction failed.');
+    } finally {
+      setIsExtractingEvidence(false);
+    }
+  };
+
+  const handleApproveEvidence = async (item, index) => {
+    setEvidenceError('');
+    try {
+      const res = await fetch('/api/v1/resume-evidence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      });
+      await handleResponse(res, 'Could not save this evidence item.');
+      setEvidenceDraft(current => current.filter((_, i) => i !== index));
+      await refetchEvidence();
+      setEvidenceNotice('Evidence saved as pending verification. Review it before relying on it in a tailored resume.');
+    } catch (error) {
+      setEvidenceError(error.message || 'Could not save this evidence item.');
+    }
+  };
+
+  const resetEvidenceForm = () => {
+    setEvidenceForm({ evidence_type: 'ACHIEVEMENT', title: '', organisation: '', role: '', description: '', responsibilities: '', actions_taken: '', outcomes: '', classification: 'DIRECT', technologies: '', skills: '' });
+    setEditingEvidenceId(null);
+    setShowEvidenceForm(false);
+  };
+
+  const handleEvidenceSave = async (event) => {
+    event.preventDefault();
+    setEvidenceError('');
+    const payload = { ...evidenceForm, technologies: evidenceForm.technologies.split(',').map(v => v.trim()).filter(Boolean), skills: evidenceForm.skills.split(',').map(v => v.trim()).filter(Boolean) };
+    try {
+      const response = await fetch(editingEvidenceId ? `/api/v1/resume-evidence/${editingEvidenceId}` : '/api/v1/resume-evidence', {
+        method: editingEvidenceId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      await handleResponse(response, 'Could not save evidence.');
+      await refetchEvidence();
+      resetEvidenceForm();
+      setEvidenceNotice(editingEvidenceId ? 'Evidence updated.' : 'Evidence added as pending verification.');
+    } catch (error) { setEvidenceError(error.message || 'Could not save evidence.'); }
+  };
+
+  const handleEvidenceEdit = (item) => {
+    setEvidenceForm({ evidence_type: item.evidence_type || 'ACHIEVEMENT', title: item.title || '', organisation: item.organisation || '', role: item.role || '', description: item.description || '', responsibilities: item.responsibilities || '', actions_taken: item.actions_taken || '', outcomes: item.outcomes || '', classification: item.classification || 'DIRECT', technologies: (item.technologies || []).join(', '), skills: (item.skills || []).join(', ') });
+    setEditingEvidenceId(item.id);
+    setShowEvidenceForm(true);
+  };
+
+  const handleEvidenceVerify = async (item) => {
+    setEvidenceError('');
+    try {
+      const response = await fetch(`/api/v1/resume-evidence/${item.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ verification_status: item.verification_status === 'VERIFIED' ? 'PENDING' : 'VERIFIED' }) });
+      await handleResponse(response, 'Could not update verification status.');
+      await refetchEvidence();
+    } catch (error) { setEvidenceError(error.message || 'Could not update verification status.'); }
+  };
 
   // Auto-select first resume if there is a list and no current selection exists
   useEffect(() => {
@@ -262,7 +352,7 @@ export default function Resumes() {
   };
 
   const handleOpenAddResume = () => {
-    setResumeForm({ name: '', notes: '' });
+    setResumeForm({ name: '', notes: '', is_master: false });
     setModalError(null);
     setIsAddResumeOpen(true);
   };
@@ -319,7 +409,8 @@ export default function Resumes() {
     }
     createResumeMutation.mutate({
       name: resumeForm.name.trim(),
-      notes: resumeForm.notes.trim() || undefined
+      notes: resumeForm.notes.trim() || undefined,
+      is_master: resumeForm.is_master
     });
   };
 
@@ -702,7 +793,7 @@ export default function Resumes() {
                         : 'bg-white border-slate-200 hover:bg-slate-50/50'
                     }`}
                   >
-                    <h3 className="font-bold text-slate-900 text-sm truncate">{res.name}</h3>
+                    <div className="flex items-center gap-2"><h3 className="font-bold text-slate-900 text-sm truncate">{res.name}</h3>{res.is_master ? <span className="text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-amber-100 text-amber-800">Protected master</span> : null}</div>
                     {res.notes && (
                       <p className="text-slate-500 text-xs mt-1 line-clamp-2 font-medium">
                         {res.notes}
@@ -750,9 +841,10 @@ export default function Resumes() {
                     <button
                       type="button"
                       onClick={handleOpenEditResume}
-                      className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors"
+                      disabled={Boolean(resumeDetail.is_master)}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      Edit Resume
+                      {resumeDetail.is_master ? 'Master Protected' : 'Edit Resume'}
                     </button>
                     <button
                       type="button"
@@ -774,6 +866,83 @@ export default function Resumes() {
                     <p className="text-slate-400 text-sm font-medium">No notes added.</p>
                   )}
                 </div>
+              </div>
+
+              {/* Experience & Achievement Repository */}
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Experience & Achievement Repository</h3>
+                    <p className="text-xs text-slate-500 mt-1">Evidence extracted from your source resumes. Items remain pending until reviewed and verified.</p>
+                  </div>
+                  <button type="button" onClick={handleExtractEvidence} disabled={isExtractingEvidence}
+                    className="px-3 py-2 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-60">
+                    {isExtractingEvidence ? 'Extracting evidence...' : 'Extract from this resume'}
+                  </button>
+                </div>
+                {evidenceError && <div className="p-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs">{evidenceError}</div>}
+                {evidenceNotice && <div className="p-3 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs">{evidenceNotice}</div>}
+                {showEvidenceForm && (
+                  <form onSubmit={handleEvidenceSave} className="border border-indigo-200 rounded-lg p-4 bg-indigo-50/30 space-y-3">
+                    <div className="flex items-center justify-between"><strong className="text-xs text-slate-800">{editingEvidenceId ? 'Edit evidence' : 'Add evidence manually'}</strong><button type="button" onClick={resetEvidenceForm} className="text-xs text-slate-500">Cancel</button></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <select value={evidenceForm.evidence_type} onChange={e=>setEvidenceForm({...evidenceForm,evidence_type:e.target.value})} className="rounded border px-2 py-2 text-xs"><option value="EXPERIENCE">Experience</option><option value="PROJECT">Project</option><option value="ACHIEVEMENT">Achievement</option></select>
+                      <select value={evidenceForm.classification} onChange={e=>setEvidenceForm({...evidenceForm,classification:e.target.value})} className="rounded border px-2 py-2 text-xs"><option value="DIRECT">Direct</option><option value="TEAM">Team</option><option value="ADVISORY">Advisory</option><option value="INDEPENDENT">Independent</option><option value="TRANSFERABLE">Transferable</option></select>
+                    </div>
+                    <input required maxLength={300} placeholder="Title *" value={evidenceForm.title} onChange={e=>setEvidenceForm({...evidenceForm,title:e.target.value})} className="w-full rounded border px-3 py-2 text-xs"/>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><input placeholder="Organisation" value={evidenceForm.organisation} onChange={e=>setEvidenceForm({...evidenceForm,organisation:e.target.value})} className="rounded border px-3 py-2 text-xs"/><input placeholder="Role" value={evidenceForm.role} onChange={e=>setEvidenceForm({...evidenceForm,role:e.target.value})} className="rounded border px-3 py-2 text-xs"/></div>
+                    {['description','responsibilities','actions_taken','outcomes'].map(key=><textarea key={key} rows="2" placeholder={key.replace('_',' ').replace(/\b\w/g,m=>m.toUpperCase())} value={evidenceForm[key]} onChange={e=>setEvidenceForm({...evidenceForm,[key]:e.target.value})} className="w-full rounded border px-3 py-2 text-xs"/>)}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><input placeholder="Technologies (comma-separated)" value={evidenceForm.technologies} onChange={e=>setEvidenceForm({...evidenceForm,technologies:e.target.value})} className="rounded border px-3 py-2 text-xs"/><input placeholder="Skills (comma-separated)" value={evidenceForm.skills} onChange={e=>setEvidenceForm({...evidenceForm,skills:e.target.value})} className="rounded border px-3 py-2 text-xs"/></div>
+                    <div className="flex justify-end"><button type="submit" className="px-4 py-2 rounded bg-indigo-600 text-white text-xs font-semibold">{editingEvidenceId ? 'Save Changes' : 'Save as Pending'}</button></div>
+                  </form>
+                )}
+                {evidenceDraft.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="text-xs font-bold text-slate-700">Review extracted draft ({evidenceDraft.length} items)</div>
+                    {evidenceDraft.map((item, index) => (
+                      <div key={index} className="border border-amber-200 bg-amber-50/40 rounded-lg p-3 space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                            <div className="text-[11px] text-slate-500">{[item.organisation,item.role,item.evidence_type,item.classification].filter(Boolean).join(' · ')}</div>
+                          </div>
+                          <button type="button" onClick={() => handleApproveEvidence(item,index)}
+                            className="self-start px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500">Save as pending</button>
+                        </div>
+                        {item.description && <p className="text-xs text-slate-700">{item.description}</p>}
+                        {item.responsibilities && <p className="text-xs text-slate-600"><strong>Responsibilities:</strong> {item.responsibilities}</p>}
+                        {item.actions_taken && <p className="text-xs text-slate-600"><strong>Actions:</strong> {item.actions_taken}</p>}
+                        {item.outcomes && <p className="text-xs text-slate-600"><strong>Outcomes:</strong> {item.outcomes}</p>}
+                        {item.source_excerpt && <p className="text-[11px] text-slate-500 italic">AI-extracted source reference (verify against PDF): {item.source_excerpt}</p>}
+                        <div className="text-[10px] text-slate-500">Source: {item.source_name} · Not yet verified</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-700">Saved evidence: {evidenceItems.length}</span>
+                  <button type="button" onClick={() => { resetEvidenceForm(); setShowEvidenceForm(true); }} className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 rounded">+ Add Evidence</button>
+                  <span className="text-[10px] text-slate-400">Pending verification is not approved resume content</span>
+                </div>
+                {evidenceItems.length > 0 ? (
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {evidenceItems.map(item => (
+                      <div key={item.id} className="border border-slate-200 rounded-lg p-3">
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <div className="text-xs font-semibold text-slate-900">{item.title}</div>
+                          <span className="text-[10px] font-bold text-amber-700">{item.verification_status || 'PENDING'} · {item.classification}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-1">{[item.organisation,item.role,item.evidence_type].filter(Boolean).join(' · ')}</div>
+                        {item.description && <p className="text-xs text-slate-600 mt-1">{item.description}</p>}
+                        {item.source_name && <div className="text-[10px] text-slate-400 mt-1">Source: {item.source_name}</div>}
+                        <div className="flex gap-2 mt-2">
+                          <button type="button" onClick={() => handleEvidenceEdit(item)} className="text-[10px] font-semibold text-indigo-600 underline">Edit</button>
+                          <button type="button" onClick={() => handleEvidenceVerify(item)} className="text-[10px] font-semibold text-emerald-700 underline">{item.verification_status === 'VERIFIED' ? 'Mark pending' : 'Mark verified'}</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-xs text-slate-400">No evidence saved yet. Extract a source resume to start the repository.</p>}
               </div>
 
               {/* Versions Nested Matrix Area */}
@@ -865,15 +1034,16 @@ export default function Resumes() {
                                   </button>
                                   <button
                                     type="button"
-                                    disabled={isUploading}
+                                    disabled={isUploading || Boolean(resumeDetail.is_master)}
                                     onClick={() => handleTriggerReplace(ver.id)}
-                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-600 transition-colors disabled:opacity-50"
+                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     {currentUploadActive && isReplaceAction ? 'Uploading...' : 'Replace'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteFileClick(ver.id)}
+                                    disabled={Boolean(resumeDetail.is_master)}
                                     className="text-[10px] font-bold px-2 py-1 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded text-rose-600 transition-colors"
                                   >
                                     Delete File
@@ -886,6 +1056,7 @@ export default function Resumes() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditVersion(ver)}
+                                disabled={Boolean(resumeDetail.is_master)}
                                 className="text-slate-600 hover:text-slate-900 font-bold text-[10px] border-r border-slate-200 pr-2 text-right"
                               >
                                 Edit Version
@@ -893,6 +1064,7 @@ export default function Resumes() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditAiContext(ver)}
+                                disabled={Boolean(resumeDetail.is_master)}
                                 className="text-indigo-600 hover:text-indigo-900 font-bold text-[10px] border-r border-slate-200 pr-2 text-right"
                               >
                                 Edit AI Context
@@ -964,6 +1136,20 @@ export default function Resumes() {
                   onChange={(e) => setResumeForm({ ...resumeForm, notes: e.target.value })}
                   className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs font-medium focus:outline-indigo-500 resize-none disabled:bg-slate-50"
                 />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider">Master resume registration</label>
+                <select
+                  value={resumeForm.is_master ? resumeForm.name : ''}
+                  onChange={(e) => setResumeForm({ ...resumeForm, is_master: Boolean(e.target.value), name: e.target.value || resumeForm.name })}
+                  disabled={createResumeMutation.isPending}
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-xs"
+                >
+                  <option value="">Regular resume</option>
+                  <option value="Master – IT Operations">Master – IT Operations</option>
+                  <option value="Master – Cybersecurity">Master – Cybersecurity</option>
+                </select>
+                <p className="text-[10px] text-slate-500">Master resumes are protected from editing and deletion. Add a version and upload the original PDF once registered.</p>
               </div>
 
               <div className="pt-3 border-t border-slate-150 flex justify-end space-x-2">
