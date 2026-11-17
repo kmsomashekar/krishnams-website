@@ -5421,7 +5421,7 @@ if (atsMatch) {
           try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'A valid JSON request is required.', 400, headers); }
           const questionCount = Number(body?.question_count);
           const difficulty = body?.difficulty;
-          if (![10, 15, 20].includes(questionCount) || !['Medium', 'High'].includes(difficulty)) return buildErrorResponse('VALIDATION_ERROR', 'Choose 10, 15 or 20 questions and Medium or High difficulty.', 400, headers);
+          if (![5, 10, 15, 20].includes(questionCount) || !['Medium', 'High'].includes(difficulty)) return buildErrorResponse('VALIDATION_ERROR', 'Choose 5, 10, 15 or 20 questions and Medium or High difficulty.', 400, headers);
           if (!context.job_description || !context.job_description.trim()) return buildErrorResponse('JD_REQUIRED', 'Add a job description to this opportunity before starting STAR Interview Practice.', 400, headers);
           if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
           const prompt = `Create exactly ${questionCount} distinct behavioural and situational interview questions for this opportunity.
