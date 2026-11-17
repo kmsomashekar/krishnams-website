@@ -6287,7 +6287,7 @@ ${JSON.stringify(answered)}`;
         const resumeId = versionsMatch[1];
 
         const parentResume = await env.DB.prepare(
-          `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
+          `SELECT id, is_master FROM resumes WHERE id = ? AND user_id = ?`
         )
         .bind(resumeId, userId)
         .first();
@@ -6591,7 +6591,7 @@ ${JSON.stringify(answered)}`;
 
         if (method === 'DELETE') {
           const existing = await env.DB.prepare(
-            `SELECT id FROM resumes WHERE id = ? AND user_id = ?`
+            `SELECT id, is_master FROM resumes WHERE id = ? AND user_id = ?`
           )
           .bind(resumeId, userId)
           .first();
