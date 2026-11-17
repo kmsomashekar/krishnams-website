@@ -120,6 +120,11 @@ export default function Resumes() {
   const [resumeForm, setResumeForm] = useState({ name: '', notes: '' });
   const [versionForm, setVersionForm] = useState({ version_label: '', target_role: '' });
   const [aiContextForm, setAiContextForm] = useState({ version_label: '', ai_context: '' });
+  const [evidenceDraft, setEvidenceDraft] = useState([]);
+  const [isExtractingEvidence, setIsExtractingEvidence] = useState(false);
+  const [evidenceError, setEvidenceError] = useState('');
+  const [evidenceNotice, setEvidenceNotice] = useState('');
+
 
   // --- DATA QUERIES ---
   const {
@@ -133,6 +138,50 @@ export default function Resumes() {
   });
 
   const resumesList = resumesData?.resumes || [];
+
+  const { data: evidenceData, refetch: refetchEvidence } = useQuery({
+    queryKey: ['resume-evidence'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/resume-evidence');
+      return handleResponse(res, 'Failed to load the evidence repository.');
+    }
+  });
+  const evidenceItems = evidenceData?.evidence || [];
+
+  const handleExtractEvidence = async () => {
+    if (!selectedResumeId) return;
+    setEvidenceError('');
+    setEvidenceNotice('');
+    setEvidenceDraft([]);
+    setIsExtractingEvidence(true);
+    try {
+      const res = await fetch(`/api/v1/resumes/${selectedResumeId}/extract-evidence`, { method: 'POST' });
+      const data = await handleResponse(res, 'Evidence extraction failed.');
+      setEvidenceDraft(data.evidence_draft || []);
+      if (!(data.evidence_draft || []).length) setEvidenceNotice('No extractable evidence was returned from the uploaded PDF versions.');
+    } catch (error) {
+      setEvidenceError(error.message || 'Evidence extraction failed.');
+    } finally {
+      setIsExtractingEvidence(false);
+    }
+  };
+
+  const handleApproveEvidence = async (item, index) => {
+    setEvidenceError('');
+    try {
+      const res = await fetch('/api/v1/resume-evidence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      });
+      await handleResponse(res, 'Could not save this evidence item.');
+      setEvidenceDraft(current => current.filter((_, i) => i !== index));
+      await refetchEvidence();
+      setEvidenceNotice('Evidence saved as pending verification. Review it before relying on it in a tailored resume.');
+    } catch (error) {
+      setEvidenceError(error.message || 'Could not save this evidence item.');
+    }
+  };
 
   // Auto-select first resume if there is a list and no current selection exists
   useEffect(() => {
@@ -774,6 +823,64 @@ export default function Resumes() {
                     <p className="text-slate-400 text-sm font-medium">No notes added.</p>
                   )}
                 </div>
+              </div>
+
+              {/* Experience & Achievement Repository */}
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Experience & Achievement Repository</h3>
+                    <p className="text-xs text-slate-500 mt-1">Evidence extracted from your source resumes. Items remain pending until reviewed and verified.</p>
+                  </div>
+                  <button type="button" onClick={handleExtractEvidence} disabled={isExtractingEvidence}
+                    className="px-3 py-2 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-60">
+                    {isExtractingEvidence ? 'Extracting evidence...' : 'Extract from this resume'}
+                  </button>
+                </div>
+                {evidenceError && <div className="p-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs">{evidenceError}</div>}
+                {evidenceNotice && <div className="p-3 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs">{evidenceNotice}</div>}
+                {evidenceDraft.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="text-xs font-bold text-slate-700">Review extracted draft ({evidenceDraft.length} items)</div>
+                    {evidenceDraft.map((item, index) => (
+                      <div key={index} className="border border-amber-200 bg-amber-50/40 rounded-lg p-3 space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                            <div className="text-[11px] text-slate-500">{[item.organisation,item.role,item.evidence_type,item.classification].filter(Boolean).join(' · ')}</div>
+                          </div>
+                          <button type="button" onClick={() => handleApproveEvidence(item,index)}
+                            className="self-start px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500">Save as pending</button>
+                        </div>
+                        {item.description && <p className="text-xs text-slate-700">{item.description}</p>}
+                        {item.responsibilities && <p className="text-xs text-slate-600"><strong>Responsibilities:</strong> {item.responsibilities}</p>}
+                        {item.actions_taken && <p className="text-xs text-slate-600"><strong>Actions:</strong> {item.actions_taken}</p>}
+                        {item.outcomes && <p className="text-xs text-slate-600"><strong>Outcomes:</strong> {item.outcomes}</p>}
+                        {item.source_excerpt && <p className="text-[11px] text-slate-500 italic">Source: “{item.source_excerpt}”</p>}
+                        <div className="text-[10px] text-slate-500">Source: {item.source_name} · Not yet verified</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-700">Saved evidence: {evidenceItems.length}</span>
+                  <span className="text-[10px] text-slate-400">Pending verification is not approved resume content</span>
+                </div>
+                {evidenceItems.length > 0 ? (
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {evidenceItems.map(item => (
+                      <div key={item.id} className="border border-slate-200 rounded-lg p-3">
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <div className="text-xs font-semibold text-slate-900">{item.title}</div>
+                          <span className="text-[10px] font-bold text-amber-700">{item.verification_status || 'PENDING'} · {item.classification}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-1">{[item.organisation,item.role,item.evidence_type].filter(Boolean).join(' · ')}</div>
+                        {item.description && <p className="text-xs text-slate-600 mt-1">{item.description}</p>}
+                        {item.source_name && <div className="text-[10px] text-slate-400 mt-1">Source: {item.source_name}</div>}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-xs text-slate-400">No evidence saved yet. Extract a source resume to start the repository.</p>}
               </div>
 
               {/* Versions Nested Matrix Area */}
