@@ -72,6 +72,29 @@ async function createAtsAnalysis({ opportunityId, payload }) {
 
   return handleResponse(res, 'Failed to save ATS analysis.');
 }
+
+async function createCustomisationSession(opportunityId) {
+  const res = await fetch(`/api/v1/opportunities/${opportunityId}/customisation-sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return handleResponse(res, 'Failed to start resume fine-tuning.');
+}
+
+async function fetchResumeEvidence() {
+  const res = await fetch('/api/v1/resume-evidence');
+  return handleResponse(res, 'Failed to load the evidence repository.');
+}
+
+async function saveCustomisationEvidence(sessionId, evidenceIds) {
+  const res = await fetch(`/api/v1/customisation-sessions/${sessionId}/evidence`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ evidence_ids: evidenceIds })
+  });
+  return handleResponse(res, 'Failed to save selected evidence.');
+}
+
 async function runJDAnalysis(payload) {
   const res = await fetch('/api/v1/jd-analyzer/analyze', {
     method: 'POST',
@@ -147,6 +170,13 @@ export default function JDAnalyzer() {
   const [savedOpportunityId, setSavedOpportunityId] = useState(null);
   const [partialOpportunityId, setPartialOpportunityId] = useState(null);
   const [partialJdSaved, setPartialJdSaved] = useState(false);
+  const [customisationSession, setCustomisationSession] = useState(null);
+  const [customisationError, setCustomisationError] = useState(null);
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState([]);
+  const [isStartingCustomisation, setIsStartingCustomisation] = useState(false);
+  const [isSavingEvidence, setIsSavingEvidence] = useState(false);
+  const [evidenceList, setEvidenceList] = useState([]);
+
 
   // --- BASE QUERIES ---
   const { data: resumesData, isLoading: isResumesLoading } = useQuery({
@@ -503,6 +533,42 @@ export default function JDAnalyzer() {
   }
 }
   });
+
+
+  const handleStartCustomisation = async () => {
+    if (!savedOpportunityId || isStartingCustomisation) return;
+    setIsStartingCustomisation(true);
+    setCustomisationError(null);
+    try {
+      const [session, evidenceData] = await Promise.all([
+        createCustomisationSession(savedOpportunityId),
+        fetchResumeEvidence()
+      ]);
+      setCustomisationSession(session);
+      const evidence = evidenceData?.evidence || [];
+      setEvidenceList(evidence.filter(item => item.verification_status === 'VERIFIED'));
+      const existing = Array.isArray(session.evidence_snapshot) ? session.evidence_snapshot : [];
+      setSelectedEvidenceIds(existing.map(item => item.id));
+    } catch (err) {
+      setCustomisationError(err.message || 'Unable to start resume fine-tuning.');
+    } finally {
+      setIsStartingCustomisation(false);
+    }
+  };
+
+  const handleSaveSelectedEvidence = async () => {
+    if (!customisationSession?.id || isSavingEvidence) return;
+    setIsSavingEvidence(true);
+    setCustomisationError(null);
+    try {
+      const result = await saveCustomisationEvidence(customisationSession.id, selectedEvidenceIds);
+      setCustomisationSession(previous => ({ ...previous, status: result.status, evidence_snapshot: result.evidence_snapshot }));
+    } catch (err) {
+      setCustomisationError(err.message || 'Unable to save selected evidence.');
+    } finally {
+      setIsSavingEvidence(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -862,6 +928,53 @@ export default function JDAnalyzer() {
           {analysisResult && !analyzeMutation.isPending && (
             <div className="space-y-6">
               
+
+              {savedOpportunityId && (
+                <section className="bg-white border border-indigo-200 rounded-xl shadow-sm p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Resume Fine-tuning</h3>
+                      <p className="text-xs text-slate-500 mt-1">Build a JD-specific version using verified evidence. Your master resume remains unchanged.</p>
+                    </div>
+                    <button type="button" onClick={handleStartCustomisation} disabled={isStartingCustomisation}
+                      className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50">
+                      {isStartingCustomisation ? 'Loading...' : customisationSession ? 'Refresh Evidence' : 'Start Fine-tuning'}
+                    </button>
+                  </div>
+                  {customisationError && <p className="text-xs text-red-600">{customisationError}</p>}
+                  {customisationSession && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-600">Select the verified evidence relevant to this role. Pending evidence is excluded.</p>
+                      {evidenceList.length === 0 ? (
+                        <p className="text-xs text-amber-700">No verified evidence is available yet. Verify relevant entries in the Experience &amp; Achievement Repository first.</p>
+                      ) : (
+                        <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                          {evidenceList.map(item => (
+                            <label key={item.id} className="flex gap-3 p-3 cursor-pointer hover:bg-slate-50">
+                              <input type="checkbox" checked={selectedEvidenceIds.includes(item.id)}
+                                onChange={e => setSelectedEvidenceIds(previous => e.target.checked ? [...previous, item.id] : previous.filter(id => id !== item.id))}
+                                className="mt-1" />
+                              <span className="min-w-0">
+                                <span className="block text-xs font-semibold text-slate-800">{item.title}</span>
+                                <span className="block text-[11px] text-slate-500">{[item.role, item.organisation, item.evidence_type].filter(Boolean).join(' · ')}</span>
+                                {item.description && <span className="block text-xs text-slate-600 mt-1">{item.description}</span>}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button type="button" onClick={handleSaveSelectedEvidence} disabled={isSavingEvidence || evidenceList.length === 0}
+                          className="px-4 py-2 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50">
+                          {isSavingEvidence ? 'Saving...' : 'Save Selected Evidence'}
+                        </button>
+                        <span className="text-xs text-slate-500">Session status: {customisationSession.status || 'DRAFT'}</span>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
+
               {/* Core Match Overview Assessment Block */}
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
                 <div className="text-center sm:text-left space-y-1">
