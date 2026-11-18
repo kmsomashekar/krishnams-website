@@ -6049,6 +6049,102 @@ ${JSON.stringify(answered)}`;
       }
 
       // =======================================================================
+      // MODULE: RESUME CUSTOMISATION SESSION API
+      // =======================================================================
+      const customisationCreateMatch = pathname.match(/^\\/api\\/v1\\/opportunities\\/([^/]+)\\/customisation-sessions$/);
+      const customisationSessionMatch = pathname.match(/^\\/api\\/v1\\/customisation-sessions\\/([^/]+)$/);
+      const customisationEvidenceMatch = pathname.match(/^\\/api\\/v1\\/customisation-sessions\\/([^/]+)\\/evidence$/);
+
+      if (customisationCreateMatch && method === 'POST') {
+        const opportunityId = customisationCreateMatch[1];
+        const opportunity = await env.DB.prepare(
+          'SELECT id, resume_version_id FROM opportunities WHERE id = ? AND user_id = ?'
+        ).bind(opportunityId, userId).first();
+        if (!opportunity) return buildErrorResponse('NOT_FOUND', 'Opportunity not found.', 404, headers);
+
+        const jd = await env.DB.prepare(
+          'SELECT raw_text FROM job_descriptions WHERE opportunity_id = ?'
+        ).bind(opportunityId).first();
+        if (!jd?.raw_text) return buildErrorResponse('JD_NOT_FOUND', 'Save the job description before starting resume fine-tuning.', 409, headers);
+
+        const ats = await env.DB.prepare(
+          'SELECT id, resume_version_id, analysis_json FROM ats_analysis WHERE opportunity_id = ? ORDER BY analyzed_at DESC LIMIT 1'
+        ).bind(opportunityId).first();
+        if (!ats?.analysis_json) return buildErrorResponse('ANALYSIS_NOT_FOUND', 'Save the JD analysis before starting resume fine-tuning.', 409, headers);
+        if (opportunity.resume_version_id && opportunity.resume_version_id !== ats.resume_version_id) {
+          return buildErrorResponse('SOURCE_VERSION_MISMATCH', 'The saved opportunity and ATS analysis refer to different resume versions.', 409, headers);
+        }
+
+        const existingSession = await env.DB.prepare(
+          'SELECT id, status FROM resume_customisation_sessions WHERE user_id = ? AND opportunity_id = ? AND ats_analysis_id = ? ORDER BY updated_at DESC LIMIT 1'
+        ).bind(userId, opportunityId, ats.id).first();
+        if (existingSession) return new Response(JSON.stringify({ success: true, data: { ...existingSession, resumed: true } }), { status: 200, headers });
+
+        const sourceVersion = await env.DB.prepare(
+          'SELECT rv.id, rv.resume_id FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id WHERE rv.id = ? AND r.user_id = ?'
+        ).bind(ats.resume_version_id, userId).first();
+        if (!sourceVersion) return buildErrorResponse('SOURCE_VERSION_NOT_FOUND', 'The source resume version is not accessible.', 404, headers);
+
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+        await env.DB.prepare(
+          `INSERT INTO resume_customisation_sessions
+           (id,user_id,opportunity_id,status,evidence_snapshot_json,source_resume_id,source_resume_version_id,ats_analysis_id,jd_text_snapshot,analysis_snapshot_json,created_at,updated_at)
+           VALUES (?,?,?,'DRAFT','[]',?,?,?,?,?,?,?)`
+        ).bind(id,userId,opportunityId,sourceVersion.resume_id,sourceVersion.id,ats.id,jd.raw_text,ats.analysis_json,now,now).run();
+        return new Response(JSON.stringify({ success: true, data: { id, opportunity_id: opportunityId, status: 'DRAFT', resumed: false } }), { status: 201, headers });
+      }
+
+      if (customisationSessionMatch && method === 'GET') {
+        const session = await env.DB.prepare(
+          'SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(customisationSessionMatch[1], userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+        let evidence = [];
+        try { evidence = JSON.parse(session.evidence_snapshot_json || '[]'); } catch (_) { evidence = []; }
+        let analysis = null;
+        try { analysis = JSON.parse(session.analysis_snapshot_json || 'null'); } catch (_) { analysis = null; }
+        return new Response(JSON.stringify({ success: true, data: { ...session, evidence_snapshot: evidence, analysis_snapshot: analysis } }), { status: 200, headers });
+      }
+
+      if (customisationEvidenceMatch && method === 'PUT') {
+        const sessionId = customisationEvidenceMatch[1];
+        const session = await env.DB.prepare(
+          'SELECT id, status FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(sessionId, userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+        if (session.status !== 'DRAFT' && session.status !== 'READY_FOR_PROPOSAL') return buildErrorResponse('SESSION_LOCKED', 'Evidence cannot be changed after this session has progressed.', 409, headers);
+
+        let body;
+        try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers); }
+        if (!Array.isArray(body?.evidence_ids) || body.evidence_ids.length > 100 || body.evidence_ids.some(id => typeof id !== 'string' || !id.trim())) {
+          return buildErrorResponse('INVALID_INPUT', 'evidence_ids must be an array of up to 100 evidence IDs.', 400, headers);
+        }
+        const uniqueIds = [...new Set(body.evidence_ids)];
+        let selectedEvidence = [];
+        if (uniqueIds.length) {
+          const placeholders = uniqueIds.map(() => '?').join(',');
+          const result = await env.DB.prepare(
+            `SELECT id,evidence_type,title,organisation,role,description,responsibilities,actions_taken,outcomes,technologies_json,skills_json,classification,start_date,end_date,verification_status
+             FROM resume_evidence WHERE user_id = ? AND verification_status = 'VERIFIED' AND id IN (${placeholders})`
+          ).bind(userId, ...uniqueIds).all();
+          selectedEvidence = result.results || [];
+          if (selectedEvidence.length !== uniqueIds.length) return buildErrorResponse('INVALID_EVIDENCE', 'Every selected item must be verified and belong to this account.', 400, headers);
+        }
+        const snapshot = selectedEvidence.map(item => ({
+          ...item,
+          technologies: JSON.parse(item.technologies_json || '[]'),
+          skills: JSON.parse(item.skills_json || '[]')
+        }));
+        const now = new Date().toISOString();
+        const status = snapshot.length ? 'READY_FOR_PROPOSAL' : 'DRAFT';
+        await env.DB.prepare(
+          'UPDATE resume_customisation_sessions SET evidence_snapshot_json = ?, status = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+        ).bind(JSON.stringify(snapshot), status, now, sessionId, userId).run();
+        return new Response(JSON.stringify({ success: true, data: { session_id: sessionId, status, selected_evidence_count: snapshot.length, evidence_snapshot: snapshot } }), { status: 200, headers });
+      }
+
+      // =======================================================================
       // MODULE: RESUME EVIDENCE REPOSITORY API
       // =======================================================================
       const evidenceCollectionPath = '/api/v1/resume-evidence';
