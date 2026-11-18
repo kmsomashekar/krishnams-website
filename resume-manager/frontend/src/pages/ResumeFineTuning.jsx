@@ -12,6 +12,18 @@ async function fetchSession(sessionId) {
   return readApi(await fetch(`/api/v1/customisation-sessions/${sessionId}`), 'Unable to load the fine-tuning session.');
 }
 
+async function fetchEvidence() {
+  return readApi(await fetch('/api/v1/resume-evidence'), 'Unable to load the evidence repository.');
+}
+
+async function saveEvidence(sessionId, evidenceIds) {
+  return readApi(await fetch(`/api/v1/customisation-sessions/${sessionId}/evidence`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ evidence_ids: evidenceIds })
+  }), 'Unable to save selected evidence.');
+}
+
 async function generateProposals(sessionId, regenerate = false) {
   return readApi(await fetch(`/api/v1/customisation-sessions/${sessionId}/proposals`, {
     method: 'POST',
@@ -31,6 +43,9 @@ async function saveReview(sessionId, payload) {
 export default function ResumeFineTuning() {
   const { id: opportunityId, sessionId } = useParams();
   const [session, setSession] = useState(null);
+  const [evidence, setEvidence] = useState([]);
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState([]);
+  const [savingEvidence, setSavingEvidence] = useState(false);
   const [proposals, setProposals] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [loading, setLoading] = useState(true);
@@ -42,9 +57,13 @@ export default function ResumeFineTuning() {
     setLoading(true);
     setError('');
     try {
-      const result = await fetchSession(sessionId);
+      const [result, evidenceResult] = await Promise.all([fetchSession(sessionId), fetchEvidence()]);
       setSession(result);
       setProposals(result.proposals || null);
+      const verifiedEvidence = (evidenceResult?.evidence || []).filter(item => item.verification_status === 'VERIFIED');
+      setEvidence(verifiedEvidence);
+      const savedEvidence = Array.isArray(result.evidence_snapshot) ? result.evidence_snapshot : [];
+      setSelectedEvidenceIds(savedEvidence.map(item => item.id));
     } catch (err) {
       setError(err.message || 'Unable to load the fine-tuning session.');
     } finally {
@@ -53,6 +72,24 @@ export default function ResumeFineTuning() {
   };
 
   useEffect(() => { loadSession(); }, [sessionId]);
+
+  const handleSaveEvidence = async () => {
+    if (savingEvidence) return;
+    setSavingEvidence(true);
+    setError('');
+    try {
+      const result = await saveEvidence(sessionId, selectedEvidenceIds);
+      setSession(previous => ({
+        ...previous,
+        status: result.status || previous?.status,
+        evidence_snapshot: result.evidence_snapshot
+      }));
+    } catch (err) {
+      setError(err.message || 'Unable to save selected evidence.');
+    } finally {
+      setSavingEvidence(false);
+    }
+  };
 
   const handleGenerate = async (regenerate = false) => {
     if (generating) return;
@@ -115,6 +152,38 @@ export default function ResumeFineTuning() {
         <div className="bg-white border border-slate-200 rounded-xl p-8 text-sm text-slate-500">Loading proposal session...</div>
       ) : (
         <>
+          <section className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Select verified evidence</h2>
+              <p className="text-xs text-slate-500 mt-1">Choose the evidence relevant to this opportunity. Pending evidence is excluded.</p>
+            </div>
+            {evidence.length === 0 ? (
+              <p className="text-xs text-amber-700">No verified evidence is available. Verify relevant entries in the Experience &amp; Achievement Repository first.</p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                {evidence.map(item => (
+                  <label key={item.id} className="flex gap-3 p-3 cursor-pointer hover:bg-slate-50">
+                    <input type="checkbox" checked={selectedEvidenceIds.includes(item.id)}
+                      onChange={event => setSelectedEvidenceIds(previous => event.target.checked ? [...previous, item.id] : previous.filter(id => id !== item.id))}
+                      className="mt-1" />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-slate-800">{item.title}</span>
+                      <span className="block text-[11px] text-slate-500">{[item.role, item.organisation, item.evidence_type].filter(Boolean).join(' · ')}</span>
+                      {item.description && <span className="block text-xs text-slate-600 mt-1">{item.description}</span>}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={handleSaveEvidence} disabled={savingEvidence || evidence.length === 0}
+                className="px-4 py-2 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50">
+                {savingEvidence ? 'Saving...' : 'Save Selected Evidence'}
+              </button>
+              <span className="text-xs text-slate-500">Selected: {selectedEvidenceIds.length} · Session: {session?.status || 'DRAFT'}</span>
+            </div>
+          </section>
+
           <section className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">Section-wise proposals</h2>
@@ -127,7 +196,7 @@ export default function ResumeFineTuning() {
             </button>
             {generating && <p className="text-xs text-indigo-700">The AI is preparing your proposals. Please keep this page open.</p>}
             {!['READY_FOR_PROPOSAL','PROPOSALS_READY','PROPOSALS_IN_REVIEW'].includes(session?.status) &&
-              <p className="text-xs text-amber-700">Save selected verified evidence in JD Analysis before generating proposals.</p>}
+              <p className="text-xs text-amber-700">Save selected verified evidence above before generating proposals.</p>}
           </section>
 
           {active && (
