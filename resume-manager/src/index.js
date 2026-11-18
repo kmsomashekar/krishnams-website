@@ -6156,7 +6156,77 @@ ${JSON.stringify(answered)}`;
       }
 
       // =======================================================================
-      const customisationProposalsMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/proposals$/);
+      const customisationFinalizeMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/finalize$/);
+      if (customisationFinalizeMatch && method === 'POST') {
+        const sessionId = customisationFinalizeMatch[1];
+        const session = await env.DB.prepare(
+          'SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(sessionId, userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+
+        let saved;
+        try { saved = JSON.parse(session.proposal_json || 'null'); } catch (_) { saved = null; }
+        if (!saved || !Array.isArray(saved.generations) || !saved.active_generation_id) {
+          return buildErrorResponse('PROPOSALS_NOT_FOUND', 'There is no active proposal generation to finalise.', 409, headers);
+        }
+        if (saved.tailored_resume?.resume_version_id) {
+          return new Response(JSON.stringify({ success: true, data: { ...saved.tailored_resume, reused: true } }), { status: 200, headers });
+        }
+        const generation = saved.generations.find(item => item.id === saved.active_generation_id);
+        if (!generation || !Array.isArray(generation.sections) || generation.sections.length !== 5) {
+          return buildErrorResponse('INVALID_PROPOSALS', 'The active proposal generation is incomplete.', 409, headers);
+        }
+        const unresolved = generation.sections.filter(section =>
+          section.decision !== 'NO_CHANGE' && !['ACCEPTED', 'EDITED', 'REJECTED'].includes(section.decision)
+        );
+        if (unresolved.length) return buildErrorResponse('REVIEW_INCOMPLETE', 'Review every proposed section before creating the tailored resume.', 409, headers);
+
+        const opportunity = await env.DB.prepare(
+          'SELECT o.id, o.job_title, c.name AS company_name FROM opportunities o JOIN companies c ON c.id = o.company_id WHERE o.id = ? AND o.user_id = ?'
+        ).bind(session.opportunity_id, userId).first();
+        if (!opportunity) return buildErrorResponse('NOT_FOUND', 'Linked opportunity not found.', 404, headers);
+
+        const sectionText = generation.sections.map(section => {
+          const content = section.decision === 'REJECTED'
+            ? section.original_text
+            : section.decision === 'EDITED'
+              ? section.edited_text
+              : section.proposed_text || section.original_text;
+          return '## ' + String(section.title || section.section_id) + '\\n' + String(content || '').trim();
+        }).filter(section => !section.endsWith('\\n')).join('\\n\\n');
+        if (!sectionText.trim()) return buildErrorResponse('EMPTY_RESUME', 'The reviewed sections contain no resume content.', 409, headers);
+
+        const resumeId = crypto.randomUUID();
+        const versionId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const resumeName = ('Tailored - ' + opportunity.company_name + ' - ' + opportunity.job_title).slice(0, 200);
+        const versionLabel = 'JD-tailored ' + now.slice(0, 10);
+        const aiContext = 'TAILORED RESUME CONTENT\\nOpportunity: ' + opportunity.job_title + ' at ' + opportunity.company_name +
+          '\\nGenerated from reviewed proposals. Source master resume remains unchanged.\\n\\n' + sectionText;
+
+        await env.DB.prepare(
+          'INSERT INTO resumes (id, user_id, name, notes, is_master, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)'
+        ).bind(resumeId, userId, resumeName, 'Created from reviewed proposals for opportunity ' + session.opportunity_id, now, now).run();
+        await env.DB.prepare(
+          'INSERT INTO resume_versions (id, resume_id, version_label, target_role, r2_object_key, is_active, created_at, ai_context) VALUES (?, ?, ?, ?, NULL, 1, ?, ?)'
+        ).bind(versionId, resumeId, versionLabel, opportunity.job_title, now, aiContext).run();
+
+        saved.tailored_resume = {
+          resume_id: resumeId,
+          resume_version_id: versionId,
+          resume_name: resumeName,
+          version_label: versionLabel,
+          opportunity_id: session.opportunity_id,
+          created_at: now
+        };
+        await env.DB.prepare(
+          'UPDATE resume_customisation_sessions SET proposal_json = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+        ).bind(JSON.stringify(saved), now, sessionId, userId).run();
+
+        return new Response(JSON.stringify({ success: true, data: { ...saved.tailored_resume, reused: false } }), { status: 201, headers });
+      }
+
+      const customisationProposalsMatch = pathname.match(/^\\/api\\/v1\\/customisation-sessions\\/([^/]+)\\/proposals$/);
       if (customisationProposalsMatch && method === 'POST') {
         const sessionId = customisationProposalsMatch[1];
         const session = await env.DB.prepare('SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?').bind(sessionId, userId).first();
