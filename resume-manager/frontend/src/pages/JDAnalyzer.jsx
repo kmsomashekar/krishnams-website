@@ -1112,67 +1112,15 @@ export default function JDAnalyzer() {
                         </button>
                         <span className="text-xs text-slate-500">Session status: {customisationSession.status || 'DRAFT'}</span>
                       </div>
-                      <div className="border-t border-slate-200 pt-3 space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-900">Section-wise proposals</h4>
-                            <p className="text-[11px] text-slate-500 mt-1">Generate proposals after saving evidence. Each section can be accepted, edited or rejected independently.</p>
-                          </div>
-                          <button type="button" onClick={() => handleGenerateProposals(false)}
-                            disabled={isGeneratingProposals || !['READY_FOR_PROPOSAL','PROPOSALS_READY','PROPOSALS_IN_REVIEW'].includes(customisationSession.status)}
-                            className="px-3 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50">
-                            {isGeneratingProposals ? 'Generating...' : proposalHistory ? 'Load Saved Proposals' : 'Generate Proposals'}
-                          </button>
+                      <div className="border-t border-slate-200 pt-3 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900">Proposal review</h4>
+                          <p className="text-[11px] text-slate-500 mt-1">Open a dedicated page to generate and review your five resume sections.</p>
                         </div>
-                        {proposalHistory?.generations?.length > 0 && (() => {
-                          const active = proposalHistory.generations.find(item => item.id === proposalHistory.active_generation_id) || proposalHistory.generations[proposalHistory.generations.length - 1];
-                          return (
-                            <div className="space-y-3">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-[11px] font-semibold text-slate-600">Proposal generation: {new Date(active.created_at).toLocaleString()}</span>
-                                <button type="button" onClick={() => handleGenerateProposals(true)} disabled={isGeneratingProposals}
-                                  className="text-[11px] font-semibold text-indigo-700 underline disabled:opacity-50">Generate another version</button>
-                              </div>
-                              {active.sections.map(section => (
-                                <div key={section.section_id} className="border border-slate-200 rounded-lg p-3 space-y-2">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <h5 className="text-xs font-bold text-slate-800">{section.title}</h5>
-                                    <span className="text-[10px] font-semibold text-slate-500">{section.decision.replaceAll('_', ' ')}</span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-600 whitespace-pre-wrap">{section.rationale}</p>
-                                  {section.proposed_text ? (
-                                    <>
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div>
-                                          <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Current source</p>
-                                          <pre className="text-[11px] text-slate-600 whitespace-pre-wrap font-sans bg-slate-50 rounded p-2">{section.original_text || 'No exact source section found in AI Context.'}</pre>
-                                        </div>
-                                        <div>
-                                          <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Proposed replacement</p>
-                                          <textarea rows="6" value={proposalEditDrafts[section.section_id] ?? section.edited_text ?? section.proposed_text}
-                                            onChange={e => setProposalEditDrafts(previous => ({ ...previous, [section.section_id]: e.target.value }))}
-                                            disabled={section.decision === 'ACCEPTED' || section.decision === 'REJECTED' || isSavingProposalReview}
-                                            className="w-full text-[11px] text-slate-700 border border-slate-200 rounded p-2 disabled:bg-slate-50" />
-                                        </div>
-                                      </div>
-                                      {section.evidence_ids?.length > 0 && <p className="text-[10px] text-slate-500">Supporting verified evidence: {section.evidence_ids.length} item(s)</p>}
-                                      {section.decision === 'PENDING' || section.decision === 'EDITED' ? (
-                                        <div className="flex flex-wrap gap-2">
-                                          <button type="button" onClick={() => handleProposalReview(active.id, section.section_id, 'ACCEPTED')} disabled={isSavingProposalReview}
-                                            className="px-3 py-1.5 text-[11px] font-semibold text-white bg-emerald-700 rounded disabled:opacity-50">Accept</button>
-                                          <button type="button" onClick={() => handleProposalReview(active.id, section.section_id, 'EDITED')} disabled={isSavingProposalReview}
-                                            className="px-3 py-1.5 text-[11px] font-semibold text-white bg-indigo-600 rounded disabled:opacity-50">Save Edit</button>
-                                          <button type="button" onClick={() => handleProposalReview(active.id, section.section_id, 'REJECTED')} disabled={isSavingProposalReview}
-                                            className="px-3 py-1.5 text-[11px] font-semibold text-slate-700 bg-slate-100 rounded disabled:opacity-50">Reject</button>
-                                        </div>
-                                      ) : null}
-                                    </>
-                                  ) : <p className="text-[11px] text-slate-500">No change recommended for this section.</p>}
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })()}
+                        <Link to={`/opportunities/${encodeURIComponent(savedOpportunityId)}/resume-fine-tuning/${encodeURIComponent(customisationSession.id)}`}
+                          className="inline-flex items-center px-3 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500">
+                          Open Proposal Review
+                        </Link>
                       </div>
                     </div>
                   )}
