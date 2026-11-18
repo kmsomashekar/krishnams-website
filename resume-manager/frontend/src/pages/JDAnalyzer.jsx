@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 // --- SINGLE-PASS API RESPONSE PARSER ---
 async function handleResponse(res, defaultErrorText) {
@@ -167,6 +167,7 @@ function getScreeningLabel(result) {
 }
 
 export default function JDAnalyzer() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const opportunityIdFromQuery = searchParams.get('opportunityId');
   // --- FORM STATES ---
@@ -639,17 +640,7 @@ export default function JDAnalyzer() {
     setCustomisationError(null);
     try {
       const created = await createCustomisationSession(savedOpportunityId);
-      const [session, evidenceData] = await Promise.all([
-        fetchCustomisationSession(created.id),
-        fetchResumeEvidence()
-      ]);
-      setCustomisationSession(session);
-      setProposalHistory(session.proposals || null);
-      setProposalEditDrafts({});
-      const evidence = evidenceData?.evidence || [];
-      setEvidenceList(evidence.filter(item => item.verification_status === 'VERIFIED'));
-      const existing = Array.isArray(session.evidence_snapshot) ? session.evidence_snapshot : [];
-      setSelectedEvidenceIds(existing.map(item => item.id));
+      navigate(`/opportunities/${encodeURIComponent(savedOpportunityId)}/resume-fine-tuning/${encodeURIComponent(created.id)}`);
     } catch (err) {
       setCustomisationError(err.message || 'Unable to start resume fine-tuning.');
     } finally {
@@ -1072,58 +1063,16 @@ export default function JDAnalyzer() {
               
 
               {savedOpportunityId && (
-                <section className="bg-white border border-indigo-200 rounded-xl shadow-sm p-5 space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">Resume Fine-tuning</h3>
-                      <p className="text-xs text-slate-500 mt-1">Build a JD-specific version using verified evidence. Your master resume remains unchanged.</p>
-                    </div>
-                    <button type="button" onClick={handleStartCustomisation} disabled={isStartingCustomisation}
-                      className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50">
-                      {isStartingCustomisation ? 'Loading...' : customisationSession ? 'Refresh Evidence' : 'Start Fine-tuning'}
-                    </button>
+                <section className="bg-white border border-indigo-200 rounded-xl shadow-sm p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Resume Fine-tuning</h3>
+                    <p className="text-xs text-slate-500 mt-1">Select verified evidence and build a JD-specific resume version. Your master resume remains unchanged.</p>
+                    {customisationError && <p className="text-xs text-red-600 mt-2">{customisationError}</p>}
                   </div>
-                  {customisationError && <p className="text-xs text-red-600">{customisationError}</p>}
-                  {customisationSession && (
-                    <div className="space-y-3">
-                      <p className="text-xs text-slate-600">Select the verified evidence relevant to this role. Pending evidence is excluded.</p>
-                      {evidenceList.length === 0 ? (
-                        <p className="text-xs text-amber-700">No verified evidence is available yet. Verify relevant entries in the Experience &amp; Achievement Repository first.</p>
-                      ) : (
-                        <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
-                          {evidenceList.map(item => (
-                            <label key={item.id} className="flex gap-3 p-3 cursor-pointer hover:bg-slate-50">
-                              <input type="checkbox" checked={selectedEvidenceIds.includes(item.id)}
-                                onChange={e => setSelectedEvidenceIds(previous => e.target.checked ? [...previous, item.id] : previous.filter(id => id !== item.id))}
-                                className="mt-1" />
-                              <span className="min-w-0">
-                                <span className="block text-xs font-semibold text-slate-800">{item.title}</span>
-                                <span className="block text-[11px] text-slate-500">{[item.role, item.organisation, item.evidence_type].filter(Boolean).join(' · ')}</span>
-                                {item.description && <span className="block text-xs text-slate-600 mt-1">{item.description}</span>}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center gap-3">
-                        <button type="button" onClick={handleSaveSelectedEvidence} disabled={isSavingEvidence || evidenceList.length === 0}
-                          className="px-4 py-2 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50">
-                          {isSavingEvidence ? 'Saving...' : 'Save Selected Evidence'}
-                        </button>
-                        <span className="text-xs text-slate-500">Session status: {customisationSession.status || 'DRAFT'}</span>
-                      </div>
-                      <div className="border-t border-slate-200 pt-3 flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900">Proposal review</h4>
-                          <p className="text-[11px] text-slate-500 mt-1">Open a dedicated page to generate and review your five resume sections.</p>
-                        </div>
-                        <Link to={`/opportunities/${encodeURIComponent(savedOpportunityId)}/resume-fine-tuning/${encodeURIComponent(customisationSession.id)}`}
-                          className="inline-flex items-center px-3 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500">
-                          Open Proposal Review
-                        </Link>
-                      </div>
-                    </div>
-                  )}
+                  <button type="button" onClick={handleStartCustomisation} disabled={isStartingCustomisation}
+                    className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50">
+                    {isStartingCustomisation ? 'Opening...' : 'Start Fine-tuning'}
+                  </button>
                 </section>
               )}
 
