@@ -6115,8 +6115,6 @@ ${JSON.stringify(answered)}`;
           'SELECT id, status FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
         ).bind(sessionId, userId).first();
         if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
-        if (session.status !== 'DRAFT' && session.status !== 'READY_FOR_PROPOSAL') return buildErrorResponse('SESSION_LOCKED', 'Evidence cannot be changed after this session has progressed.', 409, headers);
-
         let body;
         try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers); }
         if (!Array.isArray(body?.evidence_ids) || body.evidence_ids.length > 100 || body.evidence_ids.some(id => typeof id !== 'string' || !id.trim())) {
@@ -6140,10 +6138,21 @@ ${JSON.stringify(answered)}`;
         }));
         const now = new Date().toISOString();
         const status = snapshot.length ? 'READY_FOR_PROPOSAL' : 'DRAFT';
+        let proposalHistory = null;
+        try { proposalHistory = JSON.parse((await env.DB.prepare(
+          'SELECT proposal_json FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(sessionId, userId).first())?.proposal_json || 'null'); } catch (_) { proposalHistory = null; }
+        if (proposalHistory && Array.isArray(proposalHistory.generations) && proposalHistory.generations.length) {
+          proposalHistory.generations = proposalHistory.generations.map(generation => ({
+            ...generation,
+            superseded_by_evidence_change: true
+          }));
+          proposalHistory.active_generation_id = null;
+        }
         await env.DB.prepare(
-          'UPDATE resume_customisation_sessions SET evidence_snapshot_json = ?, status = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-        ).bind(JSON.stringify(snapshot), status, now, sessionId, userId).run();
-        return new Response(JSON.stringify({ success: true, data: { session_id: sessionId, status, selected_evidence_count: snapshot.length, evidence_snapshot: snapshot } }), { status: 200, headers });
+          'UPDATE resume_customisation_sessions SET evidence_snapshot_json = ?, proposal_json = ?, status = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+        ).bind(JSON.stringify(snapshot), proposalHistory ? JSON.stringify(proposalHistory) : null, status, now, sessionId, userId).run();
+        return new Response(JSON.stringify({ success: true, data: { session_id: sessionId, status, selected_evidence_count: snapshot.length, evidence_snapshot: snapshot, proposals: proposalHistory } }), { status: 200, headers });
       }
 
       // =======================================================================
@@ -6157,9 +6166,9 @@ ${JSON.stringify(answered)}`;
         try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers); }
         let history = null;
         try { history = JSON.parse(session.proposal_json || 'null'); } catch (_) { history = null; }
-        if (history && Array.isArray(history.generations) && history.generations.length && body.regenerate !== true) {
-          const active = history.generations.find(x => x.id === history.active_generation_id) || history.generations[history.generations.length - 1];
-          return new Response(JSON.stringify({ success: true, data: { proposals: history, generation: active, status: session.status, reused: true } }), { status: 200, headers });
+        if (history && Array.isArray(history.generations) && history.active_generation_id && body.regenerate !== true) {
+          const active = history.generations.find(x => x.id === history.active_generation_id);
+          if (active) return new Response(JSON.stringify({ success: true, data: { proposals: history, generation: active, status: session.status, reused: true } }), { status: 200, headers });
         }
         let evidence, analysis;
         try { evidence = JSON.parse(session.evidence_snapshot_json || '[]'); analysis = JSON.parse(session.analysis_snapshot_json || 'null'); } catch (_) { return buildErrorResponse('SESSION_DATA_ERROR', 'Saved session snapshots could not be read.', 409, headers); }
