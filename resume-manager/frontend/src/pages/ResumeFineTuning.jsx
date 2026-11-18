@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
+import { jsPDF } from 'jspdf';
 
 async function readApi(res, fallback) {
   let body;
@@ -40,6 +42,58 @@ async function saveReview(sessionId, payload) {
   }), 'Unable to save the proposal review.');
 }
 
+async function fetchTailoredVersion(resumeId, versionId) {
+  return readApi(await fetch('/api/v1/resumes/' + resumeId + '/versions/' + versionId), 'Unable to load the tailored resume content.');
+}
+
+function getResumeSections(aiContext) {
+  const sections = []; let current = null;
+  for (const line of String(aiContext || '').replace(/\\r/g, '').split('\\n')) {
+    if (line.startsWith('## ')) { if (current) sections.push(current); current = { title: line.slice(3).trim(), lines: [] }; }
+    else if (current) current.lines.push(line);
+  }
+  if (current) sections.push(current);
+  return sections.map(section => ({ title: section.title, paragraphs: section.lines.join('\\n').trim().split(/\\n{2,}/).map(v => v.trim()).filter(Boolean) }));
+}
+
+function safeFileName(value) {
+  return String(value || 'Tailored-Resume').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Tailored-Resume';
+}
+
+async function downloadResumeDocx(resume, aiContext) {
+  const children = [
+    new Paragraph({ text: resume.resume_name || 'Tailored Resume', heading: HeadingLevel.TITLE, spacing: { after: 180 } }),
+    new Paragraph({ text: resume.version_label || 'JD-tailored resume', spacing: { after: 260 } })
+  ];
+  for (const section of getResumeSections(aiContext)) {
+    children.push(new Paragraph({ text: section.title, heading: HeadingLevel.HEADING_1, spacing: { before: 240, after: 100 } }));
+    for (const block of section.paragraphs) for (const line of block.split('\\n').map(v => v.trim()).filter(Boolean)) {
+      const bullet = /^[-•*]\\s/.test(line);
+      children.push(new Paragraph({ children: [new TextRun({ text: bullet ? line.replace(/^[-•*]\\s*/, '') : line, size: 20 })], spacing: { after: 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
+    }
+  }
+  const doc = new Document({ creator: 'Resume Manager', title: resume.resume_name || 'Tailored Resume', sections: [{ properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } }, children }] });
+  const blob = await Packer.toBlob(doc); const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
+  anchor.href = url; anchor.download = safeFileName(resume.resume_name) + '.docx'; anchor.click(); URL.revokeObjectURL(url);
+}
+
+function downloadResumePdf(resume, aiContext) {
+  const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
+  const margin = 48; const maxWidth = width - margin * 2; let y = margin;
+  const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\\x09\\x0A\\x0D\\x20-\\xFF]/g, '');
+  const ensure = amount => { if (y + amount > height - margin) { pdf.addPage(); y = margin; } };
+  pdf.setFont('helvetica','bold'); pdf.setFontSize(18); const title = pdf.splitTextToSize(clean(resume.resume_name || 'Tailored Resume'), maxWidth); pdf.text(title, margin, y); y += title.length * 22 + 4;
+  pdf.setFont('helvetica','normal'); pdf.setFontSize(9); pdf.setTextColor(90); pdf.text(clean(resume.version_label || 'JD-tailored resume'), margin, y); y += 24;
+  pdf.setDrawColor(190); pdf.line(margin,y,width-margin,y); y += 18;
+  for (const section of getResumeSections(aiContext)) {
+    ensure(36); pdf.setTextColor(30,64,110); pdf.setFont('helvetica','bold'); pdf.setFontSize(12); const heading = pdf.splitTextToSize(clean(section.title.toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length * 15 + 6;
+    pdf.setTextColor(40); pdf.setFont('helvetica','normal'); pdf.setFontSize(9.5);
+    for (const block of section.paragraphs) { for (const line of pdf.splitTextToSize(clean(block),maxWidth)) { ensure(13); pdf.text(line,margin,y); y += 13; } y += 5; } y += 7;
+  }
+  const pages = pdf.getNumberOfPages(); for (let i=1;i<=pages;i++) { pdf.setPage(i); pdf.setFontSize(8); pdf.setTextColor(130); pdf.text('Page ' + i + ' of ' + pages,width-margin,height-22,{align:'right'}); }
+  pdf.save(safeFileName(resume.resume_name) + '.pdf');
+}
+
 async function finalizeProposals(sessionId) {
   return readApi(await fetch(`/api/v1/customisation-sessions/${sessionId}/finalize`, {
     method: 'POST',
@@ -58,6 +112,7 @@ export default function ResumeFineTuning() {
   const [drafts, setDrafts] = useState({});
   const [tailoredResume, setTailoredResume] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState('');
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -145,6 +200,17 @@ export default function ResumeFineTuning() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDownload = async (format) => {
+    if (!tailoredResume?.resume_id || !tailoredResume?.resume_version_id || exportingFormat) return;
+    setExportingFormat(format); setError('');
+    try {
+      const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
+      if (!version?.ai_context) throw new Error('The tailored resume has no saved content to export.');
+      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context); else downloadResumePdf(tailoredResume, version.ai_context);
+    } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); }
+    finally { setExportingFormat(''); }
   };
 
   const handleFinalize = async () => {
@@ -291,8 +357,12 @@ export default function ResumeFineTuning() {
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-2">
                   <p className="text-sm font-bold text-emerald-900">Tailored resume version created</p>
                   <p className="text-xs text-emerald-800">{tailoredResume.resume_name} · {tailoredResume.version_label}</p>
-                  <p className="text-xs text-emerald-800">The approved sections are saved as AI Context in a separate resume record. Your master resume has not been changed.</p>
-                  <Link to="/resumes" className="inline-block text-xs font-semibold text-emerald-900 underline">Open Resumes</Link>
+                  <p className="text-xs text-emerald-800">The approved sections are saved in a separate resume record. Your master resume has not been changed. Generate either file below to download it.</p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button type="button" onClick={() => handleDownload('docx')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-indigo-700 rounded hover:bg-indigo-600 disabled:opacity-50">{exportingFormat === 'docx' ? 'Preparing DOCX…' : 'Download DOCX'}</button>
+                    <button type="button" onClick={() => handleDownload('pdf')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50">{exportingFormat === 'pdf' ? 'Preparing PDF…' : 'Download PDF'}</button>
+                    <Link to="/resumes" className="px-4 py-2 text-xs font-semibold text-emerald-900 underline">Open Resumes</Link>
+                  </div>
                 </div>
               ) : (
                 <div className="border-t border-slate-100 pt-4 flex flex-wrap items-center justify-between gap-3">
