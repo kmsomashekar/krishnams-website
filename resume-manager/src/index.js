@@ -6159,7 +6159,7 @@ ${JSON.stringify(answered)}`;
         try { history = JSON.parse(session.proposal_json || 'null'); } catch (_) { history = null; }
         if (history && Array.isArray(history.generations) && history.generations.length && body.regenerate !== true) {
           const active = history.generations.find(x => x.id === history.active_generation_id) || history.generations[history.generations.length - 1];
-          return new Response(JSON.stringify({ success: true, data: { proposals: history, generation: active, reused: true } }), { status: 200, headers });
+          return new Response(JSON.stringify({ success: true, data: { proposals: history, generation: active, status: session.status, reused: true } }), { status: 200, headers });
         }
         let evidence, analysis;
         try { evidence = JSON.parse(session.evidence_snapshot_json || '[]'); analysis = JSON.parse(session.analysis_snapshot_json || 'null'); } catch (_) { return buildErrorResponse('SESSION_DATA_ERROR', 'Saved session snapshots could not be read.', 409, headers); }
@@ -6206,7 +6206,7 @@ ${JSON.stringify(answered)}`;
         generations.push(generation);
         const saved = { schema_version: 1, active_generation_id: generation.id, generations };
         await env.DB.prepare("UPDATE resume_customisation_sessions SET proposal_json = ?, status = 'PROPOSALS_READY', updated_at = ? WHERE id = ? AND user_id = ?").bind(JSON.stringify(saved), now, sessionId, userId).run();
-        return new Response(JSON.stringify({ success: true, data: { proposals: saved, generation, reused: false } }), { status: 200, headers });
+        return new Response(JSON.stringify({ success: true, data: { proposals: saved, generation, status: 'PROPOSALS_READY', reused: false } }), { status: 200, headers });
       }
       if (customisationProposalsMatch && method === 'PUT') {
         const sessionId = customisationProposalsMatch[1];
@@ -6230,7 +6230,7 @@ ${JSON.stringify(answered)}`;
         section.reviewed_at = new Date().toISOString();
         const now = new Date().toISOString();
         await env.DB.prepare("UPDATE resume_customisation_sessions SET proposal_json = ?, status = 'PROPOSALS_IN_REVIEW', updated_at = ? WHERE id = ? AND user_id = ?").bind(JSON.stringify(saved), now, sessionId, userId).run();
-        return new Response(JSON.stringify({ success: true, data: { proposals: saved, generation } }), { status: 200, headers });
+        return new Response(JSON.stringify({ success: true, data: { proposals: saved, generation, status: 'PROPOSALS_IN_REVIEW' } }), { status: 200, headers });
       }
 
       // MODULE: RESUME EVIDENCE REPOSITORY API
