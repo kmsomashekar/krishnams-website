@@ -6226,7 +6226,7 @@ ${JSON.stringify(answered)}`;
         return new Response(JSON.stringify({ success: true, data: { ...saved.tailored_resume, reused: false } }), { status: 201, headers });
       }
 
-      const customisationProposalsMatch = pathname.match(/^\\/api\\/v1\\/customisation-sessions\\/([^/]+)\\/proposals$/);
+      const customisationProposalsMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/proposals$/);
       if (customisationProposalsMatch && method === 'POST') {
         const sessionId = customisationProposalsMatch[1];
         const session = await env.DB.prepare('SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?').bind(sessionId, userId).first();
