@@ -6192,8 +6192,8 @@ ${JSON.stringify(answered)}`;
             : section.decision === 'EDITED'
               ? section.edited_text
               : section.proposed_text || section.original_text;
-          return '## ' + String(section.title || section.section_id) + '\\n' + String(content || '').trim();
-        }).filter(section => !section.endsWith('\\n')).join('\\n\\n');
+          return '## ' + String(section.title || section.section_id) + '\n' + String(content || '').trim();
+        }).join('\n\n');
         if (!sectionText.trim()) return buildErrorResponse('EMPTY_RESUME', 'The reviewed sections contain no resume content.', 409, headers);
 
         const resumeId = crypto.randomUUID();
@@ -6201,8 +6201,8 @@ ${JSON.stringify(answered)}`;
         const now = new Date().toISOString();
         const resumeName = ('Tailored - ' + opportunity.company_name + ' - ' + opportunity.job_title).slice(0, 200);
         const versionLabel = 'JD-tailored ' + now.slice(0, 10);
-        const aiContext = 'TAILORED RESUME CONTENT\\nOpportunity: ' + opportunity.job_title + ' at ' + opportunity.company_name +
-          '\\nGenerated from reviewed proposals. Source master resume remains unchanged.\\n\\n' + sectionText;
+        const aiContext = 'TAILORED RESUME CONTENT\nOpportunity: ' + opportunity.job_title + ' at ' + opportunity.company_name +
+          '\nGenerated from reviewed proposals. Source master resume remains unchanged.\n\n' + sectionText;
 
         await env.DB.prepare(
           'INSERT INTO resumes (id, user_id, name, notes, is_master, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)'
