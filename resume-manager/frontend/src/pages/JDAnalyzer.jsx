@@ -238,6 +238,10 @@ export default function JDAnalyzer() {
     setValidationError(null);
     setServerError(null);
     setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
     setPartialOpportunityId(null);
     setPartialJdSaved(false);
   };
@@ -252,6 +256,10 @@ export default function JDAnalyzer() {
     setValidationError(null);
     setServerError(null);
     setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
     setPartialOpportunityId(null);
     setPartialJdSaved(false);
   };
@@ -324,6 +332,10 @@ export default function JDAnalyzer() {
       setValidationError(null);
       setServerError(null);
       setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
       setPartialOpportunityId(null);
       setPartialJdSaved(false);
     }
@@ -342,6 +354,10 @@ export default function JDAnalyzer() {
     setChatQuestion('');
     setChatError(null);
     setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
     setPartialOpportunityId(null);
     setPartialJdSaved(false);
   };
@@ -357,6 +373,10 @@ export default function JDAnalyzer() {
       setChatQuestion('');
       setChatError(null);
       setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
       setPartialOpportunityId(null);
       setPartialJdSaved(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
