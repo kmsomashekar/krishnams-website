@@ -6051,9 +6051,9 @@ ${JSON.stringify(answered)}`;
       // =======================================================================
       // MODULE: RESUME CUSTOMISATION SESSION API
       // =======================================================================
-      const customisationCreateMatch = pathname.match(/^\\/api\\/v1\\/opportunities\\/([^/]+)\\/customisation-sessions$/);
-      const customisationSessionMatch = pathname.match(/^\\/api\\/v1\\/customisation-sessions\\/([^/]+)$/);
-      const customisationEvidenceMatch = pathname.match(/^\\/api\\/v1\\/customisation-sessions\\/([^/]+)\\/evidence$/);
+      const customisationCreateMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/customisation-sessions$/);
+      const customisationSessionMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)$/);
+      const customisationEvidenceMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/evidence$/);
 
       if (customisationCreateMatch && method === 'POST') {
         const opportunityId = customisationCreateMatch[1];
