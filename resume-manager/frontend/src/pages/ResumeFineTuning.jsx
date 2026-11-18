@@ -40,6 +40,14 @@ async function saveReview(sessionId, payload) {
   }), 'Unable to save the proposal review.');
 }
 
+async function finalizeProposals(sessionId) {
+  return readApi(await fetch(`/api/v1/customisation-sessions/${sessionId}/finalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }), 'Unable to create the tailored resume version.');
+}
+
 export default function ResumeFineTuning() {
   const { id: opportunityId, sessionId } = useParams();
   const [session, setSession] = useState(null);
@@ -48,6 +56,8 @@ export default function ResumeFineTuning() {
   const [savingEvidence, setSavingEvidence] = useState(false);
   const [proposals, setProposals] = useState(null);
   const [drafts, setDrafts] = useState({});
+  const [tailoredResume, setTailoredResume] = useState(null);
+  const [finalizing, setFinalizing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -60,6 +70,7 @@ export default function ResumeFineTuning() {
       const [result, evidenceResult] = await Promise.all([fetchSession(sessionId), fetchEvidence()]);
       setSession(result);
       setProposals(result.proposals || null);
+      setTailoredResume(result.proposals?.tailored_resume || null);
       const verifiedEvidence = (evidenceResult?.evidence || []).filter(item => item.verification_status === 'VERIFIED');
       setEvidence(verifiedEvidence);
       const savedEvidence = Array.isArray(result.evidence_snapshot) ? result.evidence_snapshot : [];
@@ -85,6 +96,7 @@ export default function ResumeFineTuning() {
         evidence_snapshot: result.evidence_snapshot
       }));
       setProposals(result.proposals || null);
+      setTailoredResume(result.proposals?.tailored_resume || null);
       setDrafts({});
     } catch (err) {
       setError(err.message || 'Unable to save selected evidence.');
@@ -100,6 +112,7 @@ export default function ResumeFineTuning() {
     try {
       const result = await generateProposals(sessionId, regenerate);
       setProposals(result.proposals || null);
+      setTailoredResume(result.proposals?.tailored_resume || null);
       setSession(previous => ({ ...previous, status: result.status || previous?.status }));
       setDrafts({});
     } catch (err) {
@@ -134,10 +147,27 @@ export default function ResumeFineTuning() {
     }
   };
 
+  const handleFinalize = async () => {
+    if (finalizing || !active) return;
+    setFinalizing(true);
+    setError('');
+    try {
+      const result = await finalizeProposals(sessionId);
+      setTailoredResume(result);
+    } catch (err) {
+      setError(err.message || 'Unable to create the tailored resume version.');
+    } finally {
+      setFinalizing(false);
+    }
+  };
+
   const active = proposals?.active_generation_id
     ? proposals.generations?.find(item => item.id === proposals.active_generation_id)
     : null;
   const previousGenerations = (proposals?.generations || []).filter(item => item.id !== proposals?.active_generation_id);
+  const generationHasPending = !active || active.sections.some(section =>
+    section.decision !== 'NO_CHANGE' && !['ACCEPTED', 'EDITED', 'REJECTED'].includes(section.decision)
+  );
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -257,6 +287,23 @@ export default function ResumeFineTuning() {
                   ) : <p className="text-xs text-slate-500">No change recommended for this section.</p>}
                 </article>
               ))}
+              {tailoredResume ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-2">
+                  <p className="text-sm font-bold text-emerald-900">Tailored resume version created</p>
+                  <p className="text-xs text-emerald-800">{tailoredResume.resume_name} · {tailoredResume.version_label}</p>
+                  <p className="text-xs text-emerald-800">The approved sections are saved as AI Context in a separate resume record. Your master resume has not been changed.</p>
+                  <Link to="/resumes" className="inline-block text-xs font-semibold text-emerald-900 underline">Open Resumes</Link>
+                </div>
+              ) : (
+                <div className="border-t border-slate-100 pt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-slate-500">Once every proposed section is accepted, edited or rejected, create a separate tailored resume version.</p>
+                  <button type="button" onClick={handleFinalize}
+                    disabled={finalizing || generationHasPending}
+                    className="px-4 py-2 text-xs font-bold text-white bg-emerald-700 rounded hover:bg-emerald-600 disabled:opacity-50">
+                    {finalizing ? 'Creating version…' : 'Create Tailored Resume Version'}
+                  </button>
+                </div>
+              )}
             </section>
           )}
         </>
