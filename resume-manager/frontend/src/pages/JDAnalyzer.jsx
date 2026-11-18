@@ -81,6 +81,11 @@ async function createCustomisationSession(opportunityId) {
   return handleResponse(res, 'Failed to start resume fine-tuning.');
 }
 
+async function fetchCustomisationSession(sessionId) {
+  const res = await fetch(`/api/v1/customisation-sessions/${sessionId}`);
+  return handleResponse(res, 'Failed to retrieve the fine-tuning session.');
+}
+
 async function fetchResumeEvidence() {
   const res = await fetch('/api/v1/resume-evidence');
   return handleResponse(res, 'Failed to load the evidence repository.');
@@ -540,8 +545,9 @@ export default function JDAnalyzer() {
     setIsStartingCustomisation(true);
     setCustomisationError(null);
     try {
+      const created = await createCustomisationSession(savedOpportunityId);
       const [session, evidenceData] = await Promise.all([
-        createCustomisationSession(savedOpportunityId),
+        fetchCustomisationSession(created.id),
         fetchResumeEvidence()
       ]);
       setCustomisationSession(session);
