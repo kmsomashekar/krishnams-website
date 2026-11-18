@@ -18,5 +18,7 @@ ALTER TABLE resume_customisation_sessions
 CREATE INDEX IF NOT EXISTS idx_resume_customisation_source_version
   ON resume_customisation_sessions(user_id, source_resume_version_id);
 
-CREATE INDEX IF NOT EXISTS idx_resume_customisation_ats_analysis
-  ON resume_customisation_sessions(user_id, ats_analysis_id);
+-- Enforce one customisation session per opportunity and saved ATS analysis.
+-- Multiple legacy rows with NULL ats_analysis_id remain valid in SQLite.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_resume_customisation_opportunity_analysis
+  ON resume_customisation_sessions(user_id, opportunity_id, ats_analysis_id);
