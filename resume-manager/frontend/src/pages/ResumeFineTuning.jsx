@@ -48,12 +48,12 @@ async function fetchTailoredVersion(resumeId, versionId) {
 
 function getResumeSections(aiContext) {
   const sections = []; let current = null;
-  for (const line of String(aiContext || '').replace(/\\r/g, '').split('\\n')) {
+  for (const line of String(aiContext || '').replace(/\r/g, '').split('\n')) {
     if (line.startsWith('## ')) { if (current) sections.push(current); current = { title: line.slice(3).trim(), lines: [] }; }
     else if (current) current.lines.push(line);
   }
   if (current) sections.push(current);
-  return sections.map(section => ({ title: section.title, paragraphs: section.lines.join('\\n').trim().split(/\\n{2,}/).map(v => v.trim()).filter(Boolean) }));
+  return sections.map(section => ({ title: section.title, paragraphs: section.lines.join('\n').trim().split(/\n{2,}/).map(v => v.trim()).filter(Boolean) }));
 }
 
 function safeFileName(value) {
@@ -67,9 +67,9 @@ async function downloadResumeDocx(resume, aiContext) {
   ];
   for (const section of getResumeSections(aiContext)) {
     children.push(new Paragraph({ text: section.title, heading: HeadingLevel.HEADING_1, spacing: { before: 240, after: 100 } }));
-    for (const block of section.paragraphs) for (const line of block.split('\\n').map(v => v.trim()).filter(Boolean)) {
-      const bullet = /^[-•*]\\s/.test(line);
-      children.push(new Paragraph({ children: [new TextRun({ text: bullet ? line.replace(/^[-•*]\\s*/, '') : line, size: 20 })], spacing: { after: 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
+    for (const block of section.paragraphs) for (const line of block.split('\n').map(v => v.trim()).filter(Boolean)) {
+      const bullet = /^[-•*]\s/.test(line);
+      children.push(new Paragraph({ children: [new TextRun({ text: bullet ? line.replace(/^[-•*]\s*/, '') : line, size: 20 })], spacing: { after: 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
     }
   }
   const doc = new Document({ creator: 'Resume Manager', title: resume.resume_name || 'Tailored Resume', sections: [{ properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } }, children }] });
@@ -80,7 +80,7 @@ async function downloadResumeDocx(resume, aiContext) {
 function downloadResumePdf(resume, aiContext) {
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
   const margin = 48; const maxWidth = width - margin * 2; let y = margin;
-  const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\\x09\\x0A\\x0D\\x20-\\xFF]/g, '');
+  const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '');
   const ensure = amount => { if (y + amount > height - margin) { pdf.addPage(); y = margin; } };
   pdf.setFont('helvetica','bold'); pdf.setFontSize(18); const title = pdf.splitTextToSize(clean(resume.resume_name || 'Tailored Resume'), maxWidth); pdf.text(title, margin, y); y += title.length * 22 + 4;
   pdf.setFont('helvetica','normal'); pdf.setFontSize(9); pdf.setTextColor(90); pdf.text(clean(resume.version_label || 'JD-tailored resume'), margin, y); y += 24;
