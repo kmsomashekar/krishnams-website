@@ -84,6 +84,8 @@ export default function ResumeFineTuning() {
         status: result.status || previous?.status,
         evidence_snapshot: result.evidence_snapshot
       }));
+      setProposals(result.proposals || null);
+      setDrafts({});
     } catch (err) {
       setError(err.message || 'Unable to save selected evidence.');
     } finally {
@@ -132,8 +134,10 @@ export default function ResumeFineTuning() {
     }
   };
 
-  const active = proposals?.generations?.find(item => item.id === proposals.active_generation_id)
-    || proposals?.generations?.[proposals.generations.length - 1];
+  const active = proposals?.active_generation_id
+    ? proposals.generations?.find(item => item.id === proposals.active_generation_id)
+    : null;
+  const previousGenerations = (proposals?.generations || []).filter(item => item.id !== proposals?.active_generation_id);
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -183,6 +187,16 @@ export default function ResumeFineTuning() {
               <span className="text-xs text-slate-500">Selected: {selectedEvidenceIds.length} · Session: {session?.status || 'DRAFT'}</span>
             </div>
           </section>
+
+          {previousGenerations.length > 0 && !active && (
+            <section className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+              <h2 className="text-xs font-bold text-amber-900">Previous proposal generations retained</h2>
+              <p className="text-xs text-amber-800">These proposals were generated using an earlier evidence selection. They remain available in session history but are no longer active. Generate a fresh set using the updated evidence.</p>
+              <ul className="list-disc pl-5 text-xs text-amber-800">
+                {previousGenerations.map(item => <li key={item.id}>{item.created_at ? new Date(item.created_at).toLocaleString() : 'Saved generation'}</li>)}
+              </ul>
+            </section>
+          )}
 
           <section className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
             <div>
