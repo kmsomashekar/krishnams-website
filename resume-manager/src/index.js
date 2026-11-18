@@ -6211,6 +6211,20 @@ ${JSON.stringify(answered)}`;
           const sourceOwner = await env.DB.prepare(`SELECT rv.id FROM resume_versions rv JOIN resumes r ON r.id=rv.resume_id WHERE rv.id=? AND rv.resume_id=? AND r.user_id=?`).bind(body.resume_version_id,body.resume_id,userId).first();
           if (!sourceOwner) return buildErrorResponse('INVALID_SOURCE', 'The selected source resume/version does not belong to this account.', 400, headers);
         }
+        if (body.resume_version_id) {
+          const duplicate = await env.DB.prepare(
+            `SELECT e.id, e.title, e.verification_status
+             FROM resume_evidence e
+             JOIN resume_evidence_sources s ON s.evidence_id = e.id AND s.user_id = e.user_id
+             WHERE e.user_id = ? AND s.resume_version_id = ?
+               AND lower(trim(e.title)) = lower(trim(?))
+               AND lower(trim(coalesce(e.organisation, ''))) = lower(trim(coalesce(?, '')))
+               AND lower(trim(coalesce(e.role, ''))) = lower(trim(coalesce(?, '')))
+               AND e.evidence_type = ?
+             LIMIT 1`
+          ).bind(userId, body.resume_version_id, body.title.trim(), body.organisation || '', body.role || '', body.evidence_type).first();
+          if (duplicate) return buildErrorResponse('DUPLICATE_EVIDENCE', `This evidence already exists in the repository as "${duplicate.title}" (${duplicate.verification_status}). Open the saved record instead of creating another copy.`, 409, headers);
+        }
         const id = crypto.randomUUID(), sourceId = crypto.randomUUID(), now = new Date().toISOString();
         const listJson = value => JSON.stringify(Array.isArray(value) ? value : []);
         await env.DB.prepare(
@@ -6321,6 +6335,16 @@ ${JSON.stringify(answered)}`;
         if (!versions.length) return buildErrorResponse('RESUME_FILE_NOT_FOUND', 'Upload a source PDF to a resume version before extracting evidence.', 400, headers);
         const extracted = [];
         const pdfVersions = versions.filter(v => v.r2_object_key.toLowerCase().endsWith('.pdf'));
+        const savedEvidenceByVersion = new Map();
+        for (const version of pdfVersions) {
+          const { results: savedRows } = await env.DB.prepare(
+            `SELECT e.id, e.evidence_type, e.title, e.organisation, e.role, e.verification_status
+             FROM resume_evidence e
+             JOIN resume_evidence_sources s ON s.evidence_id = e.id AND s.user_id = e.user_id
+             WHERE e.user_id = ? AND s.resume_version_id = ?`
+          ).bind(userId, version.id).all();
+          savedEvidenceByVersion.set(version.id, savedRows || []);
+        }
         if (!pdfVersions.length) return buildErrorResponse('PDF_REQUIRED', 'No PDF source file is available. Upload a PDF version to extract evidence.', 415, headers);
         for (const version of pdfVersions) {
           const file = await env.BUCKET.get(version.r2_object_key);
@@ -6351,10 +6375,22 @@ ${JSON.stringify(answered)}`;
             for (const item of rows.slice(0,80)) {
               if (!item || typeof item.title !== 'string' || !item.title.trim()) continue;
               const types=['EXPERIENCE','PROJECT','ACHIEVEMENT'], classes=['DIRECT','TEAM','ADVISORY','INDEPENDENT','TRANSFERABLE'];
+              const evidenceType = types.includes(item.evidence_type)?item.evidence_type:'ACHIEVEMENT';
+              const title = item.title.slice(0,300);
+              const organisation = typeof item.organisation==='string'?item.organisation.slice(0,200):null;
+              const role = typeof item.role==='string'?item.role.slice(0,200):null;
+              const normalise = value => String(value || '').trim().toLocaleLowerCase();
+              const existingMatch = (savedEvidenceByVersion.get(version.id) || []).find(saved =>
+                saved.evidence_type === evidenceType &&
+                normalise(saved.title) === normalise(title) &&
+                normalise(saved.organisation) === normalise(organisation) &&
+                normalise(saved.role) === normalise(role)
+              );
               extracted.push({
-                evidence_type:types.includes(item.evidence_type)?item.evidence_type:'ACHIEVEMENT',
-                title:item.title.slice(0,300),organisation:typeof item.organisation==='string'?item.organisation.slice(0,200):null,
-                role:typeof item.role==='string'?item.role.slice(0,200):null,
+                existing_match: existingMatch ? { id: existingMatch.id, title: existingMatch.title, verification_status: existingMatch.verification_status } : null,
+                evidence_type:evidenceType,
+                title,organisation,
+                role,
                 description:typeof item.description==='string'?item.description.slice(0,5000):null,
                 responsibilities:typeof item.responsibilities==='string'?item.responsibilities.slice(0,5000):null,
                 actions_taken:typeof item.actions_taken==='string'?item.actions_taken.slice(0,5000):null,
