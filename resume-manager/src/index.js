@@ -5882,7 +5882,7 @@ ${JSON.stringify(answered)}`;
         let resumeVersion = null;
         if (opportunity.resume_version_id) {
           resumeVersion = await env.DB.prepare(
-            `SELECT id, version_label, target_role, r2_object_key FROM resume_versions WHERE id = ?`
+            `SELECT id, resume_id, version_label, target_role, r2_object_key FROM resume_versions WHERE id = ?`
           )
           .bind(opportunity.resume_version_id)
           .first();
