@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 // --- SINGLE-PASS API RESPONSE PARSER ---
 async function handleResponse(res, defaultErrorText) {
@@ -23,6 +23,11 @@ async function handleResponse(res, defaultErrorText) {
 async function fetchResumes() {
   const res = await fetch('/api/v1/resumes');
   return handleResponse(res, 'Failed to load resumes.');
+}
+
+async function fetchOpportunityDetail(id) {
+  const res = await fetch(`/api/v1/opportunities/${id}`);
+  return handleResponse(res, 'Failed to load the saved opportunity.');
 }
 
 async function fetchResumeDetail(id) {
@@ -144,6 +149,8 @@ function getScreeningLabel(result) {
 }
 
 export default function JDAnalyzer() {
+  const [searchParams] = useSearchParams();
+  const opportunityIdFromQuery = searchParams.get('opportunityId');
   // --- FORM STATES ---
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [selectedVersionId, setSelectedVersionId] = useState('');
@@ -181,7 +188,8 @@ export default function JDAnalyzer() {
   const [isStartingCustomisation, setIsStartingCustomisation] = useState(false);
   const [isSavingEvidence, setIsSavingEvidence] = useState(false);
   const [evidenceList, setEvidenceList] = useState([]);
-
+  const [isRestoringSavedOpportunity, setIsRestoringSavedOpportunity] = useState(false);
+  const [restoreOpportunityError, setRestoreOpportunityError] = useState(null);
 
   // --- BASE QUERIES ---
   const { data: resumesData, isLoading: isResumesLoading } = useQuery({
@@ -204,6 +212,48 @@ export default function JDAnalyzer() {
   });
   const companiesList = companiesData?.companies || [];
 
+  // Restore a previously saved JD analysis when reopening an opportunity.
+  useEffect(() => {
+    if (!opportunityIdFromQuery) return;
+    let cancelled = false;
+    setIsRestoringSavedOpportunity(true);
+    setRestoreOpportunityError(null);
+    fetchOpportunityDetail(opportunityIdFromQuery)
+      .then(opportunity => {
+        if (cancelled) return;
+        const savedAnalysis = opportunity?.ats_analysis?.analysis_json;
+        const resumeVersion = opportunity?.resume_version;
+        if (!savedAnalysis || !resumeVersion?.id || !resumeVersion?.resume_id || !opportunity?.job_description?.raw_text) {
+          throw new Error('This opportunity is missing its saved JD analysis, job description, or linked resume version.');
+        }
+        setSavedOpportunityId(opportunity.id);
+        setSelectedResumeId(resumeVersion.resume_id);
+        setSelectedVersionId(resumeVersion.id);
+        setCompany(opportunity.company?.name || '');
+        setJobTitle(opportunity.job_title || '');
+        setJdUrl(opportunity.application_url || '');
+        setJdText(opportunity.job_description.raw_text);
+        setAnalysisResult({ analysis: savedAnalysis });
+        setRequirementConfirmationDrafts({});
+        setChatMessages([]);
+        setChatQuestion('');
+        setChatError(null);
+        setCustomisationSession(null);
+        setCustomisationError(null);
+        setSelectedEvidenceIds([]);
+        setEvidenceList([]);
+        setPartialOpportunityId(null);
+        setPartialJdSaved(false);
+      })
+      .catch(error => {
+        if (!cancelled) setRestoreOpportunityError(error.message || 'Unable to reopen the saved opportunity.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsRestoringSavedOpportunity(false);
+      });
+    return () => { cancelled = true; };
+  }, [opportunityIdFromQuery]);
+
   // --- AUTO-SELECTION LOGIC ---
   useEffect(() => {
     if (resumesList.length === 1 && !selectedResumeId) {
@@ -212,6 +262,7 @@ export default function JDAnalyzer() {
   }, [resumesList, selectedResumeId]);
 
   useEffect(() => {
+    if (selectedVersionId && versionsList.some(version => version.id === selectedVersionId)) return;
     if (versionsList.length > 0) {
       const activeVersion = versionsList.find(v => v.is_active === 1 || v.is_active === true);
       if (activeVersion) {
@@ -224,7 +275,7 @@ export default function JDAnalyzer() {
     } else {
       setSelectedVersionId('');
     }
-  }, [versionsList]);
+  }, [versionsList, selectedVersionId]);
 
   // --- FORM MODIFICATION TRIPPERS (CLEARING STALE ANALYSIS/CHAT/SAVE STATUS) ---
   const handleResumeChange = (e) => {
