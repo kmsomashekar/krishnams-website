@@ -680,6 +680,14 @@ console.log(
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-0.5">{job_title}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {job_description?.raw_text && ats_analysis?.analysis_json && resume_version?.id && (
+              <Link
+                to={`/jd-analyzer?opportunityId=${encodeURIComponent(opportunityId)}`}
+                className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors"
+              >
+                Open JD Analysis / Fine-tuning
+              </Link>
+            )}
             <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${getStatusBadgeClass(status)}`}>
               {OPPORTUNITY_STATUS_LABELS[status] || status}
             </span>
