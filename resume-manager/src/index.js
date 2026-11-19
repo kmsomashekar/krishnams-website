@@ -6795,17 +6795,19 @@ ${JSON.stringify(answered)}`;
           ).bind(versionId, resumeId).first();
           if (!version) return buildErrorResponse('NOT_FOUND', 'Resume version not found.', 404, headers);
           if (version.is_active === 1 || version.is_active === true) return buildErrorResponse('ACTIVE_VERSION_PROTECTED', 'The active resume version cannot be deleted. Make another version active first.', 409, headers);
-          const [ats, opportunities, sessions] = await Promise.all([
+          const [ats, opportunities, sessions, evidenceSources] = await Promise.all([
             env.DB.prepare('SELECT COUNT(*) AS count FROM ats_analysis WHERE resume_version_id = ?').bind(versionId).first(),
             env.DB.prepare('SELECT COUNT(*) AS count FROM opportunities WHERE resume_version_id = ?').bind(versionId).first(),
-            env.DB.prepare('SELECT COUNT(*) AS count FROM resume_customisation_sessions WHERE source_resume_version_id = ?').bind(versionId).first()
+            env.DB.prepare('SELECT COUNT(*) AS count FROM resume_customisation_sessions WHERE source_resume_version_id = ? OR generated_resume_version_id = ?').bind(versionId, versionId).first(),
+            env.DB.prepare('SELECT COUNT(*) AS count FROM resume_evidence_sources WHERE resume_version_id = ?').bind(versionId).first()
           ]);
-          const linkedAts = Number(ats?.count || 0), linkedOpportunities = Number(opportunities?.count || 0), linkedSessions = Number(sessions?.count || 0);
-          if (linkedAts || linkedOpportunities || linkedSessions) {
+          const linkedAts = Number(ats?.count || 0), linkedOpportunities = Number(opportunities?.count || 0), linkedSessions = Number(sessions?.count || 0), linkedEvidence = Number(evidenceSources?.count || 0);
+          if (linkedAts || linkedOpportunities || linkedSessions || linkedEvidence) {
             const details = [];
             if (linkedAts) details.push(linkedAts + ' ATS analysis record(s)');
             if (linkedOpportunities) details.push(linkedOpportunities + ' opportunity record(s)');
             if (linkedSessions) details.push(linkedSessions + ' customisation session(s)');
+            if (linkedEvidence) details.push(linkedEvidence + ' evidence source record(s)');
             return buildErrorResponse('RESUME_VERSION_IN_USE', 'This version is linked to ' + details.join(', ') + '. It cannot be deleted to protect related data.', 409, headers);
           }
           await env.DB.prepare('DELETE FROM resume_versions WHERE id = ? AND resume_id = ?').bind(versionId, resumeId).run();
