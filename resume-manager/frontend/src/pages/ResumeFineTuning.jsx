@@ -61,8 +61,8 @@ function getResumeSections(aiContext, profile = {}) {
     else if (current) current.lines.push(line);
   }
   if (current) sections.push(current);
-  const internalMetadata = /^(?:tailored resume|jd[- ]tailored(?:\\s+\\d{4}-\\d{2}-\\d{2})?|tailored(?: resume)?(?:\\s+version)?|resume tailored for job description)$/i;
-  const metadataLine = /^(?:tailored resume|jd[- ]tailored(?:\\s+\\d{4}-\\d{2}-\\d{2})?|tailored(?: resume)?(?:\\s+version)?)(?:\\s*[:|—-].*)?$/i;
+  const internalMetadata = /^(?:tailored resume|jd[- ]tailored(?:\s+\\d{4}-\\d{2}-\\d{2})?|tailored(?: resume)?(?:\s+version)?|resume tailored for job description)$/i;
+  const metadataLine = /^(?:tailored resume|jd[- ]tailored(?:\s+\\d{4}-\\d{2}-\\d{2})?|tailored(?: resume)?(?:\s+version)?)(?:\s*[:|—-].*)?$/i;
   const parsed = sections
     .filter(section => !internalMetadata.test(section.title.trim()))
     .map(section => ({
