@@ -81,3 +81,15 @@ test('flags changed protected content instead of word-count-only preservation', 
   };
   assert.ok(validateResumePreservation(source, candidate).some(problem => problem.includes('achievements differs from the canonical')));
 });
+
+test('flags changed core competencies because they are source-protected', () => {
+  const source = parseResumeContextSections(sample);
+  const candidate = {
+    professional_summary: source.professional_summary,
+    core_competencies: source.core_competencies.replace('cybersecurity', 'cloud'),
+    professional_experience: source.professional_experience,
+    achievements: source.achievements,
+    technical_skills: source.technical_skills
+  };
+  assert.ok(validateResumePreservation(source, candidate).some(problem => problem.includes('core_competencies differs from the canonical')));
+});
