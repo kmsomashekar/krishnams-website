@@ -544,9 +544,10 @@ export default function ResumeFineTuning() {
                   <p className="text-xs text-emerald-800">The approved sections are saved in a separate resume record. Your master resume has not been changed. Generate either file below to download it.</p>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button type="button" onClick={() => handleDownload('docx')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-indigo-700 rounded hover:bg-indigo-600 disabled:opacity-50">{exportingFormat === 'docx' ? 'Preparing DOCX…' : 'Download DOCX'}</button>
-                    <button type="button" onClick={() => handleDownload('pdf')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50">{exportingFormat === 'pdf' ? 'Preparing PDF…' : 'Download PDF'}</button>
+                    <button type="button" disabled title="PDF export is temporarily unavailable while preserving the original document layout." className="px-4 py-2 text-xs font-bold text-slate-500 bg-slate-200 rounded cursor-not-allowed">PDF: Save from Word</button>
                     <Link to="/resumes" className="px-4 py-2 text-xs font-semibold text-emerald-900 underline">Open Resumes</Link>
                   </div>
+                  <p className="text-xs text-slate-500">Download the DOCX to preserve your original resume layout. Open it in Microsoft Word and use Save As → PDF. Direct PDF export is temporarily disabled because the current converter rebuilds the document and loses formatting.</p>
                 </div>
               ) : (
                 <div className="border-t border-slate-100 pt-4 flex flex-wrap items-center justify-between gap-3">
