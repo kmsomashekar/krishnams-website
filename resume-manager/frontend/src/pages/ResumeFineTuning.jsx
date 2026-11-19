@@ -316,7 +316,7 @@ export default function ResumeFineTuning() {
             <button type="button" onClick={() => handleGenerate(false)}
               disabled={generating || !['READY_FOR_PROPOSAL','PROPOSALS_READY','PROPOSALS_IN_REVIEW'].includes(session?.status)}
               className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50">
-              {generating ? 'Generating proposals…' : proposals ? 'Load Saved Proposals' : 'Generate Proposals'}
+              {generating ? 'Generating proposals…' : active ? 'Load Saved Proposals' : previousGenerations.length ? 'Generate Fresh Proposals' : 'Generate Proposals'}
             </button>
             {generating && <p className="text-xs text-indigo-700">The AI is preparing your proposals. Please keep this page open.</p>}
             {!['READY_FOR_PROPOSAL','PROPOSALS_READY','PROPOSALS_IN_REVIEW'].includes(session?.status) &&
