@@ -6186,14 +6186,20 @@ ${JSON.stringify(answered)}`;
         ).bind(session.opportunity_id, userId).first();
         if (!opportunity) return buildErrorResponse('NOT_FOUND', 'Linked opportunity not found.', 404, headers);
 
-        const sectionText = generation.sections.map(section => {
-          const content = section.decision === 'REJECTED'
+        const finalSections = generation.sections.map(section => ({
+          section_id: section.section_id,
+          content: String(section.decision === 'REJECTED'
             ? section.original_text
             : section.decision === 'EDITED'
               ? section.edited_text
-              : section.proposed_text || section.original_text;
-          return '## ' + String(section.title || section.section_id) + '\n' + String(content || '').trim();
-        }).join('\n\n');
+              : section.proposed_text || section.original_text || '').trim()
+        }));
+        const placeholderPattern = /(?:\[\s*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO|TBD|WRITE|PUT|ENSURE)[\s\S]{0,1000}?\]|(?:REPRODUCE ALL ORIGINAL CONTENT|INSERT (?:CONTENT|TEXT) HERE|PLACEHOLDER TEXT|TODO:|TBD:|CONTENT GOES HERE|ALL ROLES AND BULLETS ARE RETAINED))/i;
+        const invalidSection = finalSections.find(section => placeholderPattern.test(section.content));
+        if (invalidSection) return buildErrorResponse('RESUME_PLACEHOLDER_BLOCKED', 'The final resume contains placeholder/instruction text in ' + invalidSection.section_id.replaceAll('_', ' ') + '. Resume creation was blocked. Review or regenerate the proposals.', 409, headers);
+        const experienceSection = finalSections.find(section => section.section_id === 'professional_experience');
+        if (!experienceSection || experienceSection.content.split(/\s+/).filter(Boolean).length < 100) return buildErrorResponse('RESUME_EXPERIENCE_INCOMPLETE', 'Professional Experience is missing or incomplete. The tailored resume was not created.', 409, headers);
+        const sectionText = finalSections.map(section => '## ' + section.section_id.replaceAll('_', ' ') + '\n' + section.content).join('\n\n');
         if (!sectionText.trim()) return buildErrorResponse('EMPTY_RESUME', 'The reviewed sections contain no resume content.', 409, headers);
 
         const resumeId = crypto.randomUUID();
@@ -6281,6 +6287,13 @@ ${JSON.stringify(answered)}`;
           seen.add(item.section_id);
           const originalText = item.original_text.trim();
           const proposedText = item.proposed_text.trim();
+          const placeholderPattern = /(?:\[\s*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO|TBD|WRITE|PUT|ENSURE)[\s\S]{0,1000}?\]|(?:REPRODUCE ALL ORIGINAL CONTENT|INSERT (?:CONTENT|TEXT) HERE|PLACEHOLDER TEXT|TODO:|TBD:|CONTENT GOES HERE|ALL ROLES AND BULLETS ARE RETAINED))/i;
+          if (placeholderPattern.test(originalText) || placeholderPattern.test(proposedText)) {
+            return buildErrorResponse('AI_PLACEHOLDER_CONTENT', 'The AI returned placeholder or instruction text in ' + item.section_id.replaceAll('_', ' ') + '. No proposal was saved. Please regenerate.', 502, headers);
+          }
+          if (item.section_id === 'professional_experience' && proposedText.split(/\s+/).filter(Boolean).length < 100) {
+            return buildErrorResponse('AI_INCOMPLETE_EXPERIENCE', 'The Professional Experience section is incomplete. It must contain the actual employment history and responsibilities, not a short placeholder or summary. No proposal was saved.', 502, headers);
+          }
           const rawEvidenceIds = Array.isArray(item.evidence_ids) ? item.evidence_ids : [];
           const safeEvidenceIds = [...new Set(rawEvidenceIds.filter(id => typeof id === 'string' && validEvidenceIds.has(id)))];
           if (rawEvidenceIds.length !== safeEvidenceIds.length) console.warn('Proposal generation: discarded unsupported evidence references for section', item.section_id);
