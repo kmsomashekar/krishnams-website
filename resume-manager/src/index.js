@@ -6257,6 +6257,13 @@ ${JSON.stringify(answered)}`;
               ? section.edited_text
               : section.proposed_text || section.original_text || '').trim()
         }));
+        const sourceForFinal = await env.DB.prepare('SELECT rv.ai_context FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?').bind(session.source_resume_version_id, session.source_resume_id, userId).first();
+        if (!sourceForFinal?.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'The source Master Resume could not be reloaded for final validation.', 409, headers);
+        const canonicalSourceSections = parseResumeContextSections(sourceForFinal.ai_context);
+        const evidenceForFinal = JSON.parse(session.evidence_snapshot_json || '[]');
+        const finalContentBySection = Object.fromEntries(finalSections.map(section => [section.section_id, section.content]));
+        const finalIntegrityProblems = validateResumePreservation(canonicalSourceSections, finalContentBySection, JSON.stringify(evidenceForFinal));
+        if (finalIntegrityProblems.length) return buildErrorResponse('RESUME_INTEGRITY_FAILED', 'Final resume blocked: ' + finalIntegrityProblems.join('; ') + '. Review the accepted/edited sections and regenerate if required.', 409, headers);
         const placeholderPattern = /(?:\[\s*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO|TBD|WRITE|PUT|ENSURE)[\s\S]{0,1000}?\]|(?:REPRODUCE ALL ORIGINAL CONTENT|INSERT (?:CONTENT|TEXT) HERE|PLACEHOLDER TEXT|TODO:|TBD:|CONTENT GOES HERE|ALL ROLES AND BULLETS ARE RETAINED))/i;
         const invalidSection = finalSections.find(section => placeholderPattern.test(section.content));
         if (invalidSection) return buildErrorResponse('RESUME_PLACEHOLDER_BLOCKED', 'The final resume contains placeholder/instruction text in ' + invalidSection.section_id.replaceAll('_', ' ') + '. Resume creation was blocked. Review or regenerate the proposals.', 409, headers);
