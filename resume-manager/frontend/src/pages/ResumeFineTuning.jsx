@@ -139,7 +139,7 @@ async function downloadResumeDocx(resume, aiContext) {
     title: resume.target_role || 'Professional Resume',
     sections: [{
       properties: { page: { margin: { top: 605, right: 835, bottom: 605, left: 835 } } },
-      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Krishna M S  |  IT & Cybersecurity Leader', size: 15, color: '666666', font: 'Arial' })] })] },
+      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Krishna M S  |  IT & Cybersecurity Leader', size: 15, color: '666666', font: 'Arial' })] })] }) },
       children
     }]
   });
