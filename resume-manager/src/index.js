@@ -8,55 +8,13 @@
 
 // Resume tailoring guardrails: derive canonical source sections and detect unsupported facts.
 function parseResumeContextSections(context) {
-  const raw = {};
-  let heading = null, lines = [];
-  const flush = () => {
-    if (heading) raw[heading] = lines.join('\n').trim();
-  };
-  const headingAliases = {
-    'professional profile': 'professional_profile',
-    'professional summary': 'professional_profile',
-    'summary': 'professional_profile',
-    'target role positioning': 'target_role_positioning',
-    'leadership scope': 'leadership_scope',
-    'leadership and scope': 'leadership_scope',
-    'leadership scope and responsibilities': 'leadership_scope',
-    'core expertise': 'core_expertise',
-    'core competencies': 'core_expertise',
-    'key achievements': 'key_achievements',
-    'achievements': 'key_achievements',
-    'technologies platforms': 'technologies_platforms',
-    'technologies and platforms': 'technologies_platforms',
-    'technical skills': 'technologies_platforms',
-    'security governance': 'security_governance',
-    'security and governance': 'security_governance',
-    'certifications': 'certifications',
-    'career facts constraints': 'career_facts',
-    'career facts and constraints': 'career_facts',
-    'important evidence': 'important_evidence',
-    'professional experience': 'professional_experience',
-    'work experience': 'professional_experience',
-    'experience': 'professional_experience'
-  };
-  const isHeading = line => {
-    const normalized = String(line || '').replace(/^#{1,3}\s*/, '').replace(/[*_]/g, '').replace(/[:：]$/, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    return headingAliases[normalized] || null;
-  };
-  for (const line of String(context || '').replace(/\r/g, '').split('\n')) {
-    const next = isHeading(line);
-    if (next) { flush(); heading = next; lines = []; }
-    else if (heading) lines.push(line);
-  }
+  const raw = {}; let heading=null, lines=[];
+  const aliases={'professional profile':'professional_summary','professional summary':'professional_summary','summary':'professional_summary','target role positioning':'professional_summary','leadership scope':'core_competencies','leadership and scope':'core_competencies','core expertise':'core_competencies','core competencies':'core_competencies','key achievements':'achievements','achievements':'achievements','technologies platforms':'technical_skills','technologies and platforms':'technical_skills','technical skills':'technical_skills','security governance':'technical_skills','security and governance':'technical_skills','certifications':'technical_skills','professional experience':'professional_experience','work experience':'professional_experience','employment history':'professional_experience','experience':'professional_experience'};
+  const normalize=line=>String(line||'').replace(/^#{1,3}\s*/,'').replace(/[*_]/g,'').replace(/[:：]$/,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const flush=()=>{if(heading){const value=lines.join('\n').trim();if(value)raw[heading]=[raw[heading],value].filter(Boolean).join('\n\n');}};
+  for(const line of String(context||'').replace(/\r/g,'').split('\n')){const id=aliases[normalize(line)];if(id){flush();heading=id;lines=[];}else if(heading)lines.push(line);}
   flush();
-  const join = (...keys) => keys.map(key => raw[key]).filter(Boolean).join('\n\n').trim();
-  return {
-    professional_summary: join('professional_profile', 'target_role_positioning'),
-    core_competencies: join('core_expertise', 'leadership_scope', 'security_governance'),
-    professional_experience: join('professional_experience', 'leadership_scope', 'career_facts', 'important_evidence'),
-    achievements: join('key_achievements', 'important_evidence'),
-    technical_skills: join('technologies_platforms', 'security_governance', 'certifications'),
-    _sourceAll: Object.values(raw).join('\n\n')
-  };
+  return {professional_summary:raw.professional_summary||'',core_competencies:raw.core_competencies||'',professional_experience:raw.professional_experience||'',achievements:raw.achievements||'',technical_skills:raw.technical_skills||'',_sourceAll:Object.values(raw).join('\n\n')};
 }
 function resumeFactTokens(text) {
   return new Set((String(text || '').match(/\b(?:\$|₹|€|£)?\d+(?:[,.]\d+)*(?:%|\+|\s?(?:years?|months?|days?|hours?|K|M|B|L|Cr))?\b/gi) || [])
@@ -508,13 +466,14 @@ async function callAIProviderWithDocument(base64Data, env) {
     "TARGET ROLE POSITIONING\n\n" +
     "LEADERSHIP & SCOPE\n\n" +
     "CORE EXPERTISE\n\n" +
+    "PROFESSIONAL EXPERIENCE\n\n" +
     "KEY ACHIEVEMENTS\n\n" +
     "TECHNOLOGIES & PLATFORMS\n\n" +
     "SECURITY & GOVERNANCE\n\n" +
     "CERTIFICATIONS\n\n" +
     "CAREER FACTS & CONSTRAINTS\n\n" +
     "IMPORTANT EVIDENCE\n\n" +
-    "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
+    "Under PROFESSIONAL EXPERIENCE, reproduce every employer, title, date range, and responsibility/achievement bullet as separate role entries in source order. Do not combine roles or summarise them. If source text is unclear, mark it as unclear rather than inventing.\n" +\n    "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
 
   const requestBody = {
     contents: [
@@ -6357,12 +6316,15 @@ ${JSON.stringify(answered)}`;
         if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
         const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
         const sourceSections = parseResumeContextSections(source.ai_context);
+        if (!sourceSections.professional_experience || sourceSections.professional_experience.split(/\s+/).filter(Boolean).length < 80) return buildErrorResponse('SOURCE_EXPERIENCE_MISSING', 'The Master Resume AI Context does not contain a complete role-by-role Professional Experience section. Regenerate AI Context from the Master Resume before tailoring. No custom resume was created.', 409, headers);
         const sourceSectionsComplete = sectionIds.every(id => typeof sourceSections[id] === 'string' && sourceSections[id].trim());
         if (!sourceSectionsComplete) return buildErrorResponse('SOURCE_RESUME_STRUCTURE', 'The Master Resume AI Context does not contain all required sections in a recognisable format. Please correct the source resume structure before tailoring.', 409, headers);
         const prompt = [
           'Tailor the resume conservatively. The source resume is authoritative; never rewrite it into a short generic profile.',
           'Do not invent facts, numbers, metrics, dates, employers, job titles, certifications, tools, budgets, responsibilities, or outcomes. Any numeric claim must appear verbatim in the source resume or selected verified evidence.',
           'Keep each employer, title, date range and position separate exactly as in the source. Do not combine roles, create a current role, or alter dates. Preserve all substantive bullets and details.',
+          'Do not create or rewrite Professional Experience. Return proposed_text as an empty string for professional_experience; this section must remain exactly as extracted from the Master Resume.',
+          'Keep Core Competencies, Key Achievements, and Technical Skills distinct. Do not repeat the same metric or bullet across sections. Use achievements only for distinct outcomes, competencies only for capability keywords, and skills only for tools/platforms/frameworks.',
           'Make only targeted keyword and emphasis changes supported by source facts. Keep professional experience, achievements, and technical skills at least 82% of their source word count. If safe tailoring cannot be done without omission, return proposed_text empty for that section.',
           'The source resume is the authoritative document. Preserve its complete structure, every employment entry (employer, title, dates), and all meaningful responsibilities, achievements, metrics, projects, and technical skills.',
           'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
@@ -6432,6 +6394,8 @@ ${JSON.stringify(answered)}`;
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
         // Never trust model-generated source text: replace it with the exact parsed Master Resume section.
         for (const section of sections) section.original_text = sourceSections[section.section_id];
+        const experienceProposal = sections.find(section => section.section_id === 'professional_experience');
+        if (experienceProposal) { experienceProposal.proposed_text = ''; experienceProposal.decision = 'NO_CHANGE'; experienceProposal.rationale = 'Professional Experience is preserved verbatim from the Master Resume and is not AI-tailored.'; }
         const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
         const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
         if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
