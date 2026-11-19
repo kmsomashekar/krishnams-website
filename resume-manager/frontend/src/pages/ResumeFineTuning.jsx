@@ -199,7 +199,7 @@ function createDocxParagraphs(sections) {
       for (const line of lines) {
         const bullet = /^(?:[•●▪◦]|[-*])\s+/.test(line);
         const numbered = /^\d+[.)]\s+/.test(line);
-        const clean = line.replace(/^(?:[•●▪◦]|[-*])\s+/, '').replace(/^\d+[.)]\s+/, '');
+        const clean = bullet ? line.replace(/^(?:[•●▪◦]|[-*])\s+/, '') : line;
         output.push(new Paragraph({
           children: [new TextRun(clean)],
           bullet: bullet ? {level: 0} : undefined,
