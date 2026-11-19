@@ -57,6 +57,11 @@ function validateResumePreservation(sourceSections, candidateSections, evidenceT
   const dateTokens = sourceExperience.match(/\b(?:19|20)\d{2}\b/g) || [];
   const missingDates = [...new Set(dateTokens)].filter(year => !candidateExperience.includes(year));
   if (missingDates.length) problems.push('professional_experience is missing source employment dates: ' + missingDates.join(', '));
+  const dateRangePattern = /(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}|present|current)/gi;
+  const sourceRanges = sourceExperience.match(dateRangePattern) || [];
+  const candidateRanges = candidateExperience.match(dateRangePattern) || [];
+  if (sourceRanges.length && candidateRanges.length < sourceRanges.length) problems.push('professional_experience has fewer employment date ranges than the source (' + candidateRanges.length + ' vs ' + sourceRanges.length + ')');
+  for (const range of sourceRanges) if (!candidateExperience.toLowerCase().includes(range.toLowerCase().replace(/[–—]/g, '-'))) problems.push('employment date range missing or altered: ' + range);
   const unsupportedNumbers = findUnsupportedNumbers(Object.values(candidateSections || {}).join('\n'), sourceAll);
   if (unsupportedNumbers.length) problems.push('unsupported numeric claims: ' + unsupportedNumbers.join(', '));
   return problems;
