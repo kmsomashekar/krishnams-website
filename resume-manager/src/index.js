@@ -6382,23 +6382,21 @@ ${JSON.stringify(answered)}`;
         const validEvidenceIds = new Set(evidence.map(x => x.id));
         const seen = new Set();
         const sections = [];
+        const protectedSectionIds = new Set(['core_competencies', 'professional_experience', 'achievements', 'technical_skills']);
         for (const item of parsed.sections) {
           if (!item || !sectionIds.includes(item.section_id) || seen.has(item.section_id)) return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal contains a missing, unknown, or duplicate section ID. No proposal was saved.', 502, headers);
-          if (typeof item.original_text !== 'string' || typeof item.proposed_text !== 'string') return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal section ' + item.section_id + ' is missing valid original_text or proposed_text. No proposal was saved.', 502, headers);
+          if (typeof item.proposed_text !== 'string') return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal section ' + item.section_id + ' is missing valid proposed_text. No proposal was saved.', 502, headers);
           seen.add(item.section_id);
-          const originalText = item.original_text.trim();
-          const proposedText = item.proposed_text.trim();
+          // Original text always comes from the canonical Master Resume, never Gemini.
+          const originalText = String(sourceSections[item.section_id] || '').trim();
+          const proposedText = protectedSectionIds.has(item.section_id) ? '' : item.proposed_text.trim();
           const placeholderPattern = /(?:\[\s*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO|TBD|WRITE|PUT|ENSURE)[\s\S]{0,1000}?\]|(?:REPRODUCE ALL ORIGINAL CONTENT|INSERT (?:CONTENT|TEXT) HERE|PLACEHOLDER TEXT|TODO:|TBD:|CONTENT GOES HERE|ALL ROLES AND BULLETS ARE RETAINED))/i;
-          if (placeholderPattern.test(originalText) || placeholderPattern.test(proposedText)) {
+          if (placeholderPattern.test(proposedText)) {
             return buildErrorResponse('AI_PLACEHOLDER_CONTENT', 'The AI returned placeholder or instruction text in ' + item.section_id.replaceAll('_', ' ') + '. No proposal was saved. Please regenerate.', 502, headers);
           }
-          // Professional Experience is preserved from the canonical source below; do not validate Gemini's copy.
-          // The model may return an empty or truncated version because this section is not AI-tailored.
           const rawEvidenceIds = Array.isArray(item.evidence_ids) ? item.evidence_ids : [];
           const safeEvidenceIds = [...new Set(rawEvidenceIds.filter(id => typeof id === 'string' && validEvidenceIds.has(id)))];
           if (rawEvidenceIds.length !== safeEvidenceIds.length) console.warn('Proposal generation: discarded unsupported evidence references for section', item.section_id);
-          // Never reject based on AI word count. Protected sections are restored
-          // from canonical source below, so a truncated AI response cannot block generation.
           sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: String(item.rationale || 'Proposal generated for this section.').slice(0, 3000), evidence_ids: safeEvidenceIds, decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
         }
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
