@@ -6316,8 +6316,14 @@ ${JSON.stringify(answered)}`;
         if (!source || !source.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'Source resume version has no saved AI Context.', 409, headers);
         if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
         const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
+        const sourceSections = parseResumeContextSections(source.ai_context);
+        const sourceSectionsComplete = sectionIds.every(id => typeof sourceSections[id] === 'string' && sourceSections[id].trim());
+        if (!sourceSectionsComplete) return buildErrorResponse('SOURCE_RESUME_STRUCTURE', 'The Master Resume AI Context does not contain all required sections in a recognisable format. Please correct the source resume structure before tailoring.', 409, headers);
         const prompt = [
-          'Tailor the resume to the job description WITHOUT shortening, summarising, or dropping the candidate’s original resume content.',
+          'Tailor the resume conservatively. The source resume is authoritative; never rewrite it into a short generic profile.',
+          'Do not invent facts, numbers, metrics, dates, employers, job titles, certifications, tools, budgets, responsibilities, or outcomes. Any numeric claim must appear verbatim in the source resume or selected verified evidence.',
+          'Keep each employer, title, date range and position separate exactly as in the source. Do not combine roles, create a current role, or alter dates. Preserve all substantive bullets and details.',
+          'Make only targeted keyword and emphasis changes supported by source facts. Keep professional experience, achievements, and technical skills at least 82% of their source word count. If safe tailoring cannot be done without omission, return proposed_text empty for that section.',
           'The source resume is the authoritative document. Preserve its complete structure, every employment entry (employer, title, dates), and all meaningful responsibilities, achievements, metrics, projects, and technical skills.',
           'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
           'Never invent or infer employers, titles, dates, tenure, scope, team size, budgets, metrics, outcomes, tools, certifications, ownership or responsibilities.',
@@ -6327,6 +6333,7 @@ ${JSON.stringify(answered)}`;
           'Add JD keywords only when supported by source facts. If no safe change is possible, use an empty proposed_text.',
           'For evidence_ids, return ONLY exact ID strings copied from the supplied verified evidence records. If unsure or no evidence applies, return an empty array. Never invent IDs. Return complete replacement text for each section.',
           'Return ONLY JSON: {"sections":[{"section_id":"...","title":"...","original_text":"...","proposed_text":"...","rationale":"...","evidence_ids":[]}]}. Include exactly these section IDs once each, in this order: ' + sectionIds.join(', '),
+          'CANONICAL SOURCE SECTIONS (these are the exact text to preserve as original_text):', JSON.stringify(sourceSections),
           'SOURCE RESUME AI CONTEXT:', source.ai_context.slice(0, 90000),
           'VERIFIED EVIDENCE:', JSON.stringify(evidence),
           'JOB DESCRIPTION:', String(session.jd_text_snapshot || '').slice(0, 25000),
