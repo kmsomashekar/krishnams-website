@@ -7,6 +7,7 @@ import Login from './pages/Login.jsx';
 import AdminUsers from './components/AdminUsers.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Opportunities from './pages/Opportunities.jsx';
+import JobFeed from './pages/JobFeed.jsx';
 import OpportunityDetail from './pages/OpportunityDetail.jsx';
 import StarInterview from './pages/StarInterview.jsx';
 import Resumes from './pages/Resumes.jsx';
@@ -78,6 +79,7 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/jd-analyzer" element={<JDAnalyzer />} />
+            <Route path="/job-feed" element={<JobFeed />} />
             <Route path="/opportunities/:id/resume-fine-tuning/:sessionId" element={<ResumeFineTuning />} />
             <Route path="/opportunities" element={<Opportunities />} />
 			      <Route path="/outreach" element={<Outreach />} />
