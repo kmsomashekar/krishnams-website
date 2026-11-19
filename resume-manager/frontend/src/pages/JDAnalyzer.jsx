@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 // --- SINGLE-PASS API RESPONSE PARSER ---
 async function handleResponse(res, defaultErrorText) {
@@ -23,6 +23,11 @@ async function handleResponse(res, defaultErrorText) {
 async function fetchResumes() {
   const res = await fetch('/api/v1/resumes');
   return handleResponse(res, 'Failed to load resumes.');
+}
+
+async function fetchOpportunityDetail(id) {
+  const res = await fetch(`/api/v1/opportunities/${id}`);
+  return handleResponse(res, 'Failed to load the saved opportunity.');
 }
 
 async function fetchResumeDetail(id) {
@@ -72,6 +77,52 @@ async function createAtsAnalysis({ opportunityId, payload }) {
 
   return handleResponse(res, 'Failed to save ATS analysis.');
 }
+
+async function createCustomisationSession(opportunityId) {
+  const res = await fetch(`/api/v1/opportunities/${opportunityId}/customisation-sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return handleResponse(res, 'Failed to start resume fine-tuning.');
+}
+
+async function fetchCustomisationSession(sessionId) {
+  const res = await fetch(`/api/v1/customisation-sessions/${sessionId}`);
+  return handleResponse(res, 'Failed to retrieve the fine-tuning session.');
+}
+
+async function fetchResumeEvidence() {
+  const res = await fetch('/api/v1/resume-evidence');
+  return handleResponse(res, 'Failed to load the evidence repository.');
+}
+
+async function saveCustomisationEvidence(sessionId, evidenceIds) {
+  const res = await fetch(`/api/v1/customisation-sessions/${sessionId}/evidence`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ evidence_ids: evidenceIds })
+  });
+  return handleResponse(res, 'Failed to save selected evidence.');
+}
+
+async function generateCustomisationProposals(sessionId, regenerate = false) {
+  const res = await fetch(`/api/v1/customisation-sessions/${sessionId}/proposals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ regenerate })
+  });
+  return handleResponse(res, 'Failed to generate resume proposals.');
+}
+
+async function saveCustomisationReview(sessionId, payload) {
+  const res = await fetch(`/api/v1/customisation-sessions/${sessionId}/proposals`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to save the proposal review.');
+}
+
 async function runJDAnalysis(payload) {
   const res = await fetch('/api/v1/jd-analyzer/analyze', {
     method: 'POST',
@@ -116,6 +167,9 @@ function getScreeningLabel(result) {
 }
 
 export default function JDAnalyzer() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const opportunityIdFromQuery = searchParams.get('opportunityId');
   // --- FORM STATES ---
   const [selectedResumeId, setSelectedResumeId] = useState('');
   const [selectedVersionId, setSelectedVersionId] = useState('');
@@ -147,6 +201,18 @@ export default function JDAnalyzer() {
   const [savedOpportunityId, setSavedOpportunityId] = useState(null);
   const [partialOpportunityId, setPartialOpportunityId] = useState(null);
   const [partialJdSaved, setPartialJdSaved] = useState(false);
+  const [customisationSession, setCustomisationSession] = useState(null);
+  const [customisationError, setCustomisationError] = useState(null);
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState([]);
+  const [isStartingCustomisation, setIsStartingCustomisation] = useState(false);
+  const [isSavingEvidence, setIsSavingEvidence] = useState(false);
+  const [isGeneratingProposals, setIsGeneratingProposals] = useState(false);
+  const [isSavingProposalReview, setIsSavingProposalReview] = useState(false);
+  const [proposalHistory, setProposalHistory] = useState(null);
+  const [proposalEditDrafts, setProposalEditDrafts] = useState({});
+  const [evidenceList, setEvidenceList] = useState([]);
+  const [isRestoringSavedOpportunity, setIsRestoringSavedOpportunity] = useState(false);
+  const [restoreOpportunityError, setRestoreOpportunityError] = useState(null);
 
   // --- BASE QUERIES ---
   const { data: resumesData, isLoading: isResumesLoading } = useQuery({
@@ -169,6 +235,48 @@ export default function JDAnalyzer() {
   });
   const companiesList = companiesData?.companies || [];
 
+  // Restore a previously saved JD analysis when reopening an opportunity.
+  useEffect(() => {
+    if (!opportunityIdFromQuery) return;
+    let cancelled = false;
+    setIsRestoringSavedOpportunity(true);
+    setRestoreOpportunityError(null);
+    fetchOpportunityDetail(opportunityIdFromQuery)
+      .then(opportunity => {
+        if (cancelled) return;
+        const savedAnalysis = opportunity?.ats_analysis?.analysis_json;
+        const resumeVersion = opportunity?.resume_version;
+        if (!savedAnalysis || !resumeVersion?.id || !resumeVersion?.resume_id || !opportunity?.job_description?.raw_text) {
+          throw new Error('This opportunity is missing its saved JD analysis, job description, or linked resume version.');
+        }
+        setSavedOpportunityId(opportunity.id);
+        setSelectedResumeId(resumeVersion.resume_id);
+        setSelectedVersionId(resumeVersion.id);
+        setCompany(opportunity.company?.name || '');
+        setJobTitle(opportunity.job_title || '');
+        setJdUrl(opportunity.application_url || '');
+        setJdText(opportunity.job_description.raw_text);
+        setAnalysisResult({ analysis: savedAnalysis });
+        setRequirementConfirmationDrafts({});
+        setChatMessages([]);
+        setChatQuestion('');
+        setChatError(null);
+        setCustomisationSession(null);
+        setCustomisationError(null);
+        setSelectedEvidenceIds([]);
+        setEvidenceList([]);
+        setPartialOpportunityId(null);
+        setPartialJdSaved(false);
+      })
+      .catch(error => {
+        if (!cancelled) setRestoreOpportunityError(error.message || 'Unable to reopen the saved opportunity.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsRestoringSavedOpportunity(false);
+      });
+    return () => { cancelled = true; };
+  }, [opportunityIdFromQuery]);
+
   // --- AUTO-SELECTION LOGIC ---
   useEffect(() => {
     if (resumesList.length === 1 && !selectedResumeId) {
@@ -177,6 +285,7 @@ export default function JDAnalyzer() {
   }, [resumesList, selectedResumeId]);
 
   useEffect(() => {
+    if (selectedVersionId && versionsList.some(version => version.id === selectedVersionId)) return;
     if (versionsList.length > 0) {
       const activeVersion = versionsList.find(v => v.is_active === 1 || v.is_active === true);
       if (activeVersion) {
@@ -189,7 +298,7 @@ export default function JDAnalyzer() {
     } else {
       setSelectedVersionId('');
     }
-  }, [versionsList]);
+  }, [versionsList, selectedVersionId]);
 
   // --- FORM MODIFICATION TRIPPERS (CLEARING STALE ANALYSIS/CHAT/SAVE STATUS) ---
   const handleResumeChange = (e) => {
@@ -203,6 +312,10 @@ export default function JDAnalyzer() {
     setValidationError(null);
     setServerError(null);
     setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
     setPartialOpportunityId(null);
     setPartialJdSaved(false);
   };
@@ -217,6 +330,10 @@ export default function JDAnalyzer() {
     setValidationError(null);
     setServerError(null);
     setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
     setPartialOpportunityId(null);
     setPartialJdSaved(false);
   };
@@ -289,6 +406,10 @@ export default function JDAnalyzer() {
       setValidationError(null);
       setServerError(null);
       setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
       setPartialOpportunityId(null);
       setPartialJdSaved(false);
     }
@@ -307,6 +428,10 @@ export default function JDAnalyzer() {
     setChatQuestion('');
     setChatError(null);
     setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
     setPartialOpportunityId(null);
     setPartialJdSaved(false);
   };
@@ -322,6 +447,10 @@ export default function JDAnalyzer() {
       setChatQuestion('');
       setChatError(null);
       setSavedOpportunityId(null);
+    setCustomisationSession(null);
+    setCustomisationError(null);
+    setSelectedEvidenceIds([]);
+    setEvidenceList([]);
       setPartialOpportunityId(null);
       setPartialJdSaved(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -503,6 +632,76 @@ export default function JDAnalyzer() {
   }
 }
   });
+
+
+  const handleStartCustomisation = async () => {
+    if (!savedOpportunityId || isStartingCustomisation) return;
+    setIsStartingCustomisation(true);
+    setCustomisationError(null);
+    try {
+      const created = await createCustomisationSession(savedOpportunityId);
+      navigate(`/opportunities/${encodeURIComponent(savedOpportunityId)}/resume-fine-tuning/${encodeURIComponent(created.id)}`);
+    } catch (err) {
+      setCustomisationError(err.message || 'Unable to start resume fine-tuning.');
+    } finally {
+      setIsStartingCustomisation(false);
+    }
+  };
+
+  const handleSaveSelectedEvidence = async () => {
+    if (!customisationSession?.id || isSavingEvidence) return;
+    setIsSavingEvidence(true);
+    setCustomisationError(null);
+    try {
+      const result = await saveCustomisationEvidence(customisationSession.id, selectedEvidenceIds);
+      setCustomisationSession(previous => ({ ...previous, status: result.status, evidence_snapshot: result.evidence_snapshot }));
+    } catch (err) {
+      setCustomisationError(err.message || 'Unable to save selected evidence.');
+    } finally {
+      setIsSavingEvidence(false);
+    }
+  };
+
+  const handleGenerateProposals = async (regenerate = false) => {
+    if (!customisationSession?.id || isGeneratingProposals) return;
+    setIsGeneratingProposals(true);
+    setCustomisationError(null);
+    try {
+      const result = await generateCustomisationProposals(customisationSession.id, regenerate);
+      setProposalHistory(result.proposals || null);
+      setCustomisationSession(previous => ({ ...previous, status: result.status || previous.status, proposals: result.proposals || previous.proposals }));
+      setProposalEditDrafts({});
+    } catch (err) {
+      setCustomisationError(err.message || 'Unable to generate resume proposals.');
+    } finally {
+      setIsGeneratingProposals(false);
+    }
+  };
+
+  const handleProposalReview = async (generationId, sectionId, decision) => {
+    if (!customisationSession?.id || isSavingProposalReview) return;
+    const editedText = proposalEditDrafts[sectionId] || '';
+    if (decision === 'EDITED' && !editedText.trim()) {
+      setCustomisationError('Enter the revised section text before saving your edit.');
+      return;
+    }
+    setIsSavingProposalReview(true);
+    setCustomisationError(null);
+    try {
+      const result = await saveCustomisationReview(customisationSession.id, {
+        generation_id: generationId,
+        section_id: sectionId,
+        decision,
+        ...(decision === 'EDITED' ? { edited_text: editedText } : {})
+      });
+      setProposalHistory(result.proposals || null);
+      setCustomisationSession(previous => ({ ...previous, status: result.status || previous.status, proposals: result.proposals || previous.proposals }));
+    } catch (err) {
+      setCustomisationError(err.message || 'Unable to save the section review.');
+    } finally {
+      setIsSavingProposalReview(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -862,6 +1061,21 @@ export default function JDAnalyzer() {
           {analysisResult && !analyzeMutation.isPending && (
             <div className="space-y-6">
               
+
+              {savedOpportunityId && (
+                <section className="bg-white border border-indigo-200 rounded-xl shadow-sm p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Resume Fine-tuning</h3>
+                    <p className="text-xs text-slate-500 mt-1">Select verified evidence and build a JD-specific resume version. Your master resume remains unchanged.</p>
+                    {customisationError && <p className="text-xs text-red-600 mt-2">{customisationError}</p>}
+                  </div>
+                  <button type="button" onClick={handleStartCustomisation} disabled={isStartingCustomisation}
+                    className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50">
+                    {isStartingCustomisation ? 'Opening...' : 'Start Fine-tuning'}
+                  </button>
+                </section>
+              )}
+
               {/* Core Match Overview Assessment Block */}
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
                 <div className="text-center sm:text-left space-y-1">

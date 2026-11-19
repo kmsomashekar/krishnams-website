@@ -170,6 +170,7 @@ export default function Resumes() {
   };
 
   const handleApproveEvidence = async (item, index) => {
+    if (item.existing_match) return;
     setEvidenceError('');
     try {
       const res = await fetch('/api/v1/resume-evidence', {
@@ -906,15 +907,22 @@ export default function Resumes() {
                             <div className="text-sm font-semibold text-slate-900">{item.title}</div>
                             <div className="text-[11px] text-slate-500">{[item.organisation,item.role,item.evidence_type,item.classification].filter(Boolean).join(' · ')}</div>
                           </div>
-                          <button type="button" onClick={() => handleApproveEvidence(item,index)}
-                            className="self-start px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500">Save as pending</button>
+                          {item.existing_match ? (
+                            <div className="self-start px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-100 rounded">
+                              Already saved · {item.existing_match.verification_status}
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => handleApproveEvidence(item,index)}
+                              className="self-start px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-500">Save as pending</button>
+                          )}
                         </div>
                         {item.description && <p className="text-xs text-slate-700">{item.description}</p>}
                         {item.responsibilities && <p className="text-xs text-slate-600"><strong>Responsibilities:</strong> {item.responsibilities}</p>}
                         {item.actions_taken && <p className="text-xs text-slate-600"><strong>Actions:</strong> {item.actions_taken}</p>}
                         {item.outcomes && <p className="text-xs text-slate-600"><strong>Outcomes:</strong> {item.outcomes}</p>}
                         {item.source_excerpt && <p className="text-[11px] text-slate-500 italic">AI-extracted source reference (verify against PDF): {item.source_excerpt}</p>}
-                        <div className="text-[10px] text-slate-500">Source: {item.source_name} · Not yet verified</div>
+                        {item.existing_match && <div className="text-[11px] text-emerald-800">Matching saved record found: {item.existing_match.title}. The saved record is unchanged.</div>}
+                        <div className="text-[10px] text-slate-500">Source: {item.source_name} · {item.existing_match ? 'Existing repository record' : 'Not yet saved'}</div>
                       </div>
                     ))}
                   </div>
