@@ -86,12 +86,16 @@ async function downloadResumeDocx(resume, aiContext) {
     new Paragraph({ text: resume.version_label || 'JD-tailored resume', spacing: { after: 260 } })
   ];
   for (const section of getResumeSections(aiContext)) {
-    children.push(new Paragraph({ text: sectionLabel(section.title), heading: HeadingLevel.HEADING_1, spacing: { before: 220, after: 100 } }));
+    const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
+    if (!isContact) children.push(new Paragraph({ text: sectionLabel(section.title), heading: HeadingLevel.HEADING_1, spacing: { before: 220, after: 100 } }));
+    let contactFirstLine = true;
     for (const block of section.paragraphs) for (const line of block.split('\n').map(v => v.trim()).filter(Boolean)) {
       const bullet = /^[-•*]\s/.test(line);
       const cleanLine = bullet ? line.replace(/^[-•*]\s*/, '') : line;
       const dateHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(cleanLine);
-      children.push(new Paragraph({ children: [new TextRun({ text: cleanLine, bold: dateHeading, size: 20 })], spacing: { after: bullet ? 65 : 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
+      const contactName = isContact && contactFirstLine;
+      children.push(new Paragraph({ children: [new TextRun({ text: cleanLine, bold: dateHeading || contactName, size: contactName ? 30 : 20 })], spacing: { after: bullet ? 65 : contactName ? 100 : 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
+      if (isContact) contactFirstLine = false;
     }
   }
   const doc = new Document({ creator: 'Resume Manager', title: resume.resume_name || 'Tailored Resume', sections: [{ properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } }, children }] });
@@ -108,14 +112,20 @@ function downloadResumePdf(resume, aiContext) {
   pdf.setFont('helvetica','normal'); pdf.setFontSize(8.5); pdf.setTextColor(90); pdf.text(clean(resume.version_label || 'JD-tailored resume'), margin, y); y += 15;
   pdf.setDrawColor(190); pdf.line(margin,y,width-margin,y); y += 13;
   for (const section of getResumeSections(aiContext)) {
-    ensure(36); pdf.setTextColor(30,64,110); pdf.setFont('helvetica','bold'); pdf.setFontSize(11); const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length * 14 + 5;
+    const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
+    if (!isContact) {
+      ensure(36); pdf.setTextColor(30,64,110); pdf.setFont('helvetica','bold'); pdf.setFontSize(11); const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length * 14 + 5;
+    }
+    let contactFirstLine = true;
     for (const block of section.paragraphs) {
       for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
         const bullet = /^[-•*]\s/.test(rawLine); const lineText = bullet ? '- ' + rawLine.replace(/^[-•*]\s*/, '') : rawLine;
         const dateHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(rawLine);
+        const contactName = isContact && contactFirstLine;
         const lines = pdf.splitTextToSize(clean(lineText),maxWidth - (bullet ? 10 : 0));
-        pdf.setFont('helvetica', dateHeading ? 'bold' : 'normal'); pdf.setFontSize(dateHeading ? 9.3 : 9);
-        for (const line of lines) { ensure(12); pdf.text(line,margin + (bullet ? 10 : 0),y); y += 12; }
+        pdf.setFont('helvetica', dateHeading || contactName ? 'bold' : 'normal'); pdf.setFontSize(contactName ? 15 : dateHeading ? 9.3 : 9);
+        for (const line of lines) { ensure(contactName ? 18 : 12); pdf.text(line,margin + (bullet ? 10 : 0),y); y += contactName ? 17 : 12; }
+        if (isContact) contactFirstLine = false;
       }
       y += 4;
     }
