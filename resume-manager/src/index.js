@@ -6301,7 +6301,7 @@ ${JSON.stringify(answered)}`;
         ).bind(session.opportunity_id, userId).first();
         if (!opportunity) return buildErrorResponse('NOT_FOUND', 'Linked opportunity not found.', 404, headers);
 
-        const finalSections = generation.sections.map(section => ({
+        let finalSections = generation.sections.map(section => ({
           section_id: section.section_id,
           content: String(section.decision === 'REJECTED'
             ? section.original_text
@@ -6312,6 +6312,24 @@ ${JSON.stringify(answered)}`;
         const sourceForFinal = await env.DB.prepare('SELECT rv.ai_context FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?').bind(session.source_resume_version_id, session.source_resume_id, userId).first();
         if (!sourceForFinal?.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'The source Master Resume could not be reloaded for final validation.', 409, headers);
         const canonicalSourceSections = parseResumeContextSections(sourceForFinal.ai_context);
+        // Final assembly is source-first. User review cannot remove or rewrite protected
+        // employment, achievement, or skills content; these are rebuilt from canonical source.
+        const immutableIds = new Set(['professional_experience', 'achievements', 'technical_skills']);
+        finalSections = finalSections.map(section => immutableIds.has(section.section_id)
+          ? { ...section, content: String(canonicalSourceSections[section.section_id] || '').trim() }
+          : section);
+        // Carry source sections that were not part of the AI proposal schema through to
+        // the final resume. They are never generated or shortened by Gemini.
+        const preservedExtras = [
+          { section_id: 'contact_details', content: canonicalSourceSections.contact_details },
+          { section_id: 'education', content: canonicalSourceSections.education },
+          { section_id: 'certifications', content: canonicalSourceSections.certifications },
+          { section_id: 'portfolio', content: canonicalSourceSections.portfolio }
+        ].filter(section => String(section.content || '').trim())
+          .map(section => ({ section_id: section.section_id, content: String(section.content).trim() }));
+        finalSections = [...finalSections, ...preservedExtras];
+        const sectionOrder = ['contact_details','professional_summary','core_competencies','professional_experience','achievements','technical_skills','education','certifications','portfolio'];
+        finalSections.sort((a,b) => sectionOrder.indexOf(a.section_id) - sectionOrder.indexOf(b.section_id));
         const evidenceForFinal = JSON.parse(session.evidence_snapshot_json || '[]');
         const finalContentBySection = Object.fromEntries(finalSections.map(section => [section.section_id, section.content]));
         const finalIntegrityProblems = validateResumePreservation(canonicalSourceSections, finalContentBySection, JSON.stringify(evidenceForFinal));
