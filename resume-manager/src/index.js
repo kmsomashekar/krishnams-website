@@ -466,6 +466,7 @@ async function callAIProviderWithDocument(base64Data, env) {
     "TARGET ROLE POSITIONING\n\n" +
     "LEADERSHIP & SCOPE\n\n" +
     "CORE EXPERTISE\n\n" +
+    "PROFESSIONAL EXPERIENCE\n\n" +
     "KEY ACHIEVEMENTS\n\n" +
     "TECHNOLOGIES & PLATFORMS\n\n" +
     "SECURITY & GOVERNANCE\n\n" +
