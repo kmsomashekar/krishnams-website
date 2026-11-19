@@ -143,11 +143,11 @@ function validateResumeSections(sections) {
   const keys = sections.map(section => normalizeSectionKey(section.title));
   const hasExperience = keys.some(key => ['professional_experience','earlier_experience','work_experience','employment_history','experience'].includes(key));
   const hasSkills = keys.some(key => ['technical_skills','skills','skills_interests','core_competencies','competencies'].includes(key));
-  const hasEducation = keys.some(key => ['education','education_certifications','academic_qualifications'].includes(key));
+  const hasEducation = keys.some(key => ['education','education_certifications','education_and_certifications','academic_qualifications','educational_qualifications','academic_background','education_qualification','qualifications'].includes(key));
   const hasCertifications = keys.some(key => ['certifications','certification','credentials'].includes(key));
   if (!hasExperience) throw new Error('The complete Professional Experience section is missing from the saved resume content. Export stopped.');
   if (!hasSkills) throw new Error('The Technical Skills/Core Competencies section is missing from the saved resume content. Export stopped.');
-  if (!hasEducation) throw new Error('The Education section is missing from the saved resume content. Export stopped.');
+  if (!hasEducation) throw new Error('The Education section is missing or uses an unrecognised heading in the saved resume content. Detected sections: ' + (keys.length ? keys.join(', ') : 'none') + '. Export stopped to avoid omitting Education content.');
   if (!hasCertifications) throw new Error('The Certifications section is missing from the saved resume content. Export stopped.');
   const experience = sections.filter(section => ['professional_experience','earlier_experience','work_experience','employment_history','experience'].includes(normalizeSectionKey(section.title)));
   const experienceText = experience.flatMap(section => section.paragraphs).join('\n').trim();
