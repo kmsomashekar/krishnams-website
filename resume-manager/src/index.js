@@ -6448,7 +6448,7 @@ ${JSON.stringify(answered)}`;
                 } catch (_) {}
               }
               const retryUnsupported = findUnsupportedNumbers(retryText, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
-              const retryContainsAnyNumber = /\\d/.test(retryText);
+              const retryContainsAnyNumber = /\d/.test(retryText);
               if (retryText && !retryContainsAny && !retryUnsupported.length) {
                 summarySection.proposed_text = retryText.slice(0, 20000);
                 summarySection.rationale = 'Regenerated to remove unsupported numerical claims while tailoring the summary to the JD.';
