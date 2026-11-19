@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlignmentType, Document, Footer, Packer, Paragraph, TextRun } from 'docx';
-import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
 
 async function readApi(res, fallback) {
@@ -195,44 +193,6 @@ async function downloadResumeDocx(resume, aiContext, session) {
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function downloadResumePdf(resume, aiContext) {
-  const profile = await fetchCandidateProfile();
-  const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
-  const margin = 42; const maxWidth = width - margin * 2; let y = margin;
-  const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '');
-  const ensure = amount => { if (y + amount > height - margin - 28) { pdf.addPage(); y = margin; } };
-  const sections = getResumeSections(aiContext, profile);
-  const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
-  if (contact) {
-    const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
-    if (lines.length) { pdf.setTextColor(24,67,104); pdf.setFont('helvetica','bold'); pdf.setFontSize(16); pdf.text(clean(lines[0]),width/2,y,{align:'center'}); y += 19; }
-    if (lines.length > 1) { pdf.setTextColor(55,68,80); pdf.setFont('helvetica','bold'); pdf.setFontSize(10); pdf.text(clean(lines[1]),width/2,y,{align:'center'}); y += 13; }
-    if (lines.length > 2) { pdf.setTextColor(40,40,40); pdf.setFont('helvetica','normal'); pdf.setFontSize(8.5); const contactText=pdf.splitTextToSize(clean(lines.slice(2).join(' | ')),maxWidth); pdf.text(contactText,width/2,y,{align:'center'}); y += contactText.length*11+7; }
-  }
-  for (const section of sections) {
-    const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
-    if (isContact) continue;
-    ensure(28); pdf.setTextColor(24,67,104); pdf.setFont('helvetica','bold'); pdf.setFontSize(10.5);
-    const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length*13+4;
-    for (const block of section.paragraphs) {
-      for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
-        const bullet = /^[-•*]\s/.test(rawLine); const lineText = bullet ? rawLine.replace(/^[-•*]\s*/, '') : rawLine;
-        const roleHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(lineText) && !bullet;
-        const competencyLabel = !bullet && /^[^:]{2,80}:\s/.test(lineText);
-        const prefix = bullet ? '• ' : '';
-        const lines = pdf.splitTextToSize(clean(prefix + lineText),maxWidth-(bullet?10:0));
-        pdf.setFont('helvetica',roleHeading||competencyLabel?'bold':'normal'); pdf.setFontSize(roleHeading?9.3:8.8); pdf.setTextColor(roleHeading?24:40,roleHeading?67:40,roleHeading?104:40);
-        for (const line of lines) { ensure(12); pdf.text(line,margin+(bullet?10:0),y); y += 11; }
-      }
-      y += 2;
-    }
-    y += 3;
-  }
-  const pages = pdf.getNumberOfPages();
-  for (let i=1;i<=pages;i++) { pdf.setPage(i); pdf.setFont('helvetica','normal'); pdf.setFontSize(7.5); pdf.setTextColor(100); pdf.text('Krishna M S  |  IT & Cybersecurity Leader  |  ' + i,width/2,height-20,{align:'center'}); }
-  pdf.save(safeFileName(resume.resume_name) + '.pdf');
 }
 
 async function finalizeProposals(sessionId) {
