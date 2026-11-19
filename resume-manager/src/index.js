@@ -7044,12 +7044,47 @@ ${JSON.stringify(answered)}`;
           }
           if (existing.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resumes cannot be deleted.', 409, headers);
 
+          const versions = await env.DB.prepare(
+            'SELECT id, r2_object_key FROM resume_versions WHERE resume_id = ?'
+          ).bind(resumeId).all();
+          const versionIds = (versions.results || []).map(v => v.id);
+          if (versionIds.length) {
+            const placeholders = versionIds.map(() => '?').join(',');
+            const [ats, opportunities] = await Promise.all([
+              env.DB.prepare(`SELECT COUNT(*) AS count FROM ats_analysis WHERE resume_version_id IN (${placeholders})`).bind(...versionIds).first(),
+              env.DB.prepare(`SELECT COUNT(*) AS count FROM opportunities WHERE resume_version_id IN (${placeholders})`).bind(...versionIds).first()
+            ]);
+            const linkedAts = Number(ats?.count || 0), linkedOpportunities = Number(opportunities?.count || 0);
+            if (linkedAts || linkedOpportunities) {
+              const details = [];
+              if (linkedAts) details.push(linkedAts + ' ATS analysis record(s)');
+              if (linkedOpportunities) details.push(linkedOpportunities + ' opportunity record(s)');
+              return buildErrorResponse('RESUME_IN_USE', 'This resume contains versions linked to ' + details.join(', ') + '. Remove or reassign these records before deleting the resume.', 409, headers);
+            }
+            for (const versionId of versionIds) {
+              await env.DB.prepare('UPDATE resume_customisation_sessions SET source_resume_version_id = NULL WHERE source_resume_version_id = ?').bind(versionId).run();
+              await env.DB.prepare('UPDATE resume_customisation_sessions SET generated_resume_version_id = NULL WHERE generated_resume_version_id = ?').bind(versionId).run();
+              await env.DB.prepare('DELETE FROM resume_evidence_sources WHERE resume_version_id = ?').bind(versionId).run();
+            }
+          }
+
+          let fileCleanupWarning = null;
+          for (const version of (versions.results || [])) {
+            if (version.r2_object_key) {
+              try { await env.BUCKET.delete(version.r2_object_key); }
+              catch (_) { fileCleanupWarning = 'The resume was deleted, but one or more stored files could not be removed from storage.'; }
+            }
+          }
+          if (versionIds.length) {
+            const placeholders = versionIds.map(() => '?').join(',');
+            await env.DB.prepare(`DELETE FROM resume_versions WHERE id IN (${placeholders})`).bind(...versionIds).run();
+          }
           await env.DB.prepare(`DELETE FROM resumes WHERE id = ? AND user_id = ?`)
             .bind(resumeId, userId)
             .run();
 
           return new Response(
-            JSON.stringify({ success: true, data: { id: resumeId, deleted: true } }),
+            JSON.stringify({ success: true, data: { id: resumeId, deleted: true, warning: fileCleanupWarning } }),
             { status: 200, headers }
           );
         }
