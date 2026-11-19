@@ -238,7 +238,7 @@ function downloadResumePdf(resume, sections, setExportStatus) {
     }
     ensureSpace(10); y += 3; pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11.5); pdf.text(sectionLabel(section.title).toUpperCase(), margin, y); y += 2;
     pdf.setDrawColor(51, 65, 85); pdf.setLineWidth(0.25); pdf.line(margin, y, pageWidth - margin, y); y += 5;
-    section.paragraphs.forEach(raw => { String(raw || '').split(/\\n+/).map(line => line.trim()).filter(Boolean).forEach(line => { const bullet = /^(?:[•●▪◦]|[-*])\\s+/.test(line); const clean = bullet ? line.replace(/^(?:[•●▪◦]|[-*])\\s+/, '') : line; drawWrapped(clean, { indent: bullet ? 4 : 0, after: 1.2 }); }); y += 1; });
+    section.paragraphs.forEach(raw => { String(raw || '').split(/\n+/).map(line => line.trim()).filter(Boolean).forEach(line => { const bullet = /^(?:[•●▪◦]|[-*])\s+/.test(line); const clean = bullet ? line.replace(/^(?:[•●▪◦]|[-*])\s+/, '') : line; drawWrapped(clean, { indent: bullet ? 4 : 0, after: 1.2 }); }); y += 1; });
   });
   const count = pdf.getNumberOfPages(); for (let page = 1; page <= count; page++) { pdf.setPage(page); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(110, 110, 110); pdf.text(page + ' / ' + count, pageWidth - margin, pageHeight - 8, { align: 'right' }); }
   pdf.save(safeFileName(resume.resume_name) + '.pdf'); setExportStatus('PDF generated and download started (' + count + ' page' + (count === 1 ? '' : 's') + ').');
