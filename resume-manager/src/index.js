@@ -2455,8 +2455,8 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
       // =======================================================================
       const jobFeedRoot = '/api/v1/job-feed';
       const jobProfilesRoot = '/api/v1/job-feed/profiles';
-      const jobFeedIdRegex = /^\\/api\\/v1\\/job-feed\\/([^\\/]+)$/;
-      const jobFeedAddRegex = /^\\/api\\/v1\\/job-feed\\/([^\\/]+)\\/add-to-opportunity$/;
+      const jobFeedIdRegex = /^\/api\/v1\/job-feed\/([^\/]+)$/;
+      const jobFeedAddRegex = /^\/api\/v1\/job-feed\/([^\/]+)\/add-to-opportunity$/;
 
       function normalizeJobText(value) {
         return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
