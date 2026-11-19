@@ -2449,6 +2449,116 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
       // 4. RESTful Route Routing Pipeline (Preserving Domain APIs & Safe Fallbacks)
       // -------------------------------------------------------------------------
 
+      // =======================================================================
+      // MODULE: JOB FEED PHASE 1
+      // Saved search profile, manual job import, deduplication and matching.
+      // =======================================================================
+      const jobFeedRoot = '/api/v1/job-feed';
+      const jobProfilesRoot = '/api/v1/job-feed/profiles';
+      const jobFeedIdRegex = /^\\/api\\/v1\\/job-feed\\/([^\\/]+)$/;
+
+      function normalizeJobText(value) {
+        return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      }
+      function scoreJobMatch(job, profile) {
+        const title = normalizeJobText(job.title);
+        const location = normalizeJobText(job.location);
+        const description = normalizeJobText(job.description);
+        const titles = Array.isArray(profile.titles) ? profile.titles : [];
+        const locations = Array.isArray(profile.locations) ? profile.locations : [];
+        const keywords = Array.isArray(profile.keywords) ? profile.keywords : [];
+        const titleHit = titles.some(t => title.includes(normalizeJobText(t)) || normalizeJobText(t).includes(title));
+        const locationHit = !locations.length || locations.some(l => location.includes(normalizeJobText(l)));
+        const keywordHits = keywords.filter(k => description.includes(normalizeJobText(k)) || title.includes(normalizeJobText(k)));
+        const employmentHit = !(profile.employment_types || []).length || (profile.employment_types || []).some(e => normalizeJobText(e) === normalizeJobText(job.employment_type || ''));
+        const score = Math.round((titleHit ? 30 : 10) + (locationHit ? 20 : 0) + Math.min(30, keywordHits.length * 5) + (employmentHit ? 10 : 0) + (job.description.length > 500 ? 10 : 0));
+        return { score: Math.min(100, score), reasons: [
+          titleHit ? 'Role aligns with target titles' : 'Title alignment is limited',
+          locationHit ? 'Location matches your preferences' : 'Location is outside preferred locations',
+          keywordHits.length ? 'Matched keywords: ' + keywordHits.slice(0, 8).join(', ') : 'Few profile keywords found',
+          employmentHit ? 'Employment type is compatible' : 'Employment type may not match'
+        ], matched_keywords: keywordHits, gaps: keywords.filter(k => !keywordHits.includes(k)).slice(0, 12) };
+      }
+
+      if (pathname === jobProfilesRoot && method === 'GET') {
+        if (!userId) return buildErrorResponse('UNAUTHORIZED', 'Authentication required.', 401, headers);
+        let profile = await env.DB.prepare('SELECT * FROM job_search_profiles WHERE user_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1').bind(userId).first();
+        if (!profile) {
+          const now = new Date().toISOString();
+          const id = crypto.randomUUID();
+          await env.DB.prepare('INSERT INTO job_search_profiles (id,user_id,name,titles_json,locations_json,employment_types_json,keywords_json,min_match_score,max_applicants,immediate_joiner_priority,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+            .bind(id,userId,'My Job Search',JSON.stringify(['Head of IT','Head of IT & Security','Head - IT Infrastructure','Director IT','CISO','Director Cybersecurity']),JSON.stringify(['Bengaluru','Chennai','Hyderabad','Pune']),JSON.stringify(['Full-time','Consulting','Fractional','Contract']),JSON.stringify(['IT Infrastructure','Cybersecurity','Cloud','GRC','ISO 27001','Risk Management','Security Governance','IT Operations']),80,300,1,1,now,now).run();
+          profile = await env.DB.prepare('SELECT * FROM job_search_profiles WHERE id = ?').bind(id).first();
+        }
+        const parse = (v) => { try { return JSON.parse(v || '[]'); } catch (_) { return []; } };
+        return new Response(JSON.stringify({success:true,data:{profile:{...profile,titles:parse(profile.titles_json),locations:parse(profile.locations_json),employment_types:parse(profile.employment_types_json),keywords:parse(profile.keywords_json)}}}),{status:200,headers});
+      }
+
+      if (pathname === jobProfilesRoot && method === 'PUT') {
+        if (!userId) return buildErrorResponse('UNAUTHORIZED', 'Authentication required.', 401, headers);
+        let body; try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT','Invalid JSON body.',400,headers); }
+        const existing = await env.DB.prepare('SELECT id FROM job_search_profiles WHERE user_id = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1').bind(userId).first();
+        const id = existing?.id || crypto.randomUUID(); const now = new Date().toISOString();
+        const fields = ['titles','locations','employment_types','keywords'];
+        for (const field of fields) if (body[field] !== undefined && (!Array.isArray(body[field]) || body[field].some(v => typeof v !== 'string'))) return buildErrorResponse('INVALID_INPUT',field+' must be an array of strings.',400,headers);
+        const score = Number(body.min_match_score ?? 80);
+        if (!Number.isInteger(score) || score < 0 || score > 100) return buildErrorResponse('INVALID_INPUT','min_match_score must be between 0 and 100.',400,headers);
+        const applicants = body.max_applicants === null || body.max_applicants === '' ? null : Number(body.max_applicants ?? 300);
+        if (applicants !== null && (!Number.isInteger(applicants) || applicants < 0)) return buildErrorResponse('INVALID_INPUT','max_applicants must be a non-negative integer.',400,headers);
+        const defaults = {titles:['Head of IT','Head of IT & Security','Head - IT Infrastructure','Director IT','CISO','Director Cybersecurity'],locations:['Bengaluru','Chennai','Hyderabad','Pune'],employment_types:['Full-time','Consulting','Fractional','Contract'],keywords:['IT Infrastructure','Cybersecurity','Cloud','GRC','ISO 27001','Risk Management','Security Governance','IT Operations']};
+        await env.DB.prepare('INSERT INTO job_search_profiles (id,user_id,name,titles_json,locations_json,employment_types_json,keywords_json,min_match_score,max_applicants,immediate_joiner_priority,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,titles_json=excluded.titles_json,locations_json=excluded.locations_json,employment_types_json=excluded.employment_types_json,keywords_json=excluded.keywords_json,min_match_score=excluded.min_match_score,max_applicants=excluded.max_applicants,immediate_joiner_priority=excluded.immediate_joiner_priority,updated_at=excluded.updated_at')
+          .bind(id,userId,String(body.name || 'My Job Search'),JSON.stringify(body.titles || defaults.titles),JSON.stringify(body.locations || defaults.locations),JSON.stringify(body.employment_types || defaults.employment_types),JSON.stringify(body.keywords || defaults.keywords),score,applicants,body.immediate_joiner_priority === false ? 0 : 1,existing ? (await env.DB.prepare('SELECT created_at FROM job_search_profiles WHERE id=?').bind(id).first())?.created_at || now : now,now).run();
+        return new Response(JSON.stringify({success:true,data:{id,updated:true}}),{status:200,headers});
+      }
+
+      if (pathname === jobFeedRoot && method === 'GET') {
+        if (!userId) return buildErrorResponse('UNAUTHORIZED','Authentication required.',401,headers);
+        const status = url.searchParams.get('status') || 'ALL';
+        const query = String(url.searchParams.get('q') || '').trim().slice(0,100);
+        const minScore = Number(url.searchParams.get('min_score') || 0);
+        let sql = 'SELECT * FROM job_feed_jobs WHERE user_id = ?'; const params = [userId];
+        if (status !== 'ALL') { sql += ' AND status = ?'; params.push(status); }
+        if (query) { sql += ' AND (title LIKE ? OR company_name LIKE ? OR location LIKE ?)'; params.push('%'+query+'%','%'+query+'%','%'+query+'%'); }
+        if (minScore) { sql += ' AND COALESCE(match_score,0) >= ?'; params.push(minScore); }
+        sql += ' ORDER BY COALESCE(match_score,0) DESC, created_at DESC LIMIT 300';
+        const {results} = await env.DB.prepare(sql).bind(...params).all();
+        return new Response(JSON.stringify({success:true,data:{jobs:results.map(j=>({...j,match_details: (()=>{try{return JSON.parse(j.match_details_json||'{}')}catch(_){return {}}})()}))}}),{status:200,headers});
+      }
+
+      if (pathname === jobFeedRoot && method === 'POST') {
+        if (!userId) return buildErrorResponse('UNAUTHORIZED','Authentication required.',401,headers);
+        let body; try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT','Invalid JSON body.',400,headers); }
+        const title=String(body.title||'').trim(), company=String(body.company_name||'').trim(), description=String(body.description||'').trim();
+        if (!title || !company || !description) return buildErrorResponse('INVALID_INPUT','Title, company and job description are required.',400,headers);
+        if (title.length>300 || company.length>300 || description.length>50000) return buildErrorResponse('INVALID_INPUT','Job fields exceed supported length.',400,headers);
+        let profile = await env.DB.prepare('SELECT * FROM job_search_profiles WHERE user_id=? AND is_active=1 ORDER BY updated_at DESC LIMIT 1').bind(userId).first();
+        const parse=(v)=>{try{return JSON.parse(v||'[]')}catch(_){return []}};
+        if (!profile) return buildErrorResponse('PROFILE_REQUIRED','Create or load a search profile before importing jobs.',409,headers);
+        const p={titles:parse(profile.titles_json),locations:parse(profile.locations_json),employment_types:parse(profile.employment_types_json),keywords:parse(profile.keywords_json)};
+        const job={title,company_name:company,location:String(body.location||''),employment_type:String(body.employment_type||''),description};
+        const match=scoreJobMatch(job,p);
+        const url=String(body.source_url||'').trim();
+        const duplicateKey=normalizeJobText(company+'|'+title+'|'+(url||description.slice(0,300)));
+        const existing=await env.DB.prepare('SELECT id FROM job_feed_jobs WHERE user_id=? AND duplicate_key=?').bind(userId,duplicateKey).first();
+        if(existing) return buildErrorResponse('DUPLICATE_JOB','This job already exists in your Job Feed.',409,headers);
+        const id=crypto.randomUUID(),now=new Date().toISOString();
+        await env.DB.prepare('INSERT INTO job_feed_jobs (id,user_id,profile_id,title,company_name,location,employment_type,source,source_url,description,posted_date,applicant_count,salary_text,match_score,match_details_json,status,duplicate_key,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+          .bind(id,userId,profile.id,title,company,job.location,job.employment_type,String(body.source||'MANUAL'),url||null,description,String(body.posted_date||''),body.applicant_count===null||body.applicant_count===''?null:Number(body.applicant_count),String(body.salary_text||''),match.score,JSON.stringify(match),'NEW',duplicateKey,now,now).run();
+        return new Response(JSON.stringify({success:true,data:{id,match_score:match.score,match_details:match,created:true}}),{status:201,headers});
+      }
+
+      const jobFeedIdMatch = pathname.match(jobFeedIdRegex);
+      if (jobFeedIdMatch && method === 'PATCH') {
+        if (!userId) return buildErrorResponse('UNAUTHORIZED','Authentication required.',401,headers);
+        const id=jobFeedIdMatch[1]; let body; try{body=await request.json()}catch(_){return buildErrorResponse('INVALID_INPUT','Invalid JSON body.',400,headers);}
+        const existing=await env.DB.prepare('SELECT id,status FROM job_feed_jobs WHERE id=? AND user_id=?').bind(id,userId).first();
+        if(!existing)return buildErrorResponse('NOT_FOUND','Job not found.',404,headers);
+        const allowed=['NEW','SAVED','REVIEWED','SKIPPED','ADDED_TO_OPPORTUNITIES'];
+        if(body.status && !allowed.includes(body.status))return buildErrorResponse('INVALID_INPUT','Invalid job status.',400,headers);
+        if(body.status) await env.DB.prepare('UPDATE job_feed_jobs SET status=?,updated_at=? WHERE id=? AND user_id=?').bind(body.status,new Date().toISOString(),id,userId).run();
+        return new Response(JSON.stringify({success:true,data:{id,status:body.status||existing.status}}),{status:200,headers});
+      }
+
       const resumeRootPattern = '/api/v1/resumes';
       const companyRootPattern = '/api/v1/companies';
       const opportunityRootPattern = '/api/v1/opportunities';
