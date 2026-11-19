@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlignmentType, Document, Footer, Packer, Paragraph, TextRun } from 'docx';
-import { jsPDF } from 'jspdf';
+import JSZip from 'jszip';
 
 async function readApi(res, fallback) {
   let body;
@@ -116,82 +115,84 @@ async function fetchCandidateProfile() {
   return result.profile || {};
 }
 
-async function downloadResumeDocx(resume, aiContext) {
-  const profile = await fetchCandidateProfile();
-  const sections = getResumeSections(aiContext, profile);
-  const children = [];
-  const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
-  if (contact) {
-    const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
-    if (lines.length) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[0], bold: true, size: 32, color: '184368', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 1) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[1], bold: true, size: 20, color: '374450', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 2) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines.slice(2).join(' | '), size: 16, font: 'Arial' })], spacing: { after: 180 } }));
+async function fetchOriginalDocx(session) {
+  if (!session?.source_resume_id || !session?.source_resume_version_id) {
+    throw new Error('The original Master Resume file could not be identified. Export stopped to protect the original content.');
   }
-  for (const section of sections) {
-    const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
-    if (isContact) continue;
-    children.push(new Paragraph({ children: [new TextRun({ text: sectionLabel(section.title).toUpperCase(), bold: true, size: 22, color: '184368', font: 'Arial' })], spacing: { before: 180, after: 80 } }));
-    for (const block of section.paragraphs) for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
-      const bullet = /^[-•*]\s/.test(rawLine);
-      const line = bullet ? rawLine.replace(/^[-•*]\s*/, '') : rawLine;
-      const roleHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(line) && !bullet;
-      const competencyLabel = !bullet && /^[^:]{2,80}:\s/.test(line);
-      const runs = competencyLabel ? [
-        new TextRun({ text: line.split(':')[0] + ': ', bold: true, font: 'Arial', size: 20 }),
-        new TextRun({ text: line.slice(line.indexOf(':') + 1).trim(), font: 'Arial', size: 20 })
-      ] : [new TextRun({ text: line, bold: roleHeading, font: 'Arial', size: roleHeading ? 21 : 20, color: roleHeading ? '184368' : undefined })];
-      children.push(new Paragraph({ children: runs, spacing: { after: bullet ? 45 : roleHeading ? 90 : 60 }, ...(bullet ? { bullet: { indent: 300 } } : {}) }));
-    }
+  const response = await fetch(
+    `/api/v1/resumes/${session.source_resume_id}/versions/${session.source_resume_version_id}/file`
+  );
+  if (!response.ok) {
+    let message = 'Unable to retrieve the original Master Resume file.';
+    try { message = (await response.json())?.error?.message || message; } catch (_) {}
+    throw new Error(message);
   }
-  const doc = new Document({
-    creator: 'Resume Manager',
-    title: resume.target_role || 'Professional Resume',
-    sections: [{
-      properties: { page: { margin: { top: 605, right: 835, bottom: 605, left: 835 } } },
-      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Krishna M S  |  IT & Cybersecurity Leader', size: 15, color: '666666', font: 'Arial' })] })] }) },
-      children
-    }]
-  });
-  const blob = await Packer.toBlob(doc); const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-  anchor.href = url; anchor.download = safeFileName(resume.resume_name) + '.docx'; anchor.click(); URL.revokeObjectURL(url);
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const disposition = response.headers.get('content-disposition') || '';
+  const isDocx = contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
+    /filename[^;]+\.docx/i.test(disposition);
+  if (!isDocx) {
+    throw new Error('The source resume version is not a DOCX file. Template-preserving export is available only when the original Master Resume is DOCX. No reconstructed file was generated.');
+  }
+  return await response.arrayBuffer();
 }
 
-async function downloadResumePdf(resume, aiContext) {
-  const profile = await fetchCandidateProfile();
-  const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
-  const margin = 42; const maxWidth = width - margin * 2; let y = margin;
-  const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '');
-  const ensure = amount => { if (y + amount > height - margin - 28) { pdf.addPage(); y = margin; } };
-  const sections = getResumeSections(aiContext, profile);
-  const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
-  if (contact) {
-    const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
-    if (lines.length) { pdf.setTextColor(24,67,104); pdf.setFont('helvetica','bold'); pdf.setFontSize(16); pdf.text(clean(lines[0]),width/2,y,{align:'center'}); y += 19; }
-    if (lines.length > 1) { pdf.setTextColor(55,68,80); pdf.setFont('helvetica','bold'); pdf.setFontSize(10); pdf.text(clean(lines[1]),width/2,y,{align:'center'}); y += 13; }
-    if (lines.length > 2) { pdf.setTextColor(40,40,40); pdf.setFont('helvetica','normal'); pdf.setFontSize(8.5); const contactText=pdf.splitTextToSize(clean(lines.slice(2).join(' | ')),maxWidth); pdf.text(contactText,width/2,y,{align:'center'}); y += contactText.length*11+7; }
-  }
-  for (const section of sections) {
-    const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
-    if (isContact) continue;
-    ensure(28); pdf.setTextColor(24,67,104); pdf.setFont('helvetica','bold'); pdf.setFontSize(10.5);
-    const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length*13+4;
-    for (const block of section.paragraphs) {
-      for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
-        const bullet = /^[-•*]\s/.test(rawLine); const lineText = bullet ? rawLine.replace(/^[-•*]\s*/, '') : rawLine;
-        const roleHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(lineText) && !bullet;
-        const competencyLabel = !bullet && /^[^:]{2,80}:\s/.test(lineText);
-        const prefix = bullet ? '• ' : '';
-        const lines = pdf.splitTextToSize(clean(prefix + lineText),maxWidth-(bullet?10:0));
-        pdf.setFont('helvetica',roleHeading||competencyLabel?'bold':'normal'); pdf.setFontSize(roleHeading?9.3:8.8); pdf.setTextColor(roleHeading?24:40,roleHeading?67:40,roleHeading?104:40);
-        for (const line of lines) { ensure(12); pdf.text(line,margin+(bullet?10:0),y); y += 11; }
-      }
-      y += 2;
+function replaceExecutiveProfileInDocx(xmlText, summaryText) {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
+  if (xmlDoc.getElementsByTagName('parsererror').length) throw new Error('The original Word document XML could not be safely parsed.');
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const paragraphs = Array.from(xmlDoc.getElementsByTagNameNS(W, 'p'));
+  const paragraphText = paragraph => Array.from(paragraph.getElementsByTagNameNS(W, 't')).map(node => node.textContent || '').join('').trim();
+  const headingIndex = paragraphs.findIndex(paragraph => /^(EXECUTIVE PROFILE|PROFESSIONAL SUMMARY)$/i.test(paragraphText(paragraph)));
+  if (headingIndex < 0) throw new Error('Could not locate the Executive Profile/Professional Summary heading in the original DOCX. Export stopped without changing the document.');
+  const summaryParagraph = paragraphs.slice(headingIndex + 1).find(paragraph => paragraphText(paragraph));
+  if (!summaryParagraph) throw new Error('The original document does not contain a summary paragraph under its profile heading.');
+  const trimmedSummary = String(summaryText || '').trim();
+  if (!trimmedSummary) throw new Error('The approved tailored summary is empty. Export stopped.');
+  const firstRun = summaryParagraph.getElementsByTagNameNS(W, 'r')[0];
+  const preservedRunProperties = firstRun?.getElementsByTagNameNS(W, 'rPr')[0]?.cloneNode(true) || null;
+  const pProperties = summaryParagraph.getElementsByTagNameNS(W, 'pPr')[0]?.cloneNode(true) || null;
+  while (summaryParagraph.firstChild) summaryParagraph.removeChild(summaryParagraph.firstChild);
+  if (pProperties) summaryParagraph.appendChild(pProperties);
+  const pieces = trimmedSummary.split(/\n+/);
+  pieces.forEach((piece, index) => {
+    if (index) {
+      const breakRun = xmlDoc.createElementNS(W, 'w:r');
+      breakRun.appendChild(xmlDoc.createElementNS(W, 'w:br'));
+      summaryParagraph.appendChild(breakRun);
     }
-    y += 3;
-  }
-  const pages = pdf.getNumberOfPages();
-  for (let i=1;i<=pages;i++) { pdf.setPage(i); pdf.setFont('helvetica','normal'); pdf.setFontSize(7.5); pdf.setTextColor(100); pdf.text('Krishna M S  |  IT & Cybersecurity Leader  |  ' + i,width/2,height-20,{align:'center'}); }
-  pdf.save(safeFileName(resume.resume_name) + '.pdf');
+    const run = xmlDoc.createElementNS(W, 'w:r');
+    if (preservedRunProperties) run.appendChild(preservedRunProperties.cloneNode(true));
+    const textNode = xmlDoc.createElementNS(W, 'w:t');
+    textNode.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    textNode.textContent = piece;
+    run.appendChild(textNode);
+    summaryParagraph.appendChild(run);
+  });
+  return new XMLSerializer().serializeToString(xmlDoc);
+}
+
+async function downloadResumeDocx(resume, aiContext, session) {
+  const sections = getResumeSections(aiContext);
+  const summary = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'professional_summary');
+  if (!summary) throw new Error('The tailored Professional Summary was not found. Export stopped.');
+  const sourceBuffer = await fetchOriginalDocx(session);
+  const zip = await JSZip.loadAsync(sourceBuffer);
+  const documentFile = zip.file('word/document.xml');
+  if (!documentFile) throw new Error('The original DOCX is missing its main document XML. Export stopped.');
+  const originalXml = await documentFile.async('string');
+  const updatedXml = replaceExecutiveProfileInDocx(originalXml, summary.paragraphs.join(' '));
+  zip.file('word/document.xml', updatedXml);
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = safeFileName(resume.resume_name) + '.docx';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function finalizeProposals(sessionId) {
@@ -327,7 +328,7 @@ export default function ResumeFineTuning() {
     try {
       const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
       if (!version?.ai_context) throw new Error('The tailored resume has no saved content to export.');
-      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context); else await downloadResumePdf(tailoredResume, version.ai_context);
+      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context, session); else throw new Error('PDF export is temporarily unavailable because it cannot yet preserve the original Master Resume formatting. Download the DOCX and save it as PDF in Microsoft Word to retain the layout.');
     } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); }
     finally { setExportingFormat(''); }
   };
@@ -503,9 +504,10 @@ export default function ResumeFineTuning() {
                   <p className="text-xs text-emerald-800">The approved sections are saved in a separate resume record. Your master resume has not been changed. Generate either file below to download it.</p>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button type="button" onClick={() => handleDownload('docx')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-indigo-700 rounded hover:bg-indigo-600 disabled:opacity-50">{exportingFormat === 'docx' ? 'Preparing DOCX…' : 'Download DOCX'}</button>
-                    <button type="button" onClick={() => handleDownload('pdf')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-50">{exportingFormat === 'pdf' ? 'Preparing PDF…' : 'Download PDF'}</button>
+                    <button type="button" disabled title="PDF export is temporarily unavailable while preserving the original document layout." className="px-4 py-2 text-xs font-bold text-slate-500 bg-slate-200 rounded cursor-not-allowed">PDF: Save from Word</button>
                     <Link to="/resumes" className="px-4 py-2 text-xs font-semibold text-emerald-900 underline">Open Resumes</Link>
                   </div>
+                  <p className="text-xs text-slate-500">Download the DOCX to preserve your original resume layout. Open it in Microsoft Word and use Save As → PDF. Direct PDF export is temporarily disabled because the current converter rebuilds the document and loses formatting.</p>
                 </div>
               ) : (
                 <div className="border-t border-slate-100 pt-4 flex flex-wrap items-center justify-between gap-3">
