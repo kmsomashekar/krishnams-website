@@ -218,30 +218,69 @@ function createDocxParagraphs(sections) {
 function downloadResumePdf(resume, sections, setExportStatus) {
   setExportStatus('Building PDF document…');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 17;
-  const usableWidth = pageWidth - margin * 2;
+  const pageWidth = pdf.internal.pageSize.getWidth(), pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 17, usableWidth = pageWidth - margin * 2, bottom = pageHeight - margin - 7;
   let y = margin;
-  const ensureSpace = (height) => { if (y + height > pageHeight - margin) { pdf.addPage(); y = margin; } };
-  const drawWrapped = (text, options = {}) => {
-    const fontSize = options.fontSize || 10;
-    pdf.setFont('helvetica', options.bold ? 'bold' : 'normal'); pdf.setFontSize(fontSize);
-    const lines = pdf.splitTextToSize(String(text || ''), usableWidth - (options.indent || 0));
-    const lineHeight = options.lineHeight || 4.6;
-    ensureSpace(lines.length * lineHeight + (options.after || 0));
-    lines.forEach(line => { pdf.text(line, margin + (options.indent || 0), y); y += lineHeight; }); y += options.after || 0;
+  const bodyColor = [31, 41, 55], headingColor = [31, 41, 55], lineColor = [51, 65, 85];
+  const datePattern = /(?:\b(?:19|20)\d{2}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}\b).*(?:-|–|to|present|current)|(?:-|–|to).*(?:\b(?:19|20)\d{2}\b|present|current)/i;
+  const bulletPattern = /^(?:[•●▪◦]|[-*])\s+/, numberedPattern = /^\d+[.)]\s+/;
+  const isBullet = line => bulletPattern.test(line);
+  const isHeaderLine = line => !isBullet(line) && !numberedPattern.test(line) &&
+    (datePattern.test(line) || /\s[|·]\s/.test(line) || (line.length <= 95 && !/[.!?]$/.test(line) && /(?:Pvt\.?|Ltd\.?|Inc\.?|LLC|Technologies|Systems|Corporation|Company|Manager|Director|Head|Lead|Engineer|Consultant|Vice President|VP|Chief|Officer)/i.test(line)));
+  const addPage = () => { pdf.addPage(); y = margin; };
+  const ensureSpace = height => { if (y + height > bottom) addPage(); };
+  const drawLines = (text, opts = {}) => {
+    const fontSize = opts.fontSize ?? 10, lineHeight = opts.lineHeight ?? 4.5, indent = opts.indent ?? 0;
+    pdf.setFont('helvetica', opts.bold ? 'bold' : 'normal'); pdf.setFontSize(fontSize); pdf.setTextColor(...(opts.color || bodyColor));
+    const lines = pdf.splitTextToSize(String(text || ''), usableWidth - indent);
+    ensureSpace(lines.length * lineHeight + (opts.after || 0));
+    lines.forEach(line => { pdf.text(line, margin + indent, y); y += lineHeight; });
+    y += opts.after || 0;
+  };
+  const drawBullet = text => {
+    const lineHeight = 4.5, indent = 4.2;
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+    const lines = pdf.splitTextToSize(String(text || ''), usableWidth - indent);
+    ensureSpace(lines.length * lineHeight + 1.5);
+    pdf.setFillColor(...bodyColor); pdf.circle(margin + 1.1, y - 1.05, 0.45, 'F'); pdf.setTextColor(...bodyColor);
+    lines.forEach(line => { pdf.text(line, margin + indent, y); y += lineHeight; }); y += 1.5;
+  };
+  const drawSectionHeading = title => {
+    ensureSpace(12); y += 2.5; pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11.5); pdf.setTextColor(...headingColor);
+    pdf.text(sectionLabel(title).toUpperCase(), margin, y); y += 2.2;
+    pdf.setDrawColor(...lineColor); pdf.setLineWidth(0.25); pdf.line(margin, y, pageWidth - margin, y); y += 4.5;
   };
   sections.forEach(section => {
     if (normalizeSectionKey(section.title) === 'contact_details') {
-      section.paragraphs.forEach((paragraph, index) => { const fs = index === 0 ? 16 : 9; pdf.setFont('helvetica', index === 0 ? 'bold' : 'normal'); pdf.setFontSize(fs); const lines = pdf.splitTextToSize(String(paragraph || ''), usableWidth); ensureSpace(lines.length * fs * 0.45 + 2); lines.forEach(line => { pdf.text(line, pageWidth / 2, y, { align: 'center' }); y += fs * 0.45; }); y += 1; }); y += 3; return;
+      section.paragraphs.forEach((paragraph, index) => {
+        const fs = index === 0 ? 16 : 9, lineHeight = index === 0 ? 6.2 : 4.2;
+        pdf.setFont('helvetica', index === 0 ? 'bold' : 'normal'); pdf.setFontSize(fs); pdf.setTextColor(...bodyColor);
+        const lines = pdf.splitTextToSize(String(paragraph || ''), usableWidth); ensureSpace(lines.length * lineHeight + 1);
+        lines.forEach(line => { pdf.text(line, pageWidth / 2, y, { align: 'center' }); y += lineHeight; }); y += 1;
+      }); y += 4; return;
     }
-    ensureSpace(10); y += 3; pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11.5); pdf.text(sectionLabel(section.title).toUpperCase(), margin, y); y += 2;
-    pdf.setDrawColor(51, 65, 85); pdf.setLineWidth(0.25); pdf.line(margin, y, pageWidth - margin, y); y += 5;
-    section.paragraphs.forEach(raw => { String(raw || '').split(/\n+/).map(line => line.trim()).filter(Boolean).forEach(line => { const bullet = /^(?:[•●▪◦]|[-*])\s+/.test(line); const clean = bullet ? line.replace(/^(?:[•●▪◦]|[-*])\s+/, '') : line; drawWrapped(clean, { indent: bullet ? 4 : 0, after: 1.2 }); }); y += 1; });
+    drawSectionHeading(section.title);
+    const isExperience = ['professional_experience','earlier_experience','work_experience','employment_history','experience'].includes(normalizeSectionKey(section.title));
+    section.paragraphs.forEach(raw => {
+      const lines = String(raw || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
+      lines.forEach((line, index) => {
+        if (isBullet(line)) drawBullet(line.replace(bulletPattern, '').trim());
+        else if (numberedPattern.test(line)) drawLines(line, { indent: 4.2, after: 1.5 });
+        else if (isExperience && isHeaderLine(line)) {
+          const nextLine = lines[index + 1]; ensureSpace(9 + (nextLine ? 4.5 : 0));
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10); pdf.setTextColor(...bodyColor);
+          const wrapped = pdf.splitTextToSize(line, usableWidth); wrapped.forEach(item => { pdf.text(item, margin, y); y += 4.5; }); y += 0.6;
+        } else drawLines(line, { after: 1.5 });
+      }); y += 0.4;
+    });
   });
-  const count = pdf.getNumberOfPages(); for (let page = 1; page <= count; page++) { pdf.setPage(page); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(110, 110, 110); pdf.text(page + ' / ' + count, pageWidth - margin, pageHeight - 8, { align: 'right' }); }
-  pdf.save(safeFileName(resume.resume_name) + '.pdf'); setExportStatus('PDF generated and download started (' + count + ' page' + (count === 1 ? '' : 's') + ').');
+  const count = pdf.getNumberOfPages();
+  for (let page = 1; page <= count; page++) {
+    pdf.setPage(page); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(110, 110, 110);
+    pdf.text(page + ' / ' + count, pageWidth - margin, pageHeight - 8, { align: 'right' });
+  }
+  pdf.save(safeFileName(resume.resume_name) + '.pdf');
+  setExportStatus('PDF generated and download started (' + count + ' page' + (count === 1 ? '' : 's') + ').');
 }
 async function downloadResumeDocx(resume, aiContext, session, setExportStatus) {
   setExportStatus('Step 1/5: Parsing the saved tailored resume…');
