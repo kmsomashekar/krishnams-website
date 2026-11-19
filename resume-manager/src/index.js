@@ -6234,7 +6234,7 @@ ${JSON.stringify(answered)}`;
         const canonicalSourceSections = parseResumeContextSections(sourceForFinal.ai_context);
         // Final assembly is source-first. User review cannot remove or rewrite protected
         // employment, achievement, or skills content; these are rebuilt from canonical source.
-        const immutableIds = new Set(['professional_experience', 'achievements', 'technical_skills']);
+        const immutableIds = new Set(['core_competencies', 'professional_experience', 'achievements', 'technical_skills']);
         finalSections = finalSections.map(section => immutableIds.has(section.section_id)
           ? { ...section, content: String(canonicalSourceSections[section.section_id] || '').trim() }
           : section);
@@ -6340,16 +6340,16 @@ ${JSON.stringify(answered)}`;
         const sourceSectionsComplete = sectionIds.every(id => typeof sourceSections[id] === 'string' && sourceSections[id].trim());
         if (!sourceSectionsComplete) return buildErrorResponse('SOURCE_RESUME_STRUCTURE', 'The Master Resume AI Context does not contain all required sections in a recognisable format. Please correct the source resume structure before tailoring.', 409, headers);
         const prompt = [
-          'Tailor only Professional Summary and Core Competencies. All other resume sections are immutable source content and must not be rewritten.',
+          'Tailor only Professional Summary. All other resume sections, including Core Competencies, are immutable source content and must not be rewritten.',
           'Do not invent facts, numbers, metrics, dates, employers, job titles, certifications, tools, budgets, responsibilities, or outcomes. Numeric claims must be supported by the source resume or selected verified evidence.',
-          'Professional Experience, Key Achievements, and Technical Skills must return proposed_text as an empty string. The backend will use the exact canonical Master Resume content for these sections.',
+          'Core Competencies, Professional Experience, Key Achievements, and Technical Skills must return proposed_text as an empty string. The backend will use exact canonical Master Resume content for these sections.',
           'Do not merge employers or roles, alter titles or dates, omit responsibilities, remove achievements, or shorten technical skills. Never generate replacement text for immutable sections.',
-          'For Core Competencies, make only targeted JD-aligned wording or ordering changes supported by the source. Do not add unsupported skills or remove substantive competencies. If safe tailoring is not possible, return an empty proposed_text.',
+          'Do not rewrite, reorder, expand, or remove Core Competencies. Preserve the complete source section.',
           'The Professional Summary may be tailored to the job description, but preserve factual meaning and avoid unsupported claims or metrics.',
           'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
           'Never infer employers, titles, dates, tenure, scope, team size, budgets, metrics, outcomes, tools, certifications, ownership, or responsibilities.',
           'Do not attribute team outcomes to the candidate unless the source explicitly does so. Preserve factual meaning and seniority.',
-          'For original_text, reproduce the relevant source section faithfully. For proposed_text, return complete text only for the two tailorable sections; for immutable sections return an empty string.',
+          'For original_text, reproduce the relevant source section faithfully. For proposed_text, return complete text only for Professional Summary; for immutable sections return an empty string.',
           'Add JD keywords only when supported by source facts. If no safe change is possible, use an empty proposed_text.',
           'For evidence_ids, return ONLY exact ID strings copied from the supplied verified evidence records. If unsure or no evidence applies, return an empty array. Never invent IDs. Return complete replacement text for each section.',
           'Return ONLY JSON: {"sections":[{"section_id":"...","title":"...","original_text":"...","proposed_text":"...","rationale":"...","evidence_ids":[]}]}. Include exactly these section IDs once each, in this order: ' + sectionIds.join(', '),
@@ -6399,8 +6399,8 @@ ${JSON.stringify(answered)}`;
           if (rawEvidenceIds.length !== safeEvidenceIds.length) console.warn('Proposal generation: discarded unsupported evidence references for section', item.section_id);
           // A short AI response cannot block proposal generation. Protected sections
           // are restored from the canonical source below; competencies fall back safely.
-          const protectedSections = new Set(['professional_experience', 'achievements', 'technical_skills']);
-          const minimumCoverage = { core_competencies: 0.65 }[item.section_id];
+          const protectedSections = new Set(['core_competencies', 'professional_experience', 'achievements', 'technical_skills']);
+          const minimumCoverage = undefined;
           if (!protectedSections.has(item.section_id) && proposedText && minimumCoverage && originalText.length >= 300 && proposedText.length < originalText.length * minimumCoverage) {
             proposedText = '';
           }
@@ -6411,6 +6411,7 @@ ${JSON.stringify(answered)}`;
         for (const section of sections) section.original_text = sourceSections[section.section_id];
         // Protected sections are immutable. Replace any AI output with canonical source text.
         const protectedSectionReasons = {
+          core_competencies: 'Core Competencies are preserved verbatim from the Master Resume.',
           professional_experience: 'Professional Experience is preserved verbatim from the Master Resume.',
           achievements: 'Key Achievements are preserved verbatim from the Master Resume.',
           technical_skills: 'Technical Skills are preserved verbatim from the Master Resume.'
@@ -6423,7 +6424,7 @@ ${JSON.stringify(answered)}`;
           }
         }
         // Core Competencies safely fall back to source if AI shortened them materially.
-        const preservationThresholds = { core_competencies: 0.65 };
+        const preservationThresholds = {};
         for (const section of sections) {
           const threshold = preservationThresholds[section.section_id];
           if (!threshold || !section.proposed_text || section.original_text.length < 300) continue;
