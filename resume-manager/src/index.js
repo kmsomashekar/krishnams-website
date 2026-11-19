@@ -6292,6 +6292,9 @@ ${JSON.stringify(answered)}`;
           sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: item.rationale.slice(0, 3000), evidence_ids: [...new Set(item.evidence_ids)], decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
         }
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
+        const totalProposedLength = sections.reduce((total, section) => total + section.proposed_text.length, 0);
+        const sourceContentLength = String(source.ai_context || '').trim().length;
+        if (sourceContentLength >= 1500 && totalProposedLength < sourceContentLength * 0.70) return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The generated resume omitted too much of the source resume content. No proposal was saved. Please regenerate.', 502, headers);
         sections.sort((a, b) => sectionIds.indexOf(a.section_id) - sectionIds.indexOf(b.section_id));
         const now = new Date().toISOString();
         const generation = { id: crypto.randomUUID(), created_at: now, sections };
