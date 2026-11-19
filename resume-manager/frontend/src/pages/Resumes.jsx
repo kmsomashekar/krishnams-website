@@ -693,9 +693,9 @@ export default function Resumes() {
     }
   };
   const handleDeleteVersionClick = (version) => {
-    if (!version || version.is_active === 1 || version.is_active === true || resumeDetail?.is_master) return;
+    if (!version || resumeDetail?.is_master) return;
     const label = version.version_label || 'this resume version';
-    if (window.confirm(`Permanently delete "${label}" and its stored PDF, if any? This cannot be undone. Linked ATS analyses, opportunities, or customisation sessions will prevent deletion.`)) {
+    if (window.confirm(`Permanently delete "${label}" and its stored PDF, if any? This cannot be undone. Linked ATS analyses or opportunities will prevent deletion. Customisation history and evidence will be preserved but detached from this version.`)) {
       setFileActionError(null);
       deleteVersionMutation.mutate({ resumeId: selectedResumeId, versionId: version.id });
     }
@@ -1109,8 +1109,8 @@ export default function Resumes() {
                               <button
                                 type="button"
                                 onClick={() => handleDeleteVersionClick(ver)}
-                                disabled={Boolean(resumeDetail.is_master) || isActiveVersion || deleteVersionMutation.isPending}
-                                title={isActiveVersion ? 'Active versions cannot be deleted' : 'Delete this resume version'}
+                                disabled={Boolean(resumeDetail.is_master) || deleteVersionMutation.isPending}
+                                title={isActiveVersion ? 'Delete active version (confirmation required)' : 'Delete this resume version'}
                                 className="text-rose-600 hover:text-rose-800 font-bold text-[10px] underline text-right disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 {deleteVersionMutation.isPending ? 'Deleting...' : 'Delete Version'}
