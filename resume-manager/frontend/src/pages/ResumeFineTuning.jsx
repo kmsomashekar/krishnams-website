@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { jsPDF } from 'jspdf';
 import { Link, useParams } from 'react-router-dom';
 import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle, Packer } from 'docx';
 
@@ -214,41 +215,34 @@ function createDocxParagraphs(sections) {
   return output;
 }
 
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-}
-function buildPrintableResumeHtml(sections, title) {
-  const sectionHtml = sections.map(section => {
+function downloadResumePdf(resume, sections, setExportStatus) {
+  setExportStatus('Building PDF document…');
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 17;
+  const usableWidth = pageWidth - margin * 2;
+  let y = margin;
+  const ensureSpace = (height) => { if (y + height > pageHeight - margin) { pdf.addPage(); y = margin; } };
+  const drawWrapped = (text, options = {}) => {
+    const fontSize = options.fontSize || 10;
+    pdf.setFont('helvetica', options.bold ? 'bold' : 'normal'); pdf.setFontSize(fontSize);
+    const lines = pdf.splitTextToSize(String(text || ''), usableWidth - (options.indent || 0));
+    const lineHeight = options.lineHeight || 4.6;
+    ensureSpace(lines.length * lineHeight + (options.after || 0));
+    lines.forEach(line => { pdf.text(line, margin + (options.indent || 0), y); y += lineHeight; }); y += options.after || 0;
+  };
+  sections.forEach(section => {
     if (normalizeSectionKey(section.title) === 'contact_details') {
-      return '<header class="contact">' + section.paragraphs.map((p, i) =>
-        '<div class="contact-line' + (i === 0 ? ' name' : '') + '">' + escapeHtml(p).replace(/\n/g, '<br>') + '</div>'
-      ).join('') + '</header>';
+      section.paragraphs.forEach((paragraph, index) => { const fs = index === 0 ? 16 : 9; pdf.setFont('helvetica', index === 0 ? 'bold' : 'normal'); pdf.setFontSize(fs); const lines = pdf.splitTextToSize(String(paragraph || ''), usableWidth); ensureSpace(lines.length * fs * 0.45 + 2); lines.forEach(line => { pdf.text(line, pageWidth / 2, y, { align: 'center' }); y += fs * 0.45; }); y += 1; }); y += 3; return;
     }
-    const blocks = section.paragraphs.map(raw => {
-      const lines = String(raw || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
-      const bullets = lines.filter(line => /^(?:[•●▪◦]|[-*])\s+/.test(line));
-      const ordinary = lines.filter(line => !/^(?:[•●▪◦]|[-*])\s+/.test(line));
-      return (ordinary.length ? '<p>' + ordinary.map(escapeHtml).join('<br>') + '</p>' : '') +
-        (bullets.length ? '<ul>' + bullets.map(line => '<li>' + escapeHtml(line.replace(/^(?:[•●▪◦]|[-*])\s+/, '')) + '</li>').join('') + '</ul>' : '');
-    }).join('');
-    return '<section><h2>' + escapeHtml(sectionLabel(section.title).toUpperCase()) + '</h2>' + blocks + '</section>';
-  }).join('');
-  return '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(title || 'Tailored Resume') + '</title><style>' +
-    '@page{size:A4;margin:16mm 17mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:10pt;line-height:1.35;margin:0}' +
-    '.contact{text-align:center;margin-bottom:12px}.contact-line{margin:2px 0;font-size:9pt}.contact-line.name{font-size:16pt;font-weight:700;margin-bottom:4px}' +
-    'h2{font-size:11.5pt;font-weight:700;margin:14px 0 6px;padding-bottom:3px;border-bottom:1px solid #334155;page-break-after:avoid;break-after:avoid}' +
-    'p{margin:0 0 5px}ul{margin:2px 0 6px;padding-left:18px}li{margin:0 0 3px;break-inside:avoid;page-break-inside:avoid}section{break-inside:auto}header,h2{break-inside:avoid}</style></head><body>' +
-    sectionHtml + '</body></html>';
+    ensureSpace(10); y += 3; pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11.5); pdf.text(sectionLabel(section.title).toUpperCase(), margin, y); y += 2;
+    pdf.setDrawColor(51, 65, 85); pdf.setLineWidth(0.25); pdf.line(margin, y, pageWidth - margin, y); y += 5;
+    section.paragraphs.forEach(raw => { String(raw || '').split(/\\n+/).map(line => line.trim()).filter(Boolean).forEach(line => { const bullet = /^(?:[•●▪◦]|[-*])\\s+/.test(line); const clean = bullet ? line.replace(/^(?:[•●▪◦]|[-*])\\s+/, '') : line; drawWrapped(clean, { indent: bullet ? 4 : 0, after: 1.2 }); }); y += 1; });
+  });
+  const count = pdf.getNumberOfPages(); for (let page = 1; page <= count; page++) { pdf.setPage(page); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(110, 110, 110); pdf.text(page + ' / ' + count, pageWidth - margin, pageHeight - 8, { align: 'right' }); }
+  pdf.save(safeFileName(resume.resume_name) + '.pdf'); setExportStatus('PDF generated and download started (' + count + ' page' + (count === 1 ? '' : 's') + ').');
 }
-function openResumePdfPrintWindow(printWindow, sections, title, setExportStatus) {
-  printWindow.document.open();
-  printWindow.document.write(buildPrintableResumeHtml(sections, title));
-  printWindow.document.close();
-  setExportStatus('Print view is ready. In the print dialog, choose “Save as PDF” and save the file.');
-  printWindow.focus();
-  setTimeout(() => { try { printWindow.print(); } catch (_) {} }, 700);
-}
-
 async function downloadResumeDocx(resume, aiContext, session, setExportStatus) {
   setExportStatus('Step 1/5: Parsing the saved tailored resume…');
   const sections = validateResumeSections(getResumeSections(aiContext));
@@ -417,15 +411,7 @@ export default function ResumeFineTuning() {
 
   const handleDownload = async (format) => {
     if (!tailoredResume?.resume_id || !tailoredResume?.resume_version_id || exportingFormat) return;
-    let printWindow = null;
-    if (format === 'pdf') {
-      printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        setError('The PDF print window was blocked. Please allow pop-ups for this site and try again.');
-        return;
-      }
-    }
-    setExportingFormat(format); setError(''); setExportStatus(format === 'pdf' ? 'Preparing PDF print view…' : 'Starting DOCX export…');
+    setExportingFormat(format); setError(''); setExportStatus(format === 'pdf' ? 'Preparing direct PDF download…' : 'Starting DOCX export…');
     try {
       setExportStatus('Fetching tailored resume version…');
       const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
@@ -433,12 +419,11 @@ export default function ResumeFineTuning() {
       const sections = validateResumeSections(getResumeSections(version.ai_context));
       if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context, session, setExportStatus);
       else if (format === 'pdf') {
-        setExportStatus('Verifying source resume and preparing print layout…');
+        setExportStatus('Verifying source resume and generating PDF…');
         await verifySourceResumeFile(session);
-        openResumePdfPrintWindow(printWindow, sections, tailoredResume.resume_name, setExportStatus);
+        downloadResumePdf(tailoredResume, sections, setExportStatus);
       } else throw new Error('Unsupported export format.');
     } catch (err) {
-      if (printWindow && !printWindow.closed) printWindow.close();
       const message = err?.message || ('Unable to generate the ' + format.toUpperCase() + ' file.');
       setError(message); setExportStatus('Export failed: ' + message);
     } finally { setExportingFormat(''); }
@@ -615,11 +600,11 @@ export default function ResumeFineTuning() {
                   <p className="text-xs text-emerald-800">The approved sections are saved in a separate resume record. Your master resume has not been changed. Generate either file below to download it.</p>
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button type="button" onClick={() => handleDownload('docx')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-indigo-700 rounded hover:bg-indigo-600 disabled:opacity-50">{exportingFormat === 'docx' ? 'Preparing DOCX…' : 'Download DOCX'}</button>
-                    <button type="button" onClick={() => handleDownload('pdf')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-rose-700 rounded hover:bg-rose-600 disabled:opacity-50">{exportingFormat === 'pdf' ? 'Preparing PDF…' : 'Print / Save as PDF'}</button>
+                    <button type="button" onClick={() => handleDownload('pdf')} disabled={!!exportingFormat} className="px-4 py-2 text-xs font-bold text-white bg-rose-700 rounded hover:bg-rose-600 disabled:opacity-50">{exportingFormat === 'pdf' ? 'Preparing PDF…' : 'Save as PDF'}</button>
                     <Link to="/resumes" className="px-4 py-2 text-xs font-semibold text-emerald-900 underline">Open Resumes</Link>
                   </div>
                   {exportStatus && <p role="status" className="text-xs text-slate-600">{exportStatus}</p>}
-                  <p className="text-xs text-slate-500">DOCX download is available. For PDF, the resume opens in a print-ready layout; choose “Save as PDF” in the browser print dialog.</p>
+                  <p className="text-xs text-slate-500">DOCX download is available. PDF is generated directly and downloaded. No print dialog is required.</p>
                 </div>
               ) : (
                 <div className="border-t border-slate-100 pt-4 flex flex-wrap items-center justify-between gap-3">
