@@ -54,14 +54,31 @@ async function fetchTailoredVersion(resumeId, versionId) {
   return readApi(await fetch('/api/v1/resumes/' + resumeId + '/versions/' + versionId), 'Unable to load the tailored resume content.');
 }
 
-function getResumeSections(aiContext) {
+function getResumeSections(aiContext, profile = {}) {
   const sections = []; let current = null;
   for (const line of String(aiContext || '').replace(/\r/g, '').split('\n')) {
     if (line.startsWith('## ')) { if (current) sections.push(current); current = { title: line.slice(3).trim(), lines: [] }; }
     else if (current) current.lines.push(line);
   }
   if (current) sections.push(current);
-  return sections.map(section => ({ title: section.title, paragraphs: section.lines.join('\n').trim().split(/\n{2,}/).map(v => v.trim()).filter(Boolean) }));
+  const parsed = sections.map(section => ({ title: section.title, paragraphs: section.lines.join('\n').trim().split(/\n{2,}/).map(v => v.trim()).filter(Boolean) }));
+  const profileLines = [
+    profile.display_name,
+    profile.email,
+    profile.phone,
+    profile.location,
+    profile.linkedin_url ? 'LinkedIn: ' + profile.linkedin_url : ''
+  ].map(v => String(v || '').trim()).filter(Boolean);
+  const contactIndex = parsed.findIndex(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
+  if (contactIndex >= 0) {
+    const contact = parsed[contactIndex];
+    const existing = contact.paragraphs.join('\n').toLowerCase();
+    const missing = profileLines.filter(line => !existing.includes(line.toLowerCase()));
+    if (missing.length) contact.paragraphs.push(missing.join('\n'));
+  } else if (profileLines.length) {
+    parsed.unshift({ title: 'Contact Details', paragraphs: [profileLines.join('\n')] });
+  }
+  return parsed;
 }
 
 function sectionLabel(value) {
@@ -73,22 +90,31 @@ function sectionLabel(value) {
     technical_skills: 'Technical Skills',
     education: 'Education',
     certifications: 'Certifications',
-    portfolio: 'Selected Technology Initiatives & Digital Portfolio'
+    portfolio: 'Selected Technology Initiatives & Digital Portfolio',
+    contact_details: 'Contact Details'
   };
   const key = String(value || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '');
   return labels[key] || String(value || '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
 }
 
 function safeFileName(value) {
-  return String(value || 'Tailored-Resume').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Tailored-Resume';
+  return String(value || 'Resume').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Resume';
+}
+
+async function fetchCandidateProfile() {
+  try {
+    const result = await readApi(await fetch('/api/v1/profile'), 'Unable to load profile details.');
+    return result.profile || {};
+  } catch (_) {
+    return {};
+  }
 }
 
 async function downloadResumeDocx(resume, aiContext) {
-  const children = [
-    new Paragraph({ text: 'TAILORED RESUME', heading: HeadingLevel.TITLE, spacing: { after: 180 } }),
-    new Paragraph({ text: resume.version_label || 'JD-tailored resume', spacing: { after: 260 } })
-  ];
-  for (const section of getResumeSections(aiContext)) {
+  const profile = await fetchCandidateProfile();
+  const sections = getResumeSections(aiContext, profile);
+  const children = [];
+  for (const section of sections) {
     const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
     if (!isContact) children.push(new Paragraph({ text: sectionLabel(section.title), heading: HeadingLevel.HEADING_1, spacing: { before: 220, after: 100 } }));
     let contactFirstLine = true;
@@ -101,20 +127,18 @@ async function downloadResumeDocx(resume, aiContext) {
       if (isContact) contactFirstLine = false;
     }
   }
-  const doc = new Document({ creator: 'Resume Manager', title: resume.resume_name || 'Tailored Resume', sections: [{ properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } }, children }] });
+  const doc = new Document({ creator: 'Resume Manager', title: resume.target_role || 'Professional Resume', sections: [{ properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } }, children }] });
   const blob = await Packer.toBlob(doc); const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
   anchor.href = url; anchor.download = safeFileName(resume.resume_name) + '.docx'; anchor.click(); URL.revokeObjectURL(url);
 }
 
-function downloadResumePdf(resume, aiContext) {
+async function downloadResumePdf(resume, aiContext) {
+  const profile = await fetchCandidateProfile();
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
   const margin = 48; const maxWidth = width - margin * 2; let y = margin;
   const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '');
   const ensure = amount => { if (y + amount > height - margin) { pdf.addPage(); y = margin; } };
-  pdf.setFont('helvetica','bold'); pdf.setFontSize(16); pdf.text('TAILORED RESUME', margin, y); y += 21;
-  pdf.setFont('helvetica','normal'); pdf.setFontSize(8.5); pdf.setTextColor(90); pdf.text(clean(resume.version_label || 'JD-tailored resume'), margin, y); y += 15;
-  pdf.setDrawColor(190); pdf.line(margin,y,width-margin,y); y += 13;
-  for (const section of getResumeSections(aiContext)) {
+  for (const section of getResumeSections(aiContext, profile)) {
     const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
     if (!isContact) {
       ensure(36); pdf.setTextColor(30,64,110); pdf.setFont('helvetica','bold'); pdf.setFontSize(11); const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length * 14 + 5;
