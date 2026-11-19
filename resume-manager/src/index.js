@@ -3799,7 +3799,13 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
 
         if (aiContextResult.success) {
           const extractionCheck = validateAIContextExperience(aiContextResult.text);
-          if (!extractionCheck.valid) return buildErrorResponse('AI_CONTEXT_INCOMPLETE', 'The Professional Experience extraction is incomplete and was not saved. ' + extractionCheck.problems.join(' ') + ' Please retry after ensuring the Master Resume PDF is readable.', 422, headers);
+          const extractedSections = parseResumeContextSections(aiContextResult.text);
+          const missingRequiredSections = ['education', 'certifications'].filter(id => !String(extractedSections[id] || '').trim());
+          if (!extractionCheck.valid || missingRequiredSections.length) {
+            const problems = [...extractionCheck.problems];
+            if (missingRequiredSections.length) problems.push('Required sections missing or not extracted: ' + missingRequiredSections.join(', ') + '.');
+            return buildErrorResponse('AI_CONTEXT_INCOMPLETE', 'The AI Context extraction is incomplete and was not saved. ' + problems.join(' ') + ' Please retry after ensuring the Master Resume PDF is readable.', 422, headers);
+          }
           return new Response(
             JSON.stringify({
               success: true,
