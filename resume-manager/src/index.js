@@ -61,7 +61,7 @@ function validateResumePreservation(sourceSections, candidateSections, evidenceT
   const sourceRanges = sourceExperience.match(dateRangePattern) || [];
   const candidateRanges = candidateExperience.match(dateRangePattern) || [];
   if (sourceRanges.length && candidateRanges.length < sourceRanges.length) problems.push('professional_experience has fewer employment date ranges than the source (' + candidateRanges.length + ' vs ' + sourceRanges.length + ')');
-  for (const range of sourceRanges) if (!candidateExperience.toLowerCase().includes(range.toLowerCase().replace(/[–—]/g, '-'))) problems.push('employment date range missing or altered: ' + range);
+  for (const range of sourceRanges) if (!candidateExperience.toLowerCase().replace(/[–—]/g, '-').includes(range.toLowerCase().replace(/[–—]/g, '-'))) problems.push('employment date range missing or altered: ' + range);
   const unsupportedNumbers = findUnsupportedNumbers(Object.values(candidateSections || {}).join('\n'), sourceAll);
   if (unsupportedNumbers.length) problems.push('unsupported numeric claims: ' + unsupportedNumbers.join(', '));
   return problems;
