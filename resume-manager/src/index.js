@@ -6451,6 +6451,18 @@ ${JSON.stringify(answered)}`;
             section.rationale = 'AI shortened this section below the preservation threshold; the original Master Resume content is retained verbatim.';
           }
         }
+        // Unsupported numeric claims are isolated to the section that introduced them.
+        // Restore that section verbatim instead of rejecting the entire proposal.
+        const numericEvidence = JSON.stringify(evidence);
+        for (const section of sections) {
+          if (section.decision === 'NO_CHANGE' || !section.proposed_text) continue;
+          const unsupported = findUnsupportedNumbers(section.proposed_text, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
+          if (unsupported.length) {
+            section.proposed_text = '';
+            section.decision = 'NO_CHANGE';
+            section.rationale = 'AI introduced unsupported numeric claim(s) (' + unsupported.join(', ') + '); the original Master Resume content is retained verbatim.';
+          }
+        }
         const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
         const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
         if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
