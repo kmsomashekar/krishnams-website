@@ -7218,24 +7218,3 @@ ${JSON.stringify(answered)}`;
 
     } catch (error) {
       return buildErrorResponse(
-        'INTERNAL_SERVER_ERROR',
-        error.message || "An unexpected tracking engine data processing exception was encountered.",
-        500,
-        headers
-      );
-    }
-  }
-};
-
-// -----------------------------------------------------------------------------
-// Global Envelope Error Component Helper Blueprint
-// -----------------------------------------------------------------------------
-function buildErrorResponse(code, message, status, baseHeaders) {
-  return new Response(
-    JSON.stringify({
-      success: false,
-      error: { code, message }
-    }),
-    { status, headers: baseHeaders }
-  );
-}
