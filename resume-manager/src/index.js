@@ -472,7 +472,7 @@ async function callAIProviderWithDocument(base64Data, env) {
     "CERTIFICATIONS\n\n" +
     "CAREER FACTS & CONSTRAINTS\n\n" +
     "IMPORTANT EVIDENCE\n\n" +
-    "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
+    "Under PROFESSIONAL EXPERIENCE, reproduce every employer, title, date range, and responsibility/achievement bullet as separate role entries in source order. Do not combine roles or summarise them. If source text is unclear, mark it as unclear rather than inventing.\\n" +\n    "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
 
   const requestBody = {
     contents: [
@@ -6314,6 +6314,7 @@ ${JSON.stringify(answered)}`;
         if (!source || !source.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'Source resume version has no saved AI Context.', 409, headers);
         if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
         const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
+        if (!sourceSections.professional_experience || sourceSections.professional_experience.split(/\\s+/).filter(Boolean).length < 80) return buildErrorResponse('SOURCE_EXPERIENCE_MISSING', 'The Master Resume AI Context does not contain a complete role-by-role Professional Experience section. Regenerate AI Context from the Master Resume before tailoring. No custom resume was created.', 409, headers);
         const sourceSections = parseResumeContextSections(source.ai_context);
         const sourceSectionsComplete = sectionIds.every(id => typeof sourceSections[id] === 'string' && sourceSections[id].trim());
         if (!sourceSectionsComplete) return buildErrorResponse('SOURCE_RESUME_STRUCTURE', 'The Master Resume AI Context does not contain all required sections in a recognisable format. Please correct the source resume structure before tailoring.', 409, headers);
@@ -6321,6 +6322,8 @@ ${JSON.stringify(answered)}`;
           'Tailor the resume conservatively. The source resume is authoritative; never rewrite it into a short generic profile.',
           'Do not invent facts, numbers, metrics, dates, employers, job titles, certifications, tools, budgets, responsibilities, or outcomes. Any numeric claim must appear verbatim in the source resume or selected verified evidence.',
           'Keep each employer, title, date range and position separate exactly as in the source. Do not combine roles, create a current role, or alter dates. Preserve all substantive bullets and details.',
+          'Do not create or rewrite Professional Experience. Return proposed_text as an empty string for professional_experience; this section must remain exactly as extracted from the Master Resume.',
+          'Keep Core Competencies, Key Achievements, and Technical Skills distinct. Do not repeat the same metric or bullet across sections. Use achievements only for distinct outcomes, competencies only for capability keywords, and skills only for tools/platforms/frameworks.',
           'Make only targeted keyword and emphasis changes supported by source facts. Keep professional experience, achievements, and technical skills at least 82% of their source word count. If safe tailoring cannot be done without omission, return proposed_text empty for that section.',
           'The source resume is the authoritative document. Preserve its complete structure, every employment entry (employer, title, dates), and all meaningful responsibilities, achievements, metrics, projects, and technical skills.',
           'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
@@ -6390,6 +6393,8 @@ ${JSON.stringify(answered)}`;
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
         // Never trust model-generated source text: replace it with the exact parsed Master Resume section.
         for (const section of sections) section.original_text = sourceSections[section.section_id];
+        const experienceProposal = sections.find(section => section.section_id === 'professional_experience');
+        if (experienceProposal) { experienceProposal.proposed_text = ''; experienceProposal.decision = 'NO_CHANGE'; experienceProposal.rationale = 'Professional Experience is preserved verbatim from the Master Resume and is not AI-tailored.'; }
         const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
         const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
         if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
