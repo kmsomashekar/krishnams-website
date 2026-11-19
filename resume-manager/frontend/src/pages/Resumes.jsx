@@ -88,6 +88,10 @@ async function deleteResumeVersion({ resumeId, versionId }) {
   const res = await fetch(`/api/v1/resumes/${resumeId}/versions/${versionId}`, { method: 'DELETE' });
   return handleResponse(res, 'Failed to delete resume version.');
 }
+async function deleteResume({ id }) {
+  const res = await fetch(`/api/v1/resumes/${id}`, { method: 'DELETE' });
+  return handleResponse(res, 'Failed to delete resume.');
+}
 
 export default function Resumes() {
   const queryClient = useQueryClient();
@@ -349,6 +353,20 @@ export default function Resumes() {
       setFileActionError(err.message);
     }
   });
+  const deleteResumeMutation = useMutation({
+    mutationFn: deleteResume,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['resumes'] });
+      queryClient.removeQueries({ queryKey: ['resume-details', data?.id] });
+      queryClient.removeQueries({ queryKey: ['resume-version-details', data?.id] });
+      setSelectedResumeId(null);
+      setSelectedVersionId(null);
+      setIsVersionDetailsOpen(false);
+      setFileActionError(null);
+      showSuccessFeedback(data?.warning || 'Resume and all its versions deleted successfully.');
+    },
+    onError: (err) => setFileActionError(err.message)
+  });
   const deleteVersionMutation = useMutation({
     mutationFn: deleteResumeVersion,
     onSuccess: (data) => {
@@ -370,6 +388,15 @@ export default function Resumes() {
     setResumeForm({ name: '', notes: '', is_master: false });
     setModalError(null);
     setIsAddResumeOpen(true);
+  };
+
+  const handleDeleteResume = () => {
+    if (!resumeDetail || resumeDetail.is_master) return;
+    const versionCount = resumeDetail.versions?.length || 0;
+    const warning = `Delete the entire resume "${resumeDetail.name}" and all ${versionCount} version(s), including stored PDF files? This cannot be undone.`;
+    if (!window.confirm(warning)) return;
+    setFileActionError(null);
+    deleteResumeMutation.mutate({ id: selectedResumeId });
   };
 
   const handleOpenEditResume = () => {
@@ -869,6 +896,16 @@ export default function Resumes() {
                     >
                       {resumeDetail.is_master ? 'Master Protected' : 'Edit Resume'}
                     </button>
+                    {!resumeDetail.is_master && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteResume}
+                        disabled={deleteResumeMutation.isPending}
+                        className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-white border border-rose-200 rounded hover:bg-rose-50 transition-colors disabled:opacity-50"
+                      >
+                        {deleteResumeMutation.isPending ? 'Deleting...' : 'Delete Resume'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleOpenAddVersion}
