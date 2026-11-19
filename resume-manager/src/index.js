@@ -6256,7 +6256,7 @@ ${JSON.stringify(answered)}`;
           'For original_text, reproduce the relevant source section faithfully, including all content. For proposed_text, make targeted wording/reordering changes for JD relevance, but retain ALL roles and substantive bullets. Do not merge multiple jobs into one, delete older experience, remove achievements, or turn detailed content into a short summary.',
           'Professional experience, achievements, and technical skills must remain comprehensive and near the same length as the source sections. Tailoring means emphasis and wording, not content deletion. The summary may be rewritten; competencies may be reordered but retain supported skills.',
           'Add JD keywords only when supported by source facts. If no safe change is possible, use an empty proposed_text.',
-          'Evidence IDs must come only from the supplied verified evidence. Return complete replacement text for each section.',
+          'For evidence_ids, return ONLY exact ID strings copied from the supplied verified evidence records. If unsure or no evidence applies, return an empty array. Never invent IDs. Return complete replacement text for each section.',
           'Return ONLY JSON: {"sections":[{"section_id":"...","title":"...","original_text":"...","proposed_text":"...","rationale":"...","evidence_ids":[]}]}. Include exactly these section IDs once each, in this order: ' + sectionIds.join(', '),
           'SOURCE RESUME AI CONTEXT:', source.ai_context.slice(0, 90000),
           'VERIFIED EVIDENCE:', JSON.stringify(evidence),
@@ -6276,10 +6276,14 @@ ${JSON.stringify(answered)}`;
         const seen = new Set();
         const sections = [];
         for (const item of parsed.sections) {
-          if (!item || !sectionIds.includes(item.section_id) || seen.has(item.section_id) || typeof item.original_text !== 'string' || typeof item.proposed_text !== 'string' || typeof item.rationale !== 'string' || !Array.isArray(item.evidence_ids) || item.evidence_ids.some(id => typeof id !== 'string' || !validEvidenceIds.has(id))) return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal contains invalid section data or unsupported evidence references.', 502, headers);
+          if (!item || !sectionIds.includes(item.section_id) || seen.has(item.section_id)) return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal contains a missing, unknown, or duplicate section ID. No proposal was saved.', 502, headers);
+          if (typeof item.original_text !== 'string' || typeof item.proposed_text !== 'string') return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal section ' + item.section_id + ' is missing valid original_text or proposed_text. No proposal was saved.', 502, headers);
           seen.add(item.section_id);
           const originalText = item.original_text.trim();
           const proposedText = item.proposed_text.trim();
+          const rawEvidenceIds = Array.isArray(item.evidence_ids) ? item.evidence_ids : [];
+          const safeEvidenceIds = [...new Set(rawEvidenceIds.filter(id => typeof id === 'string' && validEvidenceIds.has(id)))];
+          if (rawEvidenceIds.length !== safeEvidenceIds.length) console.warn('Proposal generation: discarded unsupported evidence references for section', item.section_id);
           const minimumCoverage = {
             professional_experience: 0.85,
             achievements: 0.80,
@@ -6289,7 +6293,7 @@ ${JSON.stringify(answered)}`;
           if (proposedText && minimumCoverage && originalText.length >= 300 && proposedText.length < originalText.length * minimumCoverage) {
             return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The AI shortened the ' + item.section_id.replaceAll('_', ' ') + ' section too aggressively. No proposal was saved. Please regenerate.', 502, headers);
           }
-          sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: item.rationale.slice(0, 3000), evidence_ids: [...new Set(item.evidence_ids)], decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
+          sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: String(item.rationale || 'Proposal generated for this section.').slice(0, 3000), evidence_ids: safeEvidenceIds, decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
         }
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
         const totalProposedLength = sections.reduce((total, section) => total + section.proposed_text.length, 0);
