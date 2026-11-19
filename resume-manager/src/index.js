@@ -6296,6 +6296,28 @@ ${JSON.stringify(answered)}`;
       }
 
       const customisationProposalsMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/proposals$/);
+      if (customisationProposalsMatch && method === 'DELETE') {
+        const sessionId = customisationProposalsMatch[1];
+        const session = await env.DB.prepare('SELECT proposal_json, evidence_snapshot_json FROM resume_customisation_sessions WHERE id = ? AND user_id = ?').bind(sessionId, userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+        let body;
+        try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers); }
+        const generationId = body?.generation_id;
+        if (typeof generationId !== 'string' || !generationId) return buildErrorResponse('INVALID_INPUT', 'A proposal generation ID is required.', 400, headers);
+        let saved;
+        try { saved = JSON.parse(session.proposal_json || 'null'); } catch (_) { saved = null; }
+        if (!saved || !Array.isArray(saved.generations)) return buildErrorResponse('PROPOSALS_NOT_FOUND', 'No saved proposals were found.', 404, headers);
+        const target = saved.generations.find(item => item.id === generationId);
+        if (!target) return buildErrorResponse('GENERATION_NOT_FOUND', 'Proposal generation not found.', 404, headers);
+        saved.generations = saved.generations.filter(item => item.id !== generationId);
+        if (saved.active_generation_id === generationId) saved.active_generation_id = null;
+        if (!saved.generations.length) saved = null;
+        const now = new Date().toISOString();
+        const nextStatus = saved?.generations?.length ? 'PROPOSALS_READY' : (session.evidence_snapshot_json ? 'READY_FOR_PROPOSAL' : 'DRAFT');
+        await env.DB.prepare('UPDATE resume_customisation_sessions SET proposal_json = ?, status = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+          .bind(saved ? JSON.stringify(saved) : null, nextStatus, now, sessionId, userId).run();
+        return new Response(JSON.stringify({ success: true, data: { proposals: saved, status: nextStatus, deleted_generation_id: generationId } }), { status: 200, headers });
+      }
       if (customisationProposalsMatch && method === 'POST') {
         const sessionId = customisationProposalsMatch[1];
         const session = await env.DB.prepare('SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?').bind(sessionId, userId).first();
