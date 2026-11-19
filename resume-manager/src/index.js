@@ -6232,6 +6232,10 @@ ${JSON.stringify(answered)}`;
         const sourceForFinal = await env.DB.prepare('SELECT rv.ai_context FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?').bind(session.source_resume_version_id, session.source_resume_id, userId).first();
         if (!sourceForFinal?.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'The source Master Resume could not be reloaded for final validation.', 409, headers);
         const canonicalSourceSections = parseResumeContextSections(sourceForFinal.ai_context);
+        if (!String(canonicalSourceSections.education || '').trim()) {
+          const detected = Object.entries(canonicalSourceSections).filter(([key, value]) => !key.startsWith('_') && String(value || '').trim()).map(([key]) => key).join(', ') || 'none';
+          return buildErrorResponse('SOURCE_EDUCATION_MISSING', 'Tailored resume blocked: Education is present in your source resume but could not be extracted from its saved AI Context. Regenerate or correct the Master Resume AI Context before tailoring. Detected source sections: ' + detected + '.', 409, headers);
+        }
         // Final assembly is source-first. User review cannot remove or rewrite protected
         // employment, achievement, or skills content; these are rebuilt from canonical source.
         const immutableIds = new Set(['core_competencies', 'professional_experience', 'achievements', 'technical_skills']);
