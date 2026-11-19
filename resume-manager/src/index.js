@@ -53,25 +53,6 @@ function validateResumePreservation(sourceSections, candidateSections, evidenceT
   return problems;
 }
 
-function validateAIContextExperience(context) {
-  const parsed = parseResumeContextSections(context);
-  const experience = String(parsed.professional_experience || '').trim();
-  const words = experience.split(/\s+/).filter(Boolean).length;
-  const dateRanges = experience.match(/(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}|present|current)/gi) || [];
-  const employers = (experience.match(/(?:^|\n)\s*(?:EMPLOYER|COMPANY)\s*:/gi) || []).length;
-  const titles = (experience.match(/(?:^|\n)\s*(?:TITLE|ROLE)\s*:/gi) || []).length;
-  const bullets = (experience.match(/(?:^|\n)\s*(?:[-*•]|\d+[.)])\s+/g) || []).length;
-  const placeholder = /(?:placeholder|summary of experience|details not available|not provided|unable to extract|no professional experience|experience omitted)/i.test(experience);
-  const problems = [];
-  if (words < 100) problems.push('Professional Experience is too short (' + words + ' words); it appears to be a summary rather than complete employment history.');
-  if (!dateRanges.length) problems.push('No employment date ranges were detected.');
-  if (!employers || employers !== dateRanges.length) problems.push('Each role must have an EMPLOYER: line and date range. Detected ' + employers + ' employers and ' + dateRanges.length + ' date ranges.');
-  if (!titles || titles !== dateRanges.length) problems.push('Each role must have a TITLE: line. Detected ' + titles + ' titles and ' + dateRanges.length + ' date ranges.');
-  if (bullets < 3) problems.push('Responsibilities/achievement bullets are missing or too few (' + bullets + ' detected).');
-  if (placeholder) problems.push('Placeholder or omission language was detected.');
-  return { valid: problems.length === 0, problems, wordCount: words, roleCount: dateRanges.length, bulletCount: bullets };
-}
-
 // --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
 const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
@@ -492,7 +473,7 @@ async function callAIProviderWithDocument(base64Data, env) {
     "CERTIFICATIONS\n\n" +
     "CAREER FACTS & CONSTRAINTS\n\n" +
     "IMPORTANT EVIDENCE\n\n" +
-    "Under PROFESSIONAL EXPERIENCE, transcribe the complete employment history directly from the PDF. Create a separate entry for EACH employer/position, in source order, using this exact format:\nEMPLOYER: [company name]\nTITLE: [exact job title]\nDATES: [exact date range]\n- [responsibility/achievement bullet]\n- [next source bullet]\nPreserve ALL responsibility and achievement bullets individually, including technical details and metrics. Do not combine, shorten, paraphrase into a summary, omit earlier roles, or impose a word limit. If a role has no bullets, state that explicitly. Never use a placeholder or generic summary. Before returning, verify every employment entry visible in the PDF is represented.\n" +
+    "Under PROFESSIONAL EXPERIENCE, reproduce every employer, title, date range, and responsibility/achievement bullet as separate role entries in source order. Do not combine roles or summarise them. If source text is unclear, mark it as unclear rather than inventing.\n" +
     "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
 
   const requestBody = {
@@ -3840,8 +3821,6 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         const aiContextResult = await callAIProviderWithDocument(b64PayloadData, env);
 
         if (aiContextResult.success) {
-          const extractionCheck = validateAIContextExperience(aiContextResult.text);
-          if (!extractionCheck.valid) return buildErrorResponse('AI_CONTEXT_INCOMPLETE', 'The Professional Experience extraction is incomplete and was not saved. ' + extractionCheck.problems.join(' ') + ' Please retry after ensuring the Master Resume PDF is readable.', 422, headers);
           return new Response(
             JSON.stringify({
               success: true,
@@ -7218,3 +7197,24 @@ ${JSON.stringify(answered)}`;
 
     } catch (error) {
       return buildErrorResponse(
+        'INTERNAL_SERVER_ERROR',
+        error.message || "An unexpected tracking engine data processing exception was encountered.",
+        500,
+        headers
+      );
+    }
+  }
+};
+
+// -----------------------------------------------------------------------------
+// Global Envelope Error Component Helper Blueprint
+// -----------------------------------------------------------------------------
+function buildErrorResponse(code, message, status, baseHeaders) {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: { code, message }
+    }),
+    { status, headers: baseHeaders }
+  );
+}
