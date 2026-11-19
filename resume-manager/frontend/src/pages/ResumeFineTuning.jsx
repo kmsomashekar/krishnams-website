@@ -74,7 +74,7 @@ function safeFileName(value) {
 
 async function downloadResumeDocx(resume, aiContext) {
   const children = [
-    new Paragraph({ text: resume.resume_name || 'Tailored Resume', heading: HeadingLevel.TITLE, spacing: { after: 180 } }),
+    new Paragraph({ text: 'TAILORED RESUME', heading: HeadingLevel.TITLE, spacing: { after: 180 } }),
     new Paragraph({ text: resume.version_label || 'JD-tailored resume', spacing: { after: 260 } })
   ];
   for (const section of getResumeSections(aiContext)) {
