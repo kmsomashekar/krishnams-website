@@ -72,8 +72,8 @@ function getResumeSections(aiContext, profile = {}) {
   const contactIndex = parsed.findIndex(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
   if (contactIndex >= 0) {
     const contact = parsed[contactIndex];
-    const existing = contact.paragraphs.join('\n').toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\/+\b/g, '');
-    const missing = profileLines.filter(line => !existing.includes(line.toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\/+\b/g, '')));
+    const existing = contact.paragraphs.join('\n').toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\/+$/g, '');
+    const missing = profileLines.filter(line => !existing.includes(line.toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\/+$/g, '')));
     if (missing.length) contact.paragraphs.push(missing.join('\n'));
   } else if (profileLines.length) {
     parsed.unshift({ title: 'Contact Details', paragraphs: [profileLines.join('\n')] });
