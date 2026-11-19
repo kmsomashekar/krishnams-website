@@ -6316,7 +6316,7 @@ ${JSON.stringify(answered)}`;
         if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
         const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
         const sourceSections = parseResumeContextSections(source.ai_context);
-        if (!sourceSections.professional_experience || sourceSections.professional_experience.split(/\\s+/).filter(Boolean).length < 80) return buildErrorResponse('SOURCE_EXPERIENCE_MISSING', 'The Master Resume AI Context does not contain a complete role-by-role Professional Experience section. Regenerate AI Context from the Master Resume before tailoring. No custom resume was created.', 409, headers);
+        if (!sourceSections.professional_experience || sourceSections.professional_experience.split(/\s+/).filter(Boolean).length < 80) return buildErrorResponse('SOURCE_EXPERIENCE_MISSING', 'The Master Resume AI Context does not contain a complete role-by-role Professional Experience section. Regenerate AI Context from the Master Resume before tailoring. No custom resume was created.', 409, headers);
         const sourceSectionsComplete = sectionIds.every(id => typeof sourceSections[id] === 'string' && sourceSections[id].trim());
         if (!sourceSectionsComplete) return buildErrorResponse('SOURCE_RESUME_STRUCTURE', 'The Master Resume AI Context does not contain all required sections in a recognisable format. Please correct the source resume structure before tailoring.', 409, headers);
         const prompt = [
