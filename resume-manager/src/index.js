@@ -6478,6 +6478,11 @@ ${JSON.stringify(answered)}`;
           }
         }
         const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
+        // Sections outside the AI proposal schema are preserved directly from the canonical source.
+        // Include them in integrity validation so omitted proposal fields aren't mistaken for data loss.
+        for (const id of ['contact_details', 'education', 'certifications', 'portfolio']) {
+          if (String(sourceSections[id] || '').trim()) candidateSections[id] = sourceSections[id];
+        }
         const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
         if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
         // Count preserved source text for NO_CHANGE sections, including Professional Experience.
