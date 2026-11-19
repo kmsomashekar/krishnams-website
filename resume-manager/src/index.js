@@ -6456,7 +6456,7 @@ ${JSON.stringify(answered)}`;
         const numericEvidence = JSON.stringify(evidence);
         for (const section of sections) {
           if (section.decision === 'NO_CHANGE' || !section.proposed_text) continue;
-          const unsupported = findUnsupportedNumbers(section.proposed_text, Object.values(sourceSections || {}).join('\\n') + '\\n' + numericEvidence);
+          const unsupported = findUnsupportedNumbers(section.proposed_text, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
           if (unsupported.length) {
             section.proposed_text = '';
             section.decision = 'NO_CHANGE';
