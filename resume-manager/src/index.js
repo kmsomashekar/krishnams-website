@@ -2559,6 +2559,26 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         return new Response(JSON.stringify({success:true,data:{id,status:body.status||existing.status}}),{status:200,headers});
       }
 
+      if (jobFeedIdMatch && pathname.endsWith('/add-to-opportunity') && method === 'POST') {
+        if (!userId) return buildErrorResponse('UNAUTHORIZED','Authentication required.',401,headers);
+        const id=jobFeedIdMatch[1];
+        const job=await env.DB.prepare('SELECT * FROM job_feed_jobs WHERE id=? AND user_id=?').bind(id,userId).first();
+        if(!job)return buildErrorResponse('NOT_FOUND','Job not found.',404,headers);
+        if(job.opportunity_id)return new Response(JSON.stringify({success:true,data:{opportunity_id:job.opportunity_id,already_added:true}}),{status:200,headers});
+        let company=await env.DB.prepare('SELECT id FROM companies WHERE user_id=? AND LOWER(name)=LOWER(?) LIMIT 1').bind(userId,job.company_name).first();
+        const now=new Date().toISOString();
+        const companyId=company?.id||crypto.randomUUID();
+        const opportunityId=crypto.randomUUID();
+        const jdId=crypto.randomUUID();
+        const statements=[];
+        if(!company) statements.push(env.DB.prepare('INSERT INTO companies (id,user_id,name,website,location,notes,created_at) VALUES (?,?,?,?,?,?,?)').bind(companyId,userId,job.company_name,null,job.location||null,null,now));
+        statements.push(env.DB.prepare('INSERT INTO opportunities (id,user_id,company_id,resume_version_id,job_title,status,priority,application_url,date_identified,date_applied,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(opportunityId,userId,companyId,null,job.title,'CONSIDERING',3,job.source_url||null,now.slice(0,10),null,'Imported from Job Feed. Match score: '+(job.match_score??'N/A')+'%.',now,now));
+        statements.push(env.DB.prepare('INSERT INTO job_descriptions (id,opportunity_id,raw_text,extracted_skills,created_at) VALUES (?,?,?,?,?)').bind(jdId,opportunityId,job.description,null,now));
+        statements.push(env.DB.prepare('UPDATE job_feed_jobs SET status=?,opportunity_id=?,updated_at=? WHERE id=? AND user_id=?').bind('ADDED_TO_OPPORTUNITIES',opportunityId,now,id,userId));
+        await env.DB.batch(statements);
+        return new Response(JSON.stringify({success:true,data:{opportunity_id:opportunityId,created:true}}),{status:201,headers});
+      }
+
       const resumeRootPattern = '/api/v1/resumes';
       const companyRootPattern = '/api/v1/companies';
       const opportunityRootPattern = '/api/v1/opportunities';
