@@ -221,15 +221,15 @@ function buildPrintableResumeHtml(sections, title) {
   const sectionHtml = sections.map(section => {
     if (normalizeSectionKey(section.title) === 'contact_details') {
       return '<header class="contact">' + section.paragraphs.map((p, i) =>
-        '<div class="contact-line' + (i === 0 ? ' name' : '') + '">' + escapeHtml(p).replace(/\\n/g, '<br>') + '</div>'
+        '<div class="contact-line' + (i === 0 ? ' name' : '') + '">' + escapeHtml(p).replace(/\n/g, '<br>') + '</div>'
       ).join('') + '</header>';
     }
     const blocks = section.paragraphs.map(raw => {
-      const lines = String(raw || '').split(/\\n+/).map(line => line.trim()).filter(Boolean);
-      const bullets = lines.filter(line => /^(?:[•●▪◦]|[-*])\\s+/.test(line));
-      const ordinary = lines.filter(line => !/^(?:[•●▪◦]|[-*])\\s+/.test(line));
+      const lines = String(raw || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
+      const bullets = lines.filter(line => /^(?:[•●▪◦]|[-*])\s+/.test(line));
+      const ordinary = lines.filter(line => !/^(?:[•●▪◦]|[-*])\s+/.test(line));
       return (ordinary.length ? '<p>' + ordinary.map(escapeHtml).join('<br>') + '</p>' : '') +
-        (bullets.length ? '<ul>' + bullets.map(line => '<li>' + escapeHtml(line.replace(/^(?:[•●▪◦]|[-*])\\s+/, '')) + '</li>').join('') + '</ul>' : '');
+        (bullets.length ? '<ul>' + bullets.map(line => '<li>' + escapeHtml(line.replace(/^(?:[•●▪◦]|[-*])\s+/, '')) + '</li>').join('') + '</ul>' : '');
     }).join('');
     return '<section><h2>' + escapeHtml(sectionLabel(section.title).toUpperCase()) + '</h2>' + blocks + '</section>';
   }).join('');
