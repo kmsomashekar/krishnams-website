@@ -6336,7 +6336,7 @@ ${JSON.stringify(answered)}`;
         if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
         const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
         const sourceSections = parseResumeContextSections(source.ai_context);
-        if (!sourceSections.professional_experience || sourceSections.professional_experience.split(/\s+/).filter(Boolean).length < 80) return buildErrorResponse('SOURCE_EXPERIENCE_MISSING', 'The Master Resume AI Context does not contain a complete role-by-role Professional Experience section. Regenerate AI Context from the Master Resume before tailoring. No custom resume was created.', 409, headers);
+        if (!sourceSections.professional_experience || sourceSections.professional_experience.split(/\s+/).filter(Boolean).length < 80) return buildErrorResponse('SOURCE_EXPERIENCE_MISSING', 'The Master Resume AI Context does not contain enough detail about the experience documented in the resume to tailor safely. Regenerate AI Context from the Master Resume before tailoring. Older roles not included in the Master Resume are not required. No custom resume was created.', 409, headers);
         const sourceSectionsComplete = sectionIds.every(id => typeof sourceSections[id] === 'string' && sourceSections[id].trim());
         if (!sourceSectionsComplete) return buildErrorResponse('SOURCE_RESUME_STRUCTURE', 'The Master Resume AI Context does not contain all required sections in a recognisable format. Please correct the source resume structure before tailoring.', 409, headers);
         const prompt = [
@@ -6346,6 +6346,7 @@ ${JSON.stringify(answered)}`;
           'Do not merge employers or roles, alter titles or dates, omit responsibilities, remove achievements, or shorten technical skills. Never generate replacement text for immutable sections.',
           'Do not rewrite, reorder, expand, or remove Core Competencies. Preserve the complete source section.',
           'The Professional Summary may be tailored to the job description, but preserve factual meaning and avoid unsupported claims or metrics.',
+          'Do not state a numeric career duration (such as 20, 25, or 30 years) unless that exact duration is explicitly stated in the source resume or verified evidence. Never calculate or infer total years of experience from employment dates, especially when the resume intentionally omits older roles. Prefer number-free wording such as extensive experience or seasoned IT and Cybersecurity leadership when supported.',
           'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
           'Never infer employers, titles, dates, tenure, scope, team size, budgets, metrics, outcomes, tools, certifications, ownership, or responsibilities.',
           'Do not attribute team outcomes to the candidate unless the source explicitly does so. Preserve factual meaning and seniority.',
@@ -6420,6 +6421,49 @@ ${JSON.stringify(answered)}`;
         // Unsupported numeric claims are isolated to the section that introduced them.
         // Restore that section verbatim instead of rejecting the entire proposal.
         const numericEvidence = JSON.stringify(evidence);
+        // If the summary introduces an unsupported number, give Gemini one focused retry
+        // that explicitly asks for a number-free rewrite. Do not require omitted older roles.
+        const summarySection = sections.find(section => section.section_id === 'professional_summary');
+        if (summarySection && summarySection.proposed_text) {
+          const unsupportedSummaryNumbers = findUnsupportedNumbers(summarySection.proposed_text, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
+          if (unsupportedSummaryNumbers.length) {
+            const retryPrompt = [
+              'Rewrite the Professional Summary for the target job description using only supported facts from the source resume and verified evidence.',
+              'The previous draft introduced unsupported numeric claim(s): ' + unsupportedSummaryNumbers.join(', ') + '. Remove them.',
+              'Do not mention any number, year, career duration, tenure, percentage, count, or metric unless it is explicitly present in the source resume or verified evidence. Do not infer total career years from dates. Older employment not included in the resume must not be assumed.',
+              'Keep the summary concise, relevant to the JD, and factual. Return ONLY the revised summary text, with no heading, explanation, markdown, or quotation marks.',
+              'SOURCE SUMMARY:', sourceSections.professional_summary,
+              'PREVIOUS DRAFT:', summarySection.proposed_text,
+              'SOURCE RESUME CONTEXT:', String(source.ai_context || '').slice(0, 90000),
+              'VERIFIED EVIDENCE:', numericEvidence,
+              'JOB DESCRIPTION:', String(session.jd_text_snapshot || '').slice(0, 25000)
+            ].join('\n');
+            const retry = await callGemini(retryPrompt, env.GEMINI_API_KEY, { maxOutputTokens: 1000, timeoutMs: 30000 });
+            if (retry.success) {
+              let retryText = String(retry.text || '').trim().replace(/^\s*```(?:text|markdown)?\s*/i, '').replace(/\s*```$/, '').trim();
+              if (retryText.startsWith('{')) {
+                try {
+                  const retryJson = JSON.parse(retryText);
+                  retryText = String(retryJson.summary || retryJson.professional_summary || '').trim();
+                } catch (_) {}
+              }
+              const retryUnsupported = findUnsupportedNumbers(retryText, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
+              const retryContainsAnyNumber = /\d/.test(retryText);
+              if (retryText && !retryContainsAny && !retryUnsupported.length) {
+                summarySection.proposed_text = retryText.slice(0, 20000);
+                summarySection.rationale = 'Regenerated to remove unsupported numerical claims while tailoring the summary to the JD.';
+              } else {
+                summarySection.proposed_text = '';
+                summarySection.decision = 'NO_CHANGE';
+                summarySection.rationale = 'AI introduced unsupported numeric claims and the number-free retry could not be validated; the original Master Resume summary is retained verbatim.';
+              }
+            } else {
+              summarySection.proposed_text = '';
+              summarySection.decision = 'NO_CHANGE';
+              summarySection.rationale = 'AI introduced unsupported numeric claims and the retry failed; the original Master Resume summary is retained verbatim.';
+            }
+          }
+        }
         for (const section of sections) {
           if (section.decision === 'NO_CHANGE' || !section.proposed_text) continue;
           const unsupported = findUnsupportedNumbers(section.proposed_text, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
