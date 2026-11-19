@@ -111,20 +111,37 @@ async function downloadResumeDocx(resume, aiContext) {
   const profile = await fetchCandidateProfile();
   const sections = getResumeSections(aiContext, profile);
   const children = [];
+  const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
+  if (contact) {
+    const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
+    if (lines.length) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines[0], bold: true, size: 32, color: '184368', font: 'Arial' })], spacing: { after: 0 } }));
+    if (lines.length > 1) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines[1], bold: true, size: 20, color: '374450', font: 'Arial' })], spacing: { after: 0 } }));
+    if (lines.length > 2) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines.slice(2).join(' | '), size: 16, font: 'Arial' })], spacing: { after: 180 } }));
+  }
   for (const section of sections) {
     const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
-    if (!isContact) children.push(new Paragraph({ text: sectionLabel(section.title), heading: HeadingLevel.HEADING_1, spacing: { before: 220, after: 100 } }));
-    let contactFirstLine = true;
-    for (const block of section.paragraphs) for (const line of block.split('\n').map(v => v.trim()).filter(Boolean)) {
-      const bullet = /^[-•*]\s/.test(line);
-      const cleanLine = bullet ? line.replace(/^[-•*]\s*/, '') : line;
-      const dateHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(cleanLine);
-      const contactName = isContact && contactFirstLine;
-      children.push(new Paragraph({ children: [new TextRun({ text: cleanLine, bold: dateHeading || contactName, size: contactName ? 30 : 20 })], spacing: { after: bullet ? 65 : contactName ? 100 : 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
-      if (isContact) contactFirstLine = false;
+    if (isContact) continue;
+    children.push(new Paragraph({ children: [new TextRun({ text: sectionLabel(section.title).toUpperCase(), bold: true, size: 22, color: '184368', font: 'Arial' })], spacing: { before: 180, after: 80 } }));
+    for (const block of section.paragraphs) for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
+      const bullet = /^[-•*]\s/.test(rawLine);
+      const line = bullet ? rawLine.replace(/^[-•*]\s*/, '') : rawLine;
+      const roleHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(line) && !bullet;
+      const competencyLabel = !bullet && /^[^:]{2,80}:\s/.test(line);
+      const runs = competencyLabel ? [
+        new TextRun({ text: line.split(':')[0] + ': ', bold: true, font: 'Arial', size: 20 }),
+        new TextRun({ text: line.slice(line.indexOf(':') + 1).trim(), font: 'Arial', size: 20 })
+      ] : [new TextRun({ text: line, bold: roleHeading, font: 'Arial', size: roleHeading ? 21 : 20, color: roleHeading ? '184368' : undefined })];
+      children.push(new Paragraph({ children: runs, spacing: { after: bullet ? 45 : roleHeading ? 90 : 60 }, ...(bullet ? { bullet: { indent: 300 } } : {}) }));
     }
   }
-  const doc = new Document({ creator: 'Resume Manager', title: resume.target_role || 'Professional Resume', sections: [{ properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } }, children }] });
+  const doc = new Document({
+    creator: 'Resume Manager',
+    title: resume.target_role || 'Professional Resume',
+    sections: [{
+      properties: { page: { margin: { top: 550, right: 530, bottom: 550, left: 530 } } },
+      children
+    }]
+  });
   const blob = await Packer.toBlob(doc); const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
   anchor.href = url; anchor.download = safeFileName(resume.resume_name) + '.docx'; anchor.click(); URL.revokeObjectURL(url);
 }
@@ -132,30 +149,38 @@ async function downloadResumeDocx(resume, aiContext) {
 async function downloadResumePdf(resume, aiContext) {
   const profile = await fetchCandidateProfile();
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
-  const margin = 48; const maxWidth = width - margin * 2; let y = margin;
+  const margin = 42; const maxWidth = width - margin * 2; let y = margin;
   const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '');
-  const ensure = amount => { if (y + amount > height - margin) { pdf.addPage(); y = margin; } };
-  for (const section of getResumeSections(aiContext, profile)) {
+  const ensure = amount => { if (y + amount > height - margin - 28) { pdf.addPage(); y = margin; } };
+  const sections = getResumeSections(aiContext, profile);
+  const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
+  if (contact) {
+    const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
+    if (lines.length) { pdf.setTextColor(24,67,104); pdf.setFont('helvetica','bold'); pdf.setFontSize(16); pdf.text(clean(lines[0]),width/2,y,{align:'center'}); y += 19; }
+    if (lines.length > 1) { pdf.setTextColor(55,68,80); pdf.setFont('helvetica','bold'); pdf.setFontSize(10); pdf.text(clean(lines[1]),width/2,y,{align:'center'}); y += 13; }
+    if (lines.length > 2) { pdf.setTextColor(40,40,40); pdf.setFont('helvetica','normal'); pdf.setFontSize(8.5); const contactText=pdf.splitTextToSize(clean(lines.slice(2).join(' | ')),maxWidth); pdf.text(contactText,width/2,y,{align:'center'}); y += contactText.length*11+7; }
+  }
+  for (const section of sections) {
     const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
-    if (!isContact) {
-      ensure(36); pdf.setTextColor(30,64,110); pdf.setFont('helvetica','bold'); pdf.setFontSize(11); const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length * 14 + 5;
-    }
-    let contactFirstLine = true;
+    if (isContact) continue;
+    ensure(28); pdf.setTextColor(24,67,104); pdf.setFont('helvetica','bold'); pdf.setFontSize(10.5);
+    const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length*13+4;
     for (const block of section.paragraphs) {
       for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
-        const bullet = /^[-•*]\s/.test(rawLine); const lineText = bullet ? '- ' + rawLine.replace(/^[-•*]\s*/, '') : rawLine;
-        const dateHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(rawLine);
-        const contactName = isContact && contactFirstLine;
-        const lines = pdf.splitTextToSize(clean(lineText),maxWidth - (bullet ? 10 : 0));
-        pdf.setFont('helvetica', dateHeading || contactName ? 'bold' : 'normal'); pdf.setFontSize(contactName ? 15 : dateHeading ? 9.3 : 9);
-        for (const line of lines) { ensure(contactName ? 18 : 12); pdf.text(line,margin + (bullet ? 10 : 0),y); y += contactName ? 17 : 12; }
-        if (isContact) contactFirstLine = false;
+        const bullet = /^[-•*]\s/.test(rawLine); const lineText = bullet ? rawLine.replace(/^[-•*]\s*/, '') : rawLine;
+        const roleHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(lineText) && !bullet;
+        const competencyLabel = !bullet && /^[^:]{2,80}:\s/.test(lineText);
+        const prefix = bullet ? '• ' : '';
+        const lines = pdf.splitTextToSize(clean(prefix + lineText),maxWidth-(bullet?10:0));
+        pdf.setFont('helvetica',roleHeading||competencyLabel?'bold':'normal'); pdf.setFontSize(roleHeading?9.3:8.8); pdf.setTextColor(roleHeading?24:40,roleHeading?67:40,roleHeading?104:40);
+        for (const line of lines) { ensure(12); pdf.text(line,margin+(bullet?10:0),y); y += 11; }
       }
-      y += 4;
+      y += 2;
     }
-    y += 5;
+    y += 3;
   }
-  const pages = pdf.getNumberOfPages(); for (let i=1;i<=pages;i++) { pdf.setPage(i); pdf.setFontSize(8); pdf.setTextColor(130); pdf.text('Page ' + i + ' of ' + pages,width-margin,height-22,{align:'right'}); }
+  const pages = pdf.getNumberOfPages();
+  for (let i=1;i<=pages;i++) { pdf.setPage(i); pdf.setFont('helvetica','normal'); pdf.setFontSize(7.5); pdf.setTextColor(100); pdf.text('Krishna M S  |  IT & Cybersecurity Leader  |  ' + i,width/2,height-20,{align:'center'}); }
   pdf.save(safeFileName(resume.resume_name) + '.pdf');
 }
 
