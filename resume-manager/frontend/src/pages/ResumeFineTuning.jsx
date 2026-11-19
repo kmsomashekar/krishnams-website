@@ -70,7 +70,10 @@ function sectionLabel(value) {
     core_competencies: 'Core Competencies',
     professional_experience: 'Professional Experience',
     achievements: 'Key Achievements',
-    technical_skills: 'Technical Skills'
+    technical_skills: 'Technical Skills',
+    education: 'Education',
+    certifications: 'Certifications',
+    portfolio: 'Selected Technology Initiatives & Digital Portfolio'
   };
   const key = String(value || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '');
   return labels[key] || String(value || '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
