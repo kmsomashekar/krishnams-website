@@ -56,6 +56,16 @@ export function findUnsupportedNumbers(candidate, sourceAndEvidence) {
 
 export function validateResumePreservation(sourceSections, candidateSections, evidenceText = '') {
   const problems = [];
+  // Preserve non-proposal sections verbatim whenever present in the canonical source.
+  for (const id of ['contact_details', 'education', 'certifications', 'portfolio']) {
+    const original = String(sourceSections?.[id] || '').trim();
+    if (!original) continue;
+    const candidate = String(candidateSections?.[id] || '').trim();
+    if (!candidate) problems.push(id + ' is missing from the final resume');
+    else if (original.replace(/\\s+/g, ' ').trim() !== candidate.replace(/\\s+/g, ' ').trim()) {
+      problems.push(id + ' differs from the canonical Master Resume content');
+    }
+  }
   const sourceAll = Object.values(sourceSections || {}).join('\n') + '\n' + evidenceText;
   const immutable = ['core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
   for (const id of immutable) {
