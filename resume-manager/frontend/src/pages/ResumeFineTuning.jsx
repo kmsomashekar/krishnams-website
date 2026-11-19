@@ -98,16 +98,13 @@ function sectionLabel(value) {
 }
 
 function safeFileName(value) {
-  return String(value || 'Resume').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Resume';
+  const cleaned = String(value || 'Resume').replace(/^Tailored\s*[-:]?\s*/i, '');
+  return cleaned.replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Resume';
 }
 
 async function fetchCandidateProfile() {
-  try {
-    const result = await readApi(await fetch('/api/v1/profile'), 'Unable to load profile details.');
-    return result.profile || {};
-  } catch (_) {
-    return {};
-  }
+  const result = await readApi(await fetch('/api/v1/profile'), 'Unable to load profile details. Export stopped to avoid omitting profile information.');
+  return result.profile || {};
 }
 
 async function downloadResumeDocx(resume, aiContext) {
@@ -295,7 +292,7 @@ export default function ResumeFineTuning() {
     try {
       const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
       if (!version?.ai_context) throw new Error('The tailored resume has no saved content to export.');
-      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context); else downloadResumePdf(tailoredResume, version.ai_context);
+      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context); else await downloadResumePdf(tailoredResume, version.ai_context);
     } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); }
     finally { setExportingFormat(''); }
   };
