@@ -260,6 +260,18 @@ export default function ResumeFineTuning() {
             {evidence.length === 0 ? (
               <p className="text-xs text-amber-700">No verified evidence is available. Verify relevant entries in the Experience &amp; Achievement Repository first.</p>
             ) : (
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={evidence.length > 0 && selectedEvidenceIds.length === evidence.length}
+                    onChange={event => setSelectedEvidenceIds(event.target.checked ? evidence.map(item => item.id) : [])}
+                    className="rounded"
+                  />
+                  Select All
+                </label>
+                <span className="text-xs text-slate-500">{selectedEvidenceIds.length} of {evidence.length} selected</span>
+              </div>
               <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg">
                 {evidence.map(item => (
                   <label key={item.id} className="flex gap-3 p-3 cursor-pointer hover:bg-slate-50">
