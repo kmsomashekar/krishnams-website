@@ -5882,7 +5882,7 @@ ${JSON.stringify(answered)}`;
         let resumeVersion = null;
         if (opportunity.resume_version_id) {
           resumeVersion = await env.DB.prepare(
-            `SELECT id, version_label, target_role, r2_object_key FROM resume_versions WHERE id = ?`
+            `SELECT id, resume_id, version_label, target_role, r2_object_key FROM resume_versions WHERE id = ?`
           )
           .bind(opportunity.resume_version_id)
           .first();
@@ -6049,6 +6049,303 @@ ${JSON.stringify(answered)}`;
       }
 
       // =======================================================================
+      // MODULE: RESUME CUSTOMISATION SESSION API
+      // =======================================================================
+      const customisationCreateMatch = pathname.match(/^\/api\/v1\/opportunities\/([^/]+)\/customisation-sessions$/);
+      const customisationSessionMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)$/);
+      const customisationEvidenceMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/evidence$/);
+
+      if (customisationCreateMatch && method === 'POST') {
+        const opportunityId = customisationCreateMatch[1];
+        const opportunity = await env.DB.prepare(
+          'SELECT id, resume_version_id FROM opportunities WHERE id = ? AND user_id = ?'
+        ).bind(opportunityId, userId).first();
+        if (!opportunity) return buildErrorResponse('NOT_FOUND', 'Opportunity not found.', 404, headers);
+
+        const jd = await env.DB.prepare(
+          'SELECT raw_text FROM job_descriptions WHERE opportunity_id = ?'
+        ).bind(opportunityId).first();
+        if (!jd?.raw_text) return buildErrorResponse('JD_NOT_FOUND', 'Save the job description before starting resume fine-tuning.', 409, headers);
+
+        const ats = await env.DB.prepare(
+          'SELECT id, resume_version_id, analysis_json FROM ats_analysis WHERE opportunity_id = ? ORDER BY analyzed_at DESC LIMIT 1'
+        ).bind(opportunityId).first();
+        if (!ats?.analysis_json) return buildErrorResponse('ANALYSIS_NOT_FOUND', 'Save the JD analysis before starting resume fine-tuning.', 409, headers);
+        if (opportunity.resume_version_id && opportunity.resume_version_id !== ats.resume_version_id) {
+          return buildErrorResponse('SOURCE_VERSION_MISMATCH', 'The saved opportunity and ATS analysis refer to different resume versions.', 409, headers);
+        }
+
+        const existingSession = await env.DB.prepare(
+          'SELECT id, status FROM resume_customisation_sessions WHERE user_id = ? AND opportunity_id = ? AND ats_analysis_id = ? ORDER BY updated_at DESC LIMIT 1'
+        ).bind(userId, opportunityId, ats.id).first();
+        if (existingSession) return new Response(JSON.stringify({ success: true, data: { ...existingSession, resumed: true } }), { status: 200, headers });
+
+        const sourceVersion = await env.DB.prepare(
+          'SELECT rv.id, rv.resume_id FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id WHERE rv.id = ? AND r.user_id = ?'
+        ).bind(ats.resume_version_id, userId).first();
+        if (!sourceVersion) return buildErrorResponse('SOURCE_VERSION_NOT_FOUND', 'The source resume version is not accessible.', 404, headers);
+
+        const id = crypto.randomUUID();
+        const now = new Date().toISOString();
+        await env.DB.prepare(
+          `INSERT INTO resume_customisation_sessions
+           (id,user_id,opportunity_id,status,evidence_snapshot_json,source_resume_id,source_resume_version_id,ats_analysis_id,jd_text_snapshot,analysis_snapshot_json,created_at,updated_at)
+           VALUES (?,?,?,'DRAFT','[]',?,?,?,?,?,?,?)`
+        ).bind(id,userId,opportunityId,sourceVersion.resume_id,sourceVersion.id,ats.id,jd.raw_text,ats.analysis_json,now,now).run();
+        return new Response(JSON.stringify({ success: true, data: { id, opportunity_id: opportunityId, status: 'DRAFT', resumed: false } }), { status: 201, headers });
+      }
+
+      if (customisationSessionMatch && method === 'GET') {
+        const session = await env.DB.prepare(
+          'SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(customisationSessionMatch[1], userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+        let evidence = [];
+        try { evidence = JSON.parse(session.evidence_snapshot_json || '[]'); } catch (_) { evidence = []; }
+        let analysis = null;
+        try { analysis = JSON.parse(session.analysis_snapshot_json || 'null'); } catch (_) { analysis = null; }
+        let proposals = null;
+        try { proposals = JSON.parse(session.proposal_json || 'null'); } catch (_) { proposals = null; }
+        return new Response(JSON.stringify({ success: true, data: { ...session, evidence_snapshot: evidence, analysis_snapshot: analysis, proposals } }), { status: 200, headers });
+      }
+
+      if (customisationEvidenceMatch && method === 'PUT') {
+        const sessionId = customisationEvidenceMatch[1];
+        const session = await env.DB.prepare(
+          'SELECT id, status FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(sessionId, userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+        let body;
+        try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers); }
+        if (!Array.isArray(body?.evidence_ids) || body.evidence_ids.length > 100 || body.evidence_ids.some(id => typeof id !== 'string' || !id.trim())) {
+          return buildErrorResponse('INVALID_INPUT', 'evidence_ids must be an array of up to 100 evidence IDs.', 400, headers);
+        }
+        const uniqueIds = [...new Set(body.evidence_ids)];
+        let selectedEvidence = [];
+        if (uniqueIds.length) {
+          const placeholders = uniqueIds.map(() => '?').join(',');
+          const result = await env.DB.prepare(
+            `SELECT id,evidence_type,title,organisation,role,description,responsibilities,actions_taken,outcomes,technologies_json,skills_json,classification,start_date,end_date,verification_status
+             FROM resume_evidence WHERE user_id = ? AND verification_status = 'VERIFIED' AND id IN (${placeholders})`
+          ).bind(userId, ...uniqueIds).all();
+          selectedEvidence = result.results || [];
+          if (selectedEvidence.length !== uniqueIds.length) return buildErrorResponse('INVALID_EVIDENCE', 'Every selected item must be verified and belong to this account.', 400, headers);
+        }
+        const snapshot = selectedEvidence.map(item => ({
+          ...item,
+          technologies: JSON.parse(item.technologies_json || '[]'),
+          skills: JSON.parse(item.skills_json || '[]')
+        }));
+        const now = new Date().toISOString();
+        const status = snapshot.length ? 'READY_FOR_PROPOSAL' : 'DRAFT';
+        let proposalHistory = null;
+        try { proposalHistory = JSON.parse((await env.DB.prepare(
+          'SELECT proposal_json FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(sessionId, userId).first())?.proposal_json || 'null'); } catch (_) { proposalHistory = null; }
+        if (proposalHistory && Array.isArray(proposalHistory.generations) && proposalHistory.generations.length) {
+          proposalHistory.generations = proposalHistory.generations.map(generation => ({
+            ...generation,
+            superseded_by_evidence_change: true
+          }));
+          proposalHistory.active_generation_id = null;
+        }
+        await env.DB.prepare(
+          'UPDATE resume_customisation_sessions SET evidence_snapshot_json = ?, proposal_json = ?, status = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+        ).bind(JSON.stringify(snapshot), proposalHistory ? JSON.stringify(proposalHistory) : null, status, now, sessionId, userId).run();
+        return new Response(JSON.stringify({ success: true, data: { session_id: sessionId, status, selected_evidence_count: snapshot.length, evidence_snapshot: snapshot, proposals: proposalHistory } }), { status: 200, headers });
+      }
+
+      // =======================================================================
+      const customisationFinalizeMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/finalize$/);
+      if (customisationFinalizeMatch && method === 'POST') {
+        const sessionId = customisationFinalizeMatch[1];
+        const session = await env.DB.prepare(
+          'SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?'
+        ).bind(sessionId, userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+
+        let saved;
+        try { saved = JSON.parse(session.proposal_json || 'null'); } catch (_) { saved = null; }
+        if (!saved || !Array.isArray(saved.generations) || !saved.active_generation_id) {
+          return buildErrorResponse('PROPOSALS_NOT_FOUND', 'There is no active proposal generation to finalise.', 409, headers);
+        }
+        if (saved.tailored_resume?.resume_version_id) {
+          return new Response(JSON.stringify({ success: true, data: { ...saved.tailored_resume, reused: true } }), { status: 200, headers });
+        }
+        const generation = saved.generations.find(item => item.id === saved.active_generation_id);
+        if (!generation || !Array.isArray(generation.sections) || generation.sections.length !== 5) {
+          return buildErrorResponse('INVALID_PROPOSALS', 'The active proposal generation is incomplete.', 409, headers);
+        }
+        const unresolved = generation.sections.filter(section =>
+          section.decision !== 'NO_CHANGE' && !['ACCEPTED', 'EDITED', 'REJECTED'].includes(section.decision)
+        );
+        if (unresolved.length) return buildErrorResponse('REVIEW_INCOMPLETE', 'Review every proposed section before creating the tailored resume.', 409, headers);
+
+        const opportunity = await env.DB.prepare(
+          'SELECT o.id, o.job_title, c.name AS company_name FROM opportunities o JOIN companies c ON c.id = o.company_id WHERE o.id = ? AND o.user_id = ?'
+        ).bind(session.opportunity_id, userId).first();
+        if (!opportunity) return buildErrorResponse('NOT_FOUND', 'Linked opportunity not found.', 404, headers);
+
+        const finalSections = generation.sections.map(section => ({
+          section_id: section.section_id,
+          content: String(section.decision === 'REJECTED'
+            ? section.original_text
+            : section.decision === 'EDITED'
+              ? section.edited_text
+              : section.proposed_text || section.original_text || '').trim()
+        }));
+        const placeholderPattern = /(?:\[\s*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO|TBD|WRITE|PUT|ENSURE)[\s\S]{0,1000}?\]|(?:REPRODUCE ALL ORIGINAL CONTENT|INSERT (?:CONTENT|TEXT) HERE|PLACEHOLDER TEXT|TODO:|TBD:|CONTENT GOES HERE|ALL ROLES AND BULLETS ARE RETAINED))/i;
+        const invalidSection = finalSections.find(section => placeholderPattern.test(section.content));
+        if (invalidSection) return buildErrorResponse('RESUME_PLACEHOLDER_BLOCKED', 'The final resume contains placeholder/instruction text in ' + invalidSection.section_id.replaceAll('_', ' ') + '. Resume creation was blocked. Review or regenerate the proposals.', 409, headers);
+        const experienceSection = finalSections.find(section => section.section_id === 'professional_experience');
+        if (!experienceSection || experienceSection.content.split(/\s+/).filter(Boolean).length < 100) return buildErrorResponse('RESUME_EXPERIENCE_INCOMPLETE', 'Professional Experience is missing or incomplete. The tailored resume was not created.', 409, headers);
+        const sectionText = finalSections.map(section => '## ' + section.section_id.replaceAll('_', ' ') + '\n' + section.content).join('\n\n');
+        if (!sectionText.trim()) return buildErrorResponse('EMPTY_RESUME', 'The reviewed sections contain no resume content.', 409, headers);
+
+        const resumeId = crypto.randomUUID();
+        const versionId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const resumeName = ('Tailored - ' + opportunity.company_name + ' - ' + opportunity.job_title).slice(0, 200);
+        const versionLabel = 'JD-tailored ' + now.slice(0, 10);
+        const aiContext = 'TAILORED RESUME CONTENT\nOpportunity: ' + opportunity.job_title + ' at ' + opportunity.company_name +
+          '\nGenerated from reviewed proposals. Source master resume remains unchanged.\n\n' + sectionText;
+
+        await env.DB.prepare(
+          'INSERT INTO resumes (id, user_id, name, notes, is_master, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)'
+        ).bind(resumeId, userId, resumeName, 'Created from reviewed proposals for opportunity ' + session.opportunity_id, now, now).run();
+        await env.DB.prepare(
+          'INSERT INTO resume_versions (id, resume_id, version_label, target_role, r2_object_key, is_active, created_at, ai_context) VALUES (?, ?, ?, ?, NULL, 1, ?, ?)'
+        ).bind(versionId, resumeId, versionLabel, opportunity.job_title, now, aiContext).run();
+
+        saved.tailored_resume = {
+          resume_id: resumeId,
+          resume_version_id: versionId,
+          resume_name: resumeName,
+          version_label: versionLabel,
+          opportunity_id: session.opportunity_id,
+          created_at: now
+        };
+        await env.DB.prepare(
+          'UPDATE resume_customisation_sessions SET proposal_json = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+        ).bind(JSON.stringify(saved), now, sessionId, userId).run();
+
+        return new Response(JSON.stringify({ success: true, data: { ...saved.tailored_resume, reused: false } }), { status: 201, headers });
+      }
+
+      const customisationProposalsMatch = pathname.match(/^\/api\/v1\/customisation-sessions\/([^/]+)\/proposals$/);
+      if (customisationProposalsMatch && method === 'POST') {
+        const sessionId = customisationProposalsMatch[1];
+        const session = await env.DB.prepare('SELECT * FROM resume_customisation_sessions WHERE id = ? AND user_id = ?').bind(sessionId, userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+        if (!['READY_FOR_PROPOSAL', 'PROPOSALS_READY', 'PROPOSALS_IN_REVIEW'].includes(session.status)) return buildErrorResponse('EVIDENCE_REQUIRED', 'Save verified evidence before generating proposals.', 409, headers);
+        let body = {};
+        try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers); }
+        let history = null;
+        try { history = JSON.parse(session.proposal_json || 'null'); } catch (_) { history = null; }
+        if (history && Array.isArray(history.generations) && history.active_generation_id && body.regenerate !== true) {
+          const active = history.generations.find(x => x.id === history.active_generation_id);
+          if (active) return new Response(JSON.stringify({ success: true, data: { proposals: history, generation: active, status: session.status, reused: true } }), { status: 200, headers });
+        }
+        let evidence, analysis;
+        try { evidence = JSON.parse(session.evidence_snapshot_json || '[]'); analysis = JSON.parse(session.analysis_snapshot_json || 'null'); } catch (_) { return buildErrorResponse('SESSION_DATA_ERROR', 'Saved session snapshots could not be read.', 409, headers); }
+        if (!Array.isArray(evidence) || evidence.length === 0 || !analysis) return buildErrorResponse('EVIDENCE_REQUIRED', 'Verified evidence and saved JD analysis are required.', 409, headers);
+        const source = await env.DB.prepare('SELECT rv.ai_context FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?').bind(session.source_resume_version_id, session.source_resume_id, userId).first();
+        if (!source || !source.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'Source resume version has no saved AI Context.', 409, headers);
+        if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
+        const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
+        const prompt = [
+          'Tailor the resume to the job description WITHOUT shortening, summarising, or dropping the candidate’s original resume content.',
+          'The source resume is the authoritative document. Preserve its complete structure, every employment entry (employer, title, dates), and all meaningful responsibilities, achievements, metrics, projects, and technical skills.',
+          'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
+          'Never invent or infer employers, titles, dates, tenure, scope, team size, budgets, metrics, outcomes, tools, certifications, ownership or responsibilities.',
+          'Do not attribute team outcomes to the candidate unless the source explicitly does so. Preserve factual meaning and seniority.',
+          'For original_text, reproduce the relevant source section faithfully, including all content. For proposed_text, make targeted wording/reordering changes for JD relevance, but retain ALL roles and substantive bullets. Do not merge multiple jobs into one, delete older experience, remove achievements, or turn detailed content into a short summary.',
+          'Professional experience, achievements, and technical skills must remain comprehensive and near the same length as the source sections. Tailoring means emphasis and wording, not content deletion. The summary may be rewritten; competencies may be reordered but retain supported skills.',
+          'Add JD keywords only when supported by source facts. If no safe change is possible, use an empty proposed_text.',
+          'For evidence_ids, return ONLY exact ID strings copied from the supplied verified evidence records. If unsure or no evidence applies, return an empty array. Never invent IDs. Return complete replacement text for each section.',
+          'Return ONLY JSON: {"sections":[{"section_id":"...","title":"...","original_text":"...","proposed_text":"...","rationale":"...","evidence_ids":[]}]}. Include exactly these section IDs once each, in this order: ' + sectionIds.join(', '),
+          'SOURCE RESUME AI CONTEXT:', source.ai_context.slice(0, 90000),
+          'VERIFIED EVIDENCE:', JSON.stringify(evidence),
+          'JOB DESCRIPTION:', String(session.jd_text_snapshot || '').slice(0, 25000),
+          'SAVED JD ANALYSIS:', JSON.stringify(analysis).slice(0, 25000)
+        ].join('\n');
+        const generated = await callGemini(prompt, env.GEMINI_API_KEY, { maxOutputTokens: 12000 });
+        if (!generated.success) return buildErrorResponse('AI_PROVIDER_ERROR', 'Proposal generation failed. Please retry.', generated.status === 429 ? 429 : 502, headers);
+        let parsed;
+        try {
+          let raw = String(generated.text || '').trim();
+          if (raw.startsWith('```')) raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+          parsed = JSON.parse(raw);
+        } catch (_) { return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal generator returned invalid JSON. The session is unchanged.', 502, headers); }
+        if (!Array.isArray(parsed.sections) || parsed.sections.length !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal generator did not return all five sections.', 502, headers);
+        const validEvidenceIds = new Set(evidence.map(x => x.id));
+        const seen = new Set();
+        const sections = [];
+        for (const item of parsed.sections) {
+          if (!item || !sectionIds.includes(item.section_id) || seen.has(item.section_id)) return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal contains a missing, unknown, or duplicate section ID. No proposal was saved.', 502, headers);
+          if (typeof item.original_text !== 'string' || typeof item.proposed_text !== 'string') return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal section ' + item.section_id + ' is missing valid original_text or proposed_text. No proposal was saved.', 502, headers);
+          seen.add(item.section_id);
+          const originalText = item.original_text.trim();
+          const proposedText = item.proposed_text.trim();
+          const placeholderPattern = /(?:\[\s*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO|TBD|WRITE|PUT|ENSURE)[\s\S]{0,1000}?\]|(?:REPRODUCE ALL ORIGINAL CONTENT|INSERT (?:CONTENT|TEXT) HERE|PLACEHOLDER TEXT|TODO:|TBD:|CONTENT GOES HERE|ALL ROLES AND BULLETS ARE RETAINED))/i;
+          if (placeholderPattern.test(originalText) || placeholderPattern.test(proposedText)) {
+            return buildErrorResponse('AI_PLACEHOLDER_CONTENT', 'The AI returned placeholder or instruction text in ' + item.section_id.replaceAll('_', ' ') + '. No proposal was saved. Please regenerate.', 502, headers);
+          }
+          if (item.section_id === 'professional_experience' && proposedText.split(/\s+/).filter(Boolean).length < 100) {
+            return buildErrorResponse('AI_INCOMPLETE_EXPERIENCE', 'The Professional Experience section is incomplete. It must contain the actual employment history and responsibilities, not a short placeholder or summary. No proposal was saved.', 502, headers);
+          }
+          const rawEvidenceIds = Array.isArray(item.evidence_ids) ? item.evidence_ids : [];
+          const safeEvidenceIds = [...new Set(rawEvidenceIds.filter(id => typeof id === 'string' && validEvidenceIds.has(id)))];
+          if (rawEvidenceIds.length !== safeEvidenceIds.length) console.warn('Proposal generation: discarded unsupported evidence references for section', item.section_id);
+          const minimumCoverage = {
+            professional_experience: 0.85,
+            achievements: 0.80,
+            technical_skills: 0.85,
+            core_competencies: 0.65
+          }[item.section_id];
+          if (proposedText && minimumCoverage && originalText.length >= 300 && proposedText.length < originalText.length * minimumCoverage) {
+            return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The AI shortened the ' + item.section_id.replaceAll('_', ' ') + ' section too aggressively. No proposal was saved. Please regenerate.', 502, headers);
+          }
+          sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: String(item.rationale || 'Proposal generated for this section.').slice(0, 3000), evidence_ids: safeEvidenceIds, decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
+        }
+        if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
+        const totalProposedLength = sections.reduce((total, section) => total + section.proposed_text.length, 0);
+        const sourceContentLength = String(source.ai_context || '').trim().length;
+        if (sourceContentLength >= 1500 && totalProposedLength < sourceContentLength * 0.70) return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The generated resume omitted too much of the source resume content. No proposal was saved. Please regenerate.', 502, headers);
+        sections.sort((a, b) => sectionIds.indexOf(a.section_id) - sectionIds.indexOf(b.section_id));
+        const now = new Date().toISOString();
+        const generation = { id: crypto.randomUUID(), created_at: now, sections };
+        const generations = history && Array.isArray(history.generations) ? history.generations : [];
+        generations.push(generation);
+        const saved = { schema_version: 1, active_generation_id: generation.id, generations };
+        await env.DB.prepare("UPDATE resume_customisation_sessions SET proposal_json = ?, status = 'PROPOSALS_READY', updated_at = ? WHERE id = ? AND user_id = ?").bind(JSON.stringify(saved), now, sessionId, userId).run();
+        return new Response(JSON.stringify({ success: true, data: { proposals: saved, generation, status: 'PROPOSALS_READY', reused: false } }), { status: 200, headers });
+      }
+      if (customisationProposalsMatch && method === 'PUT') {
+        const sessionId = customisationProposalsMatch[1];
+        const session = await env.DB.prepare('SELECT proposal_json FROM resume_customisation_sessions WHERE id = ? AND user_id = ?').bind(sessionId, userId).first();
+        if (!session) return buildErrorResponse('NOT_FOUND', 'Customisation session not found.', 404, headers);
+        let body;
+        try { body = await request.json(); } catch (_) { return buildErrorResponse('INVALID_INPUT', 'Request payload must be valid JSON.', 400, headers); }
+        const { generation_id, section_id, decision, edited_text } = body || {};
+        if (typeof generation_id !== 'string' || typeof section_id !== 'string' || !['ACCEPTED', 'REJECTED', 'EDITED'].includes(decision)) return buildErrorResponse('INVALID_INPUT', 'A generation, section and valid decision are required.', 400, headers);
+        if (decision === 'EDITED' && (typeof edited_text !== 'string' || !edited_text.trim() || edited_text.length > 20000)) return buildErrorResponse('INVALID_INPUT', 'Edited text must be non-empty and no longer than 20,000 characters.', 400, headers);
+        let saved;
+        try { saved = JSON.parse(session.proposal_json || 'null'); } catch (_) { saved = null; }
+        if (!saved || !Array.isArray(saved.generations)) return buildErrorResponse('PROPOSALS_NOT_FOUND', 'Generate proposals before reviewing.', 409, headers);
+        const generation = saved.generations.find(x => x.id === generation_id);
+        if (!generation) return buildErrorResponse('GENERATION_NOT_FOUND', 'Proposal generation not found.', 404, headers);
+        const section = generation.sections.find(x => x.section_id === section_id);
+        if (!section) return buildErrorResponse('SECTION_NOT_FOUND', 'Proposal section not found.', 404, headers);
+        if (section.decision === 'NO_CHANGE') return buildErrorResponse('NO_CHANGE', 'This section has no proposed change to review.', 409, headers);
+        section.decision = decision;
+        section.edited_text = decision === 'EDITED' ? edited_text.trim() : null;
+        section.reviewed_at = new Date().toISOString();
+        const now = new Date().toISOString();
+        await env.DB.prepare("UPDATE resume_customisation_sessions SET proposal_json = ?, status = 'PROPOSALS_IN_REVIEW', updated_at = ? WHERE id = ? AND user_id = ?").bind(JSON.stringify(saved), now, sessionId, userId).run();
+        return new Response(JSON.stringify({ success: true, data: { proposals: saved, generation, status: 'PROPOSALS_IN_REVIEW' } }), { status: 200, headers });
+      }
+
       // MODULE: RESUME EVIDENCE REPOSITORY API
       // =======================================================================
       const evidenceCollectionPath = '/api/v1/resume-evidence';
@@ -6114,6 +6411,20 @@ ${JSON.stringify(answered)}`;
           }
           const sourceOwner = await env.DB.prepare(`SELECT rv.id FROM resume_versions rv JOIN resumes r ON r.id=rv.resume_id WHERE rv.id=? AND rv.resume_id=? AND r.user_id=?`).bind(body.resume_version_id,body.resume_id,userId).first();
           if (!sourceOwner) return buildErrorResponse('INVALID_SOURCE', 'The selected source resume/version does not belong to this account.', 400, headers);
+        }
+        if (body.resume_version_id) {
+          const duplicate = await env.DB.prepare(
+            `SELECT e.id, e.title, e.verification_status
+             FROM resume_evidence e
+             JOIN resume_evidence_sources s ON s.evidence_id = e.id AND s.user_id = e.user_id
+             WHERE e.user_id = ? AND s.resume_version_id = ?
+               AND lower(trim(e.title)) = lower(trim(?))
+               AND lower(trim(coalesce(e.organisation, ''))) = lower(trim(coalesce(?, '')))
+               AND lower(trim(coalesce(e.role, ''))) = lower(trim(coalesce(?, '')))
+               AND e.evidence_type = ?
+             LIMIT 1`
+          ).bind(userId, body.resume_version_id, body.title.trim(), body.organisation || '', body.role || '', body.evidence_type).first();
+          if (duplicate) return buildErrorResponse('DUPLICATE_EVIDENCE', `This evidence already exists in the repository as "${duplicate.title}" (${duplicate.verification_status}). Open the saved record instead of creating another copy.`, 409, headers);
         }
         const id = crypto.randomUUID(), sourceId = crypto.randomUUID(), now = new Date().toISOString();
         const listJson = value => JSON.stringify(Array.isArray(value) ? value : []);
@@ -6225,6 +6536,16 @@ ${JSON.stringify(answered)}`;
         if (!versions.length) return buildErrorResponse('RESUME_FILE_NOT_FOUND', 'Upload a source PDF to a resume version before extracting evidence.', 400, headers);
         const extracted = [];
         const pdfVersions = versions.filter(v => v.r2_object_key.toLowerCase().endsWith('.pdf'));
+        const savedEvidenceByVersion = new Map();
+        for (const version of pdfVersions) {
+          const { results: savedRows } = await env.DB.prepare(
+            `SELECT e.id, e.evidence_type, e.title, e.organisation, e.role, e.verification_status
+             FROM resume_evidence e
+             JOIN resume_evidence_sources s ON s.evidence_id = e.id AND s.user_id = e.user_id
+             WHERE e.user_id = ? AND s.resume_version_id = ?`
+          ).bind(userId, version.id).all();
+          savedEvidenceByVersion.set(version.id, savedRows || []);
+        }
         if (!pdfVersions.length) return buildErrorResponse('PDF_REQUIRED', 'No PDF source file is available. Upload a PDF version to extract evidence.', 415, headers);
         for (const version of pdfVersions) {
           const file = await env.BUCKET.get(version.r2_object_key);
@@ -6255,10 +6576,22 @@ ${JSON.stringify(answered)}`;
             for (const item of rows.slice(0,80)) {
               if (!item || typeof item.title !== 'string' || !item.title.trim()) continue;
               const types=['EXPERIENCE','PROJECT','ACHIEVEMENT'], classes=['DIRECT','TEAM','ADVISORY','INDEPENDENT','TRANSFERABLE'];
+              const evidenceType = types.includes(item.evidence_type)?item.evidence_type:'ACHIEVEMENT';
+              const title = item.title.slice(0,300);
+              const organisation = typeof item.organisation==='string'?item.organisation.slice(0,200):null;
+              const role = typeof item.role==='string'?item.role.slice(0,200):null;
+              const normalise = value => String(value || '').trim().toLocaleLowerCase();
+              const existingMatch = (savedEvidenceByVersion.get(version.id) || []).find(saved =>
+                saved.evidence_type === evidenceType &&
+                normalise(saved.title) === normalise(title) &&
+                normalise(saved.organisation) === normalise(organisation) &&
+                normalise(saved.role) === normalise(role)
+              );
               extracted.push({
-                evidence_type:types.includes(item.evidence_type)?item.evidence_type:'ACHIEVEMENT',
-                title:item.title.slice(0,300),organisation:typeof item.organisation==='string'?item.organisation.slice(0,200):null,
-                role:typeof item.role==='string'?item.role.slice(0,200):null,
+                existing_match: existingMatch ? { id: existingMatch.id, title: existingMatch.title, verification_status: existingMatch.verification_status } : null,
+                evidence_type:evidenceType,
+                title,organisation,
+                role,
                 description:typeof item.description==='string'?item.description.slice(0,5000):null,
                 responsibilities:typeof item.responsibilities==='string'?item.responsibilities.slice(0,5000):null,
                 actions_taken:typeof item.actions_taken==='string'?item.actions_taken.slice(0,5000):null,
