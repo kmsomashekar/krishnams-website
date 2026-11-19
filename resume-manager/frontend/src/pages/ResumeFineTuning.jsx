@@ -56,11 +56,43 @@ function getResumeSections(aiContext) {
   return sections.map(section => ({ title: section.title, paragraphs: section.lines.join('\n').trim().split(/\n{2,}/).map(v => v.trim()).filter(Boolean) }));
 }
 
+function validateTailoredResumeContent(aiContext) {
+  const text = String(aiContext || '').trim();
+  if (!text) throw new Error('The tailored resume has no saved content to export.');
+
+  const placeholderPatterns = [
+    /\\[[^\\]]*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO)[^\\]]*\\]/i,
+    /REPRODUCE ALL ORIGINAL CONTENT/i,
+    /ENSURING ALL ROLES/i,
+    /CONTENT HERE/i,
+    /PLACEHOLDER TEXT/i
+  ];
+  if (placeholderPatterns.some(pattern => pattern.test(text))) {
+    throw new Error('The tailored resume contains placeholder or incomplete AI-generated content. Please regenerate/review the proposals before exporting.');
+  }
+
+  const sections = getResumeSections(text);
+  const experience = sections.find(section => /professional experience|work experience|experience/i.test(section.title));
+  if (!experience) throw new Error('The tailored resume is missing its Professional Experience section.');
+
+  const experienceText = experience.paragraphs.join(' ');
+  const experienceWords = experienceText.split(/\\s+/).filter(Boolean).length;
+  const totalWords = text.split(/\\s+/).filter(Boolean).length;
+  const employers = ['Toradex', 'Stoke Networks', 'Yodlee', 'Global Edge'];
+  const includedEmployers = employers.filter(name => experienceText.toLowerCase().includes(name.toLowerCase()));
+
+  if (experienceWords < 180 || totalWords < 450 || includedEmployers.length < 4) {
+    throw new Error('The tailored resume appears incomplete: full career experience is not present. Please regenerate the proposals and verify all employment history before exporting');
+  }
+  return { totalWords, experienceWords, includedEmployers };
+}
+
 function safeFileName(value) {
   return String(value || 'Tailored-Resume').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Tailored-Resume';
 }
 
 async function downloadResumeDocx(resume, aiContext) {
+  validateTailoredResumeContent(aiContext);
   const children = [
     new Paragraph({ text: resume.resume_name || 'Tailored Resume', heading: HeadingLevel.TITLE, spacing: { after: 180 } }),
     new Paragraph({ text: resume.version_label || 'JD-tailored resume', spacing: { after: 260 } })
@@ -78,6 +110,7 @@ async function downloadResumeDocx(resume, aiContext) {
 }
 
 function downloadResumePdf(resume, aiContext) {
+  validateTailoredResumeContent(aiContext);
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
   const margin = 48; const maxWidth = width - margin * 2; let y = margin;
   const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '');
@@ -91,6 +124,9 @@ function downloadResumePdf(resume, aiContext) {
     for (const block of section.paragraphs) { for (const line of pdf.splitTextToSize(clean(block),maxWidth)) { ensure(13); pdf.text(line,margin,y); y += 13; } y += 5; } y += 7;
   }
   const pages = pdf.getNumberOfPages(); for (let i=1;i<=pages;i++) { pdf.setPage(i); pdf.setFontSize(8); pdf.setTextColor(130); pdf.text('Page ' + i + ' of ' + pages,width-margin,height-22,{align:'right'}); }
+  if (pages < 2) {
+    throw new Error('The tailored resume is too short to produce the expected two-page format. Please review/regenerate the complete Professional Experience content before exporting');
+  }
   pdf.save(safeFileName(resume.resume_name) + '.pdf');
 }
 
