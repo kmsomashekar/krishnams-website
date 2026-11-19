@@ -5,6 +5,63 @@
 // Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions & TOTP
 // =============================================================================
 
+
+// Resume tailoring guardrails: derive canonical source sections and detect unsupported facts.
+function parseResumeContextSections(context) {
+  const out = {};
+  let heading = null, lines = [];
+  const flush = () => {
+    if (!heading) return;
+    const key = heading.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const aliases = {
+      'professional summary': 'professional_summary', 'summary': 'professional_summary',
+      'core competencies': 'core_competencies', 'competencies': 'core_competencies',
+      'professional experience': 'professional_experience', 'work experience': 'professional_experience', 'experience': 'professional_experience',
+      'achievements': 'achievements', 'key achievements': 'achievements',
+      'technical skills': 'technical_skills', 'skills': 'technical_skills'
+    };
+    const id = aliases[key];
+    if (id) out[id] = lines.join('\n').trim();
+  };
+  for (const line of String(context || '').replace(/\r/g, '').split('\n')) {
+    if (line.startsWith('## ')) { flush(); heading = line.slice(3).trim(); lines = []; }
+    else if (heading) lines.push(line);
+  }
+  flush();
+  return out;
+}
+function resumeFactTokens(text) {
+  return new Set((String(text || '').match(/\b(?:\$|₹|€|£)?\d+(?:[,.]\d+)*(?:%|\+|\s?(?:years?|months?|days?|hours?|K|M|B|L|Cr))?\b/gi) || [])
+    .map(token => token.replace(/\s+/g, '').toLowerCase()));
+}
+function findUnsupportedNumbers(candidate, sourceAndEvidence) {
+  const allowed = resumeFactTokens(sourceAndEvidence);
+  return [...resumeFactTokens(candidate)].filter(token => !allowed.has(token));
+}
+function normalizeResumeLine(line) {
+  return String(line || '').toLowerCase().replace(/[–—]/g, '-').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function validateResumePreservation(sourceSections, candidateSections, evidenceText = '') {
+  const problems = [];
+  const sourceAll = Object.values(sourceSections || {}).join('\n') + '\n' + evidenceText;
+  for (const id of ['professional_experience', 'achievements', 'technical_skills']) {
+    const original = String(sourceSections?.[id] || '').trim();
+    const candidate = String(candidateSections?.[id] || '').trim();
+    if (!original || !candidate) { problems.push(id + ' is missing'); continue; }
+    const originalWords = original.split(/\s+/).filter(Boolean).length;
+    const candidateWords = candidate.split(/\s+/).filter(Boolean).length;
+    if (candidateWords < Math.floor(originalWords * 0.82)) problems.push(id + ' has been shortened excessively (' + candidateWords + ' words vs ' + originalWords + ' source words)');
+  }
+  const sourceExperience = String(sourceSections?.professional_experience || '');
+  const candidateExperience = String(candidateSections?.professional_experience || '');
+  const dateTokens = sourceExperience.match(/\b(?:19|20)\d{2}\b/g) || [];
+  const missingDates = [...new Set(dateTokens)].filter(year => !candidateExperience.includes(year));
+  if (missingDates.length) problems.push('professional_experience is missing source employment dates: ' + missingDates.join(', '));
+  const unsupportedNumbers = findUnsupportedNumbers(Object.values(candidateSections || {}).join('\n'), sourceAll);
+  if (unsupportedNumbers.length) problems.push('unsupported numeric claims: ' + unsupportedNumbers.join(', '));
+  return problems;
+}
+
 // --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
 const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
