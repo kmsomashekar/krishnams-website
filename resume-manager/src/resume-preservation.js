@@ -57,7 +57,7 @@ export function findUnsupportedNumbers(candidate, sourceAndEvidence) {
 export function validateResumePreservation(sourceSections, candidateSections, evidenceText = '') {
   const problems = [];
   const sourceAll = Object.values(sourceSections || {}).join('\n') + '\n' + evidenceText;
-  const immutable = ['professional_experience', 'achievements', 'technical_skills'];
+  const immutable = ['core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
   for (const id of immutable) {
     const original = String(sourceSections?.[id] || '').trim();
     const candidate = String(candidateSections?.[id] || '').trim();
@@ -78,7 +78,7 @@ export function validateResumePreservation(sourceSections, candidateSections, ev
   for (const range of sourceRanges) if (!candidateExperience.toLowerCase().replace(/[–—]/g, '-').includes(range.toLowerCase().replace(/[–—]/g, '-'))) problems.push('employment date range missing or altered: ' + range);
   // Numeric claims are checked only in AI-tailorable sections. Source-preserved sections
   // are protected by exact content comparison, avoiding false positives from source facts.
-  const tailoredText = ['professional_summary','core_competencies'].map(id => String(candidateSections?.[id] || '')).join('\n');
+  const tailoredText = String(candidateSections?.professional_summary || '');
   const unsupportedNumbers = findUnsupportedNumbers(tailoredText, sourceAll);
   if (unsupportedNumbers.length) problems.push('unsupported numeric claims: ' + unsupportedNumbers.join(', '));
   return problems;
