@@ -84,6 +84,10 @@ async function deleteResumeVersionFile({ resumeId, versionId }) {
   });
   return handleResponse(res, 'Failed to delete resume file.');
 }
+async function deleteResumeVersion({ resumeId, versionId }) {
+  const res = await fetch(`/api/v1/resumes/${resumeId}/versions/${versionId}`, { method: 'DELETE' });
+  return handleResponse(res, 'Failed to delete resume version.');
+}
 
 export default function Resumes() {
   const queryClient = useQueryClient();
@@ -344,6 +348,16 @@ export default function Resumes() {
     onError: (err) => {
       setFileActionError(err.message);
     }
+  });
+  const deleteVersionMutation = useMutation({
+    mutationFn: deleteResumeVersion,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['resume-details', selectedResumeId] });
+      queryClient.invalidateQueries({ queryKey: ['resumes'] });
+      if (selectedVersionId === data?.id) setSelectedVersionId(null);
+      showSuccessFeedback(data?.warning || 'Resume version deleted successfully.');
+    },
+    onError: (err) => setFileActionError(err.message)
   });
 
   // --- ACTION HELPERS ---
@@ -676,6 +690,14 @@ export default function Resumes() {
   const handleDeleteFileClick = (versionId) => {
     if (window.confirm('Delete this stored resume file? The Resume Version itself will not be deleted.')) {
       deleteFileMutation.mutate({ resumeId: selectedResumeId, versionId });
+    }
+  };
+  const handleDeleteVersionClick = (version) => {
+    if (!version || version.is_active === 1 || version.is_active === true || resumeDetail?.is_master) return;
+    const label = version.version_label || 'this resume version';
+    if (window.confirm(`Permanently delete "${label}" and its stored PDF, if any? This cannot be undone. Linked ATS analyses, opportunities, or customisation sessions will prevent deletion.`)) {
+      setFileActionError(null);
+      deleteVersionMutation.mutate({ resumeId: selectedResumeId, versionId: version.id });
     }
   };
 
@@ -1083,6 +1105,15 @@ export default function Resumes() {
                                 className="text-indigo-600 hover:text-indigo-500 font-bold text-[10px] underline text-right"
                               >
                                 View Details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteVersionClick(ver)}
+                                disabled={Boolean(resumeDetail.is_master) || isActiveVersion || deleteVersionMutation.isPending}
+                                title={isActiveVersion ? 'Active versions cannot be deleted' : 'Delete this resume version'}
+                                className="text-rose-600 hover:text-rose-800 font-bold text-[10px] underline text-right disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                {deleteVersionMutation.isPending ? 'Deleting...' : 'Delete Version'}
                               </button>
                             </div>
                           </div>

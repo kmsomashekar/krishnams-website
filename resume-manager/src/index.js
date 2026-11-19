@@ -6788,6 +6788,37 @@ ${JSON.stringify(answered)}`;
           return buildErrorResponse('NOT_FOUND', "The targeted parent resume does not exist or access rights are restricted.", 404, headers);
         }
 
+        if (method === 'DELETE') {
+          if (parentResume.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resume versions cannot be deleted.', 409, headers);
+          const version = await env.DB.prepare(
+            `SELECT id, is_active, r2_object_key, version_label FROM resume_versions WHERE id = ? AND resume_id = ?`
+          ).bind(versionId, resumeId).first();
+          if (!version) return buildErrorResponse('NOT_FOUND', 'Resume version not found.', 404, headers);
+          if (version.is_active === 1 || version.is_active === true) return buildErrorResponse('ACTIVE_VERSION_PROTECTED', 'The active resume version cannot be deleted. Make another version active first.', 409, headers);
+          const [ats, opportunities, sessions, evidenceSources] = await Promise.all([
+            env.DB.prepare('SELECT COUNT(*) AS count FROM ats_analysis WHERE resume_version_id = ?').bind(versionId).first(),
+            env.DB.prepare('SELECT COUNT(*) AS count FROM opportunities WHERE resume_version_id = ?').bind(versionId).first(),
+            env.DB.prepare('SELECT COUNT(*) AS count FROM resume_customisation_sessions WHERE source_resume_version_id = ? OR generated_resume_version_id = ?').bind(versionId, versionId).first(),
+            env.DB.prepare('SELECT COUNT(*) AS count FROM resume_evidence_sources WHERE resume_version_id = ?').bind(versionId).first()
+          ]);
+          const linkedAts = Number(ats?.count || 0), linkedOpportunities = Number(opportunities?.count || 0), linkedSessions = Number(sessions?.count || 0), linkedEvidence = Number(evidenceSources?.count || 0);
+          if (linkedAts || linkedOpportunities || linkedSessions || linkedEvidence) {
+            const details = [];
+            if (linkedAts) details.push(linkedAts + ' ATS analysis record(s)');
+            if (linkedOpportunities) details.push(linkedOpportunities + ' opportunity record(s)');
+            if (linkedSessions) details.push(linkedSessions + ' customisation session(s)');
+            if (linkedEvidence) details.push(linkedEvidence + ' evidence source record(s)');
+            return buildErrorResponse('RESUME_VERSION_IN_USE', 'This version is linked to ' + details.join(', ') + '. It cannot be deleted to protect related data.', 409, headers);
+          }
+          await env.DB.prepare('DELETE FROM resume_versions WHERE id = ? AND resume_id = ?').bind(versionId, resumeId).run();
+          let fileCleanupWarning = null;
+          if (version.r2_object_key) {
+            try { await env.BUCKET.delete(version.r2_object_key); }
+            catch (_) { fileCleanupWarning = 'The version was deleted, but its stored file could not be removed from storage.'; }
+          }
+          return new Response(JSON.stringify({ success: true, data: { id: versionId, deleted: true, warning: fileCleanupWarning } }), { status: 200, headers });
+        }
+
         if (method === 'PUT') {
           if (parentResume.is_master) return buildErrorResponse('MASTER_RESUME_LOCKED', 'Master resume versions cannot be modified.', 409, headers);
           let body;
