@@ -6418,9 +6418,8 @@ ${JSON.stringify(answered)}`;
           if (placeholderPattern.test(originalText) || placeholderPattern.test(proposedText)) {
             return buildErrorResponse('AI_PLACEHOLDER_CONTENT', 'The AI returned placeholder or instruction text in ' + item.section_id.replaceAll('_', ' ') + '. No proposal was saved. Please regenerate.', 502, headers);
           }
-          if (item.section_id === 'professional_experience' && proposedText.split(/\s+/).filter(Boolean).length < 100) {
-            return buildErrorResponse('AI_INCOMPLETE_EXPERIENCE', 'The Professional Experience section is incomplete. It must contain the actual employment history and responsibilities, not a short placeholder or summary. No proposal was saved.', 502, headers);
-          }
+          // Professional Experience is preserved from the canonical source below; do not validate Gemini's copy.
+          // The model may return an empty or truncated version because this section is not AI-tailored.
           const rawEvidenceIds = Array.isArray(item.evidence_ids) ? item.evidence_ids : [];
           const safeEvidenceIds = [...new Set(rawEvidenceIds.filter(id => typeof id === 'string' && validEvidenceIds.has(id)))];
           if (rawEvidenceIds.length !== safeEvidenceIds.length) console.warn('Proposal generation: discarded unsupported evidence references for section', item.section_id);
@@ -6443,7 +6442,8 @@ ${JSON.stringify(answered)}`;
         const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
         const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
         if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
-        const totalProposedLength = sections.reduce((total, section) => total + section.proposed_text.length, 0);
+        // Count preserved source text for NO_CHANGE sections, including Professional Experience.
+        const totalProposedLength = sections.reduce((total, section) => total + (section.proposed_text || section.original_text).length, 0);
         const sourceContentLength = String(source.ai_context || '').trim().length;
         if (sourceContentLength >= 1500 && totalProposedLength < sourceContentLength * 0.70) return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The generated resume omitted too much of the source resume content. No proposal was saved. Please regenerate.', 502, headers);
         sections.sort((a, b) => sectionIds.indexOf(a.section_id) - sectionIds.indexOf(b.section_id));
