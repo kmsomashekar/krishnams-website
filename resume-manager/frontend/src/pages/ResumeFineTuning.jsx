@@ -338,7 +338,7 @@ export default function ResumeFineTuning() {
       const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
       if (!version?.ai_context) throw new Error('The tailored resume has no saved content to export.');
       if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context, session, setExportStatus); else throw new Error('PDF export is temporarily unavailable because it cannot yet preserve the original Master Resume formatting. Download the DOCX and save it as PDF in Microsoft Word to retain the layout.');
-    } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); setExportStatus('Export failed.'); }
+    } catch (err) { const message = err?.message || ('Unable to generate the ' + format.toUpperCase() + ' file.'); setError(message); setExportStatus('Export failed: ' + message); }
     finally { setExportingFormat(''); }
   };
 
