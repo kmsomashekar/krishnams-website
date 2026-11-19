@@ -22,12 +22,14 @@ async function callGemini(message, apiKey, options = {}) {
       }
     ],
     generationConfig: {
-      maxOutputTokens: options.maxOutputTokens || 100
+      maxOutputTokens: options.maxOutputTokens || 100,
+      ...(options.json ? { responseMimeType: 'application/json' } : {})
     }
   };
 
   const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), 20000);
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 20000;
+  const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
 
   try {
     const response = await fetch(targetUrl, {
@@ -43,9 +45,13 @@ async function callGemini(message, apiKey, options = {}) {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      const providerBody = await response.text().catch(() => '');
+      let providerMessage = '';
+      try { providerMessage = JSON.parse(providerBody)?.error?.message || ''; } catch (_) {}
       return {
         errorType: 'PROVIDER_ERROR',
-        status: response.status
+        status: response.status,
+        providerMessage: String(providerMessage || providerBody).slice(0, 500)
       };
     }
 
@@ -53,7 +59,7 @@ async function callGemini(message, apiKey, options = {}) {
     const generatedText = responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (typeof generatedText !== 'string') {
-      return { errorType: 'BAD_STRUCTURE' };
+      return { errorType: 'BAD_STRUCTURE', providerMessage: responseData?.promptFeedback?.blockReason || 'No text was returned.' };
     }
 
     return { success: true, text: generatedText };
@@ -6269,8 +6275,19 @@ ${JSON.stringify(answered)}`;
           'JOB DESCRIPTION:', String(session.jd_text_snapshot || '').slice(0, 25000),
           'SAVED JD ANALYSIS:', JSON.stringify(analysis).slice(0, 25000)
         ].join('\n');
-        const generated = await callGemini(prompt, env.GEMINI_API_KEY, { maxOutputTokens: 12000 });
-        if (!generated.success) return buildErrorResponse('AI_PROVIDER_ERROR', 'Proposal generation failed. Please retry.', generated.status === 429 ? 429 : 502, headers);
+        const generated = await callGemini(prompt, env.GEMINI_API_KEY, { maxOutputTokens: 12000, timeoutMs: 60000, json: true });
+        if (!generated.success) {
+          const details = generated.errorType === 'TIMEOUT'
+            ? 'Gemini took too long to generate the proposal (60-second timeout). Please retry.'
+            : generated.errorType === 'PROVIDER_ERROR'
+              ? 'Gemini API returned HTTP ' + generated.status + (generated.providerMessage ? ': ' + generated.providerMessage : '')
+              : generated.errorType === 'BAD_STRUCTURE'
+                ? 'Gemini did not return proposal text. ' + (generated.providerMessage || '')
+                : generated.errorType === 'NETWORK_FAILURE'
+                  ? 'The server could not connect to Gemini. Please retry.'
+                  : 'Gemini proposal generation failed (' + generated.errorType + '). Please retry.';
+          return buildErrorResponse('AI_PROVIDER_ERROR', details, generated.status === 429 ? 429 : generated.errorType === 'TIMEOUT' ? 504 : 502, headers);
+        }
         let parsed;
         try {
           let raw = String(generated.text || '').trim();
