@@ -6248,10 +6248,13 @@ ${JSON.stringify(answered)}`;
         if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
         const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
         const prompt = [
-          'Prepare section-wise resume proposals tailored to this job description.',
+          'Tailor the resume to the job description WITHOUT shortening, summarising, or dropping the candidate’s original resume content.',
+          'The source resume is the authoritative document. Preserve its complete structure, every employment entry (employer, title, dates), and all meaningful responsibilities, achievements, metrics, projects, and technical skills.',
           'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
           'Never invent or infer employers, titles, dates, tenure, scope, team size, budgets, metrics, outcomes, tools, certifications, ownership or responsibilities.',
           'Do not attribute team outcomes to the candidate unless the source explicitly does so. Preserve factual meaning and seniority.',
+          'For original_text, reproduce the relevant source section faithfully, including all content. For proposed_text, make targeted wording/reordering changes for JD relevance, but retain ALL roles and substantive bullets. Do not merge multiple jobs into one, delete older experience, remove achievements, or turn detailed content into a short summary.',
+          'Professional experience, achievements, and technical skills must remain comprehensive and near the same length as the source sections. Tailoring means emphasis and wording, not content deletion. The summary may be rewritten; competencies may be reordered but retain supported skills.',
           'Add JD keywords only when supported by source facts. If no safe change is possible, use an empty proposed_text.',
           'Evidence IDs must come only from the supplied verified evidence. Return complete replacement text for each section.',
           'Return ONLY JSON: {"sections":[{"section_id":"...","title":"...","original_text":"...","proposed_text":"...","rationale":"...","evidence_ids":[]}]}. Include exactly these section IDs once each, in this order: ' + sectionIds.join(', '),
@@ -6275,7 +6278,18 @@ ${JSON.stringify(answered)}`;
         for (const item of parsed.sections) {
           if (!item || !sectionIds.includes(item.section_id) || seen.has(item.section_id) || typeof item.original_text !== 'string' || typeof item.proposed_text !== 'string' || typeof item.rationale !== 'string' || !Array.isArray(item.evidence_ids) || item.evidence_ids.some(id => typeof id !== 'string' || !validEvidenceIds.has(id))) return buildErrorResponse('AI_INVALID_RESPONSE', 'Proposal contains invalid section data or unsupported evidence references.', 502, headers);
           seen.add(item.section_id);
-          sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: item.original_text.slice(0, 20000), proposed_text: item.proposed_text.slice(0, 20000), rationale: item.rationale.slice(0, 3000), evidence_ids: [...new Set(item.evidence_ids)], decision: item.proposed_text.trim() ? 'PENDING' : 'NO_CHANGE', edited_text: null });
+          const originalText = item.original_text.trim();
+          const proposedText = item.proposed_text.trim();
+          const minimumCoverage = {
+            professional_experience: 0.85,
+            achievements: 0.80,
+            technical_skills: 0.85,
+            core_competencies: 0.65
+          }[item.section_id];
+          if (proposedText && minimumCoverage && originalText.length >= 300 && proposedText.length < originalText.length * minimumCoverage) {
+            return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The AI shortened the ' + item.section_id.replaceAll('_', ' ') + ' section too aggressively. No proposal was saved. Please regenerate.', 502, headers);
+          }
+          sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: item.rationale.slice(0, 3000), evidence_ids: [...new Set(item.evidence_ids)], decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
         }
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
         sections.sort((a, b) => sectionIds.indexOf(a.section_id) - sectionIds.indexOf(b.section_id));
