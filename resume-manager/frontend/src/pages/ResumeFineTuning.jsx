@@ -67,13 +67,13 @@ function getResumeSections(aiContext, profile = {}) {
     profile.email,
     profile.phone,
     profile.location,
-    profile.linkedin_url ? 'LinkedIn: ' + profile.linkedin_url : ''
+    profile.linkedin_url
   ].map(v => String(v || '').trim()).filter(Boolean);
   const contactIndex = parsed.findIndex(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
   if (contactIndex >= 0) {
     const contact = parsed[contactIndex];
-    const existing = contact.paragraphs.join('\n').toLowerCase();
-    const missing = profileLines.filter(line => !existing.includes(line.toLowerCase()));
+    const existing = contact.paragraphs.join('\n').toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\/+\b/g, '');
+    const missing = profileLines.filter(line => !existing.includes(line.toLowerCase().replace(/https?:\/\//g, '').replace(/www\./g, '').replace(/\/+\b/g, '')));
     if (missing.length) contact.paragraphs.push(missing.join('\n'));
   } else if (profileLines.length) {
     parsed.unshift({ title: 'Contact Details', paragraphs: [profileLines.join('\n')] });
@@ -115,8 +115,8 @@ async function downloadResumeDocx(resume, aiContext) {
   if (contact) {
     const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
     if (lines.length) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[0], bold: true, size: 32, color: '184368', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 1) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines[1], bold: true, size: 20, color: '374450', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 2) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines.slice(2).join(' | '), size: 16, font: 'Arial' })], spacing: { after: 180 } }));
+    if (lines.length > 1) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[1], bold: true, size: 20, color: '374450', font: 'Arial' })], spacing: { after: 0 } }));
+    if (lines.length > 2) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines.slice(2).join(' | '), size: 16, font: 'Arial' })], spacing: { after: 180 } }));
   }
   for (const section of sections) {
     const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
