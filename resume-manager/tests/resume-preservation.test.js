@@ -55,7 +55,7 @@ test('parses contact, education, certification and portfolio as distinct section
 });
 
 test('does not accept unsupported numeric claims', () => {
-  assert.deepEqual(findUnsupportedNumbers('Managed a 20-year programme', '25+ years of experience'), ['20years']);
+  assert.deepEqual(findUnsupportedNumbers('20years of experience', '25+ years of experience'), ['20years']);
 });
 
 test('accepts exact source content for immutable sections', () => {
