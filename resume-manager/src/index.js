@@ -2456,6 +2456,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
       const jobFeedRoot = '/api/v1/job-feed';
       const jobProfilesRoot = '/api/v1/job-feed/profiles';
       const jobFeedIdRegex = /^\\/api\\/v1\\/job-feed\\/([^\\/]+)$/;
+      const jobFeedAddRegex = /^\\/api\\/v1\\/job-feed\\/([^\\/]+)\\/add-to-opportunity$/;
 
       function normalizeJobText(value) {
         return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -2559,9 +2560,10 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         return new Response(JSON.stringify({success:true,data:{id,status:body.status||existing.status}}),{status:200,headers});
       }
 
-      if (jobFeedIdMatch && pathname.endsWith('/add-to-opportunity') && method === 'POST') {
+      const jobFeedAddMatch = pathname.match(jobFeedAddRegex);
+      if (jobFeedAddMatch && method === 'POST') {
         if (!userId) return buildErrorResponse('UNAUTHORIZED','Authentication required.',401,headers);
-        const id=jobFeedIdMatch[1];
+        const id=jobFeedAddMatch[1];
         const job=await env.DB.prepare('SELECT * FROM job_feed_jobs WHERE id=? AND user_id=?').bind(id,userId).first();
         if(!job)return buildErrorResponse('NOT_FOUND','Job not found.',404,headers);
         if(job.opportunity_id)return new Response(JSON.stringify({success:true,data:{opportunity_id:job.opportunity_id,already_added:true}}),{status:200,headers});
