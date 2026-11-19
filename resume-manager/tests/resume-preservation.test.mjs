@@ -65,9 +65,25 @@ test('accepts exact source content for immutable sections', () => {
     core_competencies: source.core_competencies,
     professional_experience: source.professional_experience,
     achievements: source.achievements,
-    technical_skills: source.technical_skills
+    technical_skills: source.technical_skills,
+    education: source.education,
+    certifications: source.certifications,
+    portfolio: source.portfolio,
+    contact_details: source.contact_details
   };
   assert.deepEqual(validateResumePreservation(source, candidate), []);
+});
+
+test('flags missing Education in the final resume', () => {
+  const source = parseResumeContextSections(sample);
+  const candidate = { professional_summary: source.professional_summary, core_competencies: source.core_competencies, professional_experience: source.professional_experience, achievements: source.achievements, technical_skills: source.technical_skills, certifications: source.certifications, portfolio: source.portfolio, contact_details: source.contact_details };
+  assert.ok(validateResumePreservation(source, candidate).some(problem => problem === 'education is missing from the final resume'));
+});
+
+test('flags altered Education content', () => {
+  const source = parseResumeContextSections(sample);
+  const candidate = { professional_summary: source.professional_summary, core_competencies: source.core_competencies, professional_experience: source.professional_experience, achievements: source.achievements, technical_skills: source.technical_skills, education: source.education.replace('IGNOU', 'Other University'), certifications: source.certifications, portfolio: source.portfolio, contact_details: source.contact_details };
+  assert.ok(validateResumePreservation(source, candidate).some(problem => problem.includes('education differs from the canonical')));
 });
 
 test('flags changed protected content instead of word-count-only preservation', () => {
