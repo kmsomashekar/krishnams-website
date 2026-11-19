@@ -116,44 +116,80 @@ async function fetchCandidateProfile() {
   return result.profile || {};
 }
 
-async function downloadResumeDocx(resume, aiContext) {
-  const profile = await fetchCandidateProfile();
-  const sections = getResumeSections(aiContext, profile);
-  const children = [];
-  const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
-  if (contact) {
-    const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
-    if (lines.length) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[0], bold: true, size: 32, color: '184368', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 1) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[1], bold: true, size: 20, color: '374450', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 2) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines.slice(2).join(' | '), size: 16, font: 'Arial' })], spacing: { after: 180 } }));
+function xmlEscape(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function paragraphPlainText(xml) {
+  return [...xml.matchAll(/<w:t[^>]*>([\\s\\S]*?)<\\/w:t>/g)].map(match => match[1]
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")).join('');
+}
+
+function isWordHeadingParagraph(xml, text) {
+  const style = (xml.match(/<w:pStyle[^>]*w:val=["']([^"']+)["']/i) || [])[1] || '';
+  return /heading[1-9]|title|subtitle/i.test(style) || /^##?\\s/.test(text);
+}
+
+function replaceParagraphText(xml, text) {
+  const pPr = (xml.match(/<w:pPr[\\s\\S]*?<\\/w:pPr>/) || [''])[0];
+  const rPr = (xml.match(/<w:rPr[\\s\\S]*?<\\/w:rPr>/) || [''])[0];
+  const run = '<w:r>' + rPr + '<w:t xml:space="preserve">' + xmlEscape(text) + '</w:t></w:r>';
+  return '<w:p>' + pPr + run + '</w:p>';
+}
+
+function replaceProfessionalSummaryInDocx(xml, summary) {
+  const paragraphs = xml.match(/<w:p(?:\\s[^>]*)?>[\\s\\S]*?<\\/w:p>/g) || [];
+  const summaryHeadingIndex = paragraphs.findIndex(p => /professional\\s+(?:summary|profile)|executive\\s+summary/i.test(paragraphPlainText(p).trim()));
+  if (summaryHeadingIndex < 0) throw new Error('The original DOCX template does not contain a recognisable Professional Summary heading. No export was generated.');
+  let endIndex = summaryHeadingIndex + 1;
+  while (endIndex < paragraphs.length) {
+    const text = paragraphPlainText(paragraphs[endIndex]).trim();
+    if (text && isWordHeadingParagraph(paragraphs[endIndex], text)) break;
+    endIndex++;
   }
-  for (const section of sections) {
-    const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
-    if (isContact) continue;
-    children.push(new Paragraph({ children: [new TextRun({ text: sectionLabel(section.title).toUpperCase(), bold: true, size: 22, color: '184368', font: 'Arial' })], spacing: { before: 180, after: 80 } }));
-    for (const block of section.paragraphs) for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
-      const bullet = /^[-•*]\s/.test(rawLine);
-      const line = bullet ? rawLine.replace(/^[-•*]\s*/, '') : rawLine;
-      const roleHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(line) && !bullet;
-      const competencyLabel = !bullet && /^[^:]{2,80}:\s/.test(line);
-      const runs = competencyLabel ? [
-        new TextRun({ text: line.split(':')[0] + ': ', bold: true, font: 'Arial', size: 20 }),
-        new TextRun({ text: line.slice(line.indexOf(':') + 1).trim(), font: 'Arial', size: 20 })
-      ] : [new TextRun({ text: line, bold: roleHeading, font: 'Arial', size: roleHeading ? 21 : 20, color: roleHeading ? '184368' : undefined })];
-      children.push(new Paragraph({ children: runs, spacing: { after: bullet ? 45 : roleHeading ? 90 : 60 }, ...(bullet ? { bullet: { indent: 300 } } : {}) }));
-    }
+  const bodyParagraphs = paragraphs.slice(summaryHeadingIndex + 1, endIndex).filter(p => paragraphPlainText(p).trim());
+  if (!bodyParagraphs.length) throw new Error('The original DOCX template has no text under its Professional Summary heading. No export was generated.');
+  const lines = String(summary || '').split(/\\r?\\n/).map(line => line.trim()).filter(Boolean);
+  if (!lines.length) throw new Error('The approved Professional Summary is empty. No export was generated.');
+  const templateParagraph = bodyParagraphs[0];
+  const replacementParagraphs = lines.map(line => replaceParagraphText(templateParagraph, line));
+  const replaced = paragraphs.slice();
+  replaced.splice(summaryHeadingIndex + 1, endIndex - summaryHeadingIndex - 1, ...replacementParagraphs);
+  let paragraphIndex = 0;
+  return xml.replace(/<w:p(?:\\s[^>]*)?>[\\s\\S]*?<\\/w:p>/g, () => replaced[paragraphIndex++] || '');
+}
+
+async function fetchOriginalDocxTemplate(session) {
+  if (!session?.source_resume_id || !session?.source_resume_version_id) {
+    throw new Error('The source resume reference is missing from this session. Cannot preserve the original layout.');
   }
-  const doc = new Document({
-    creator: 'Resume Manager',
-    title: resume.target_role || 'Professional Resume',
-    sections: [{
-      properties: { page: { margin: { top: 605, right: 835, bottom: 605, left: 835 } } },
-      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Krishna M S  |  IT & Cybersecurity Leader', size: 15, color: '666666', font: 'Arial' })] })] }) },
-      children
-    }]
-  });
-  const blob = await Packer.toBlob(doc); const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-  anchor.href = url; anchor.download = safeFileName(resume.resume_name) + '.docx'; anchor.click(); URL.revokeObjectURL(url);
+  const response = await fetch('/api/v1/resumes/' + encodeURIComponent(session.source_resume_id) +
+    '/versions/' + encodeURIComponent(session.source_resume_version_id) + '/file');
+  if (!response.ok) throw new Error('Unable to retrieve the original Master Resume file (' + response.status + ').');
+  const type = String(response.headers.get('content-type') || '').toLowerCase();
+  if (!type.includes('wordprocessingml.document')) throw new Error('The original source is not a DOCX file. Template-preserving export requires the original Word document; PDF reconstruction is intentionally not used.');
+  return response.arrayBuffer();
+}
+
+async function downloadResumeDocx(resume, aiContext, session) {
+  const JSZip = (await import('jszip')).default;
+  const sourceBytes = await fetchOriginalDocxTemplate(session);
+  const zip = await JSZip.loadAsync(sourceBytes);
+  const documentFile = zip.file('word/document.xml');
+  if (!documentFile) throw new Error('The original Word document is missing its main document XML.');
+  const xml = await documentFile.async('string');
+  const sections = getResumeSections(aiContext);
+  const summary = sections.find(section => /professional\\s+(?:summary|profile)|executive\\s+summary/i.test(section.title));
+  if (!summary) throw new Error('The tailored resume does not contain the approved Professional Summary.');
+  const updatedXml = replaceProfessionalSummaryInDocx(xml, summary.paragraphs.join('\\n'));
+  zip.file('word/document.xml', updatedXml);
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = safeFileName(resume.resume_name) + '.docx';
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function downloadResumePdf(resume, aiContext) {
@@ -327,7 +363,7 @@ export default function ResumeFineTuning() {
     try {
       const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
       if (!version?.ai_context) throw new Error('The tailored resume has no saved content to export.');
-      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context); else await downloadResumePdf(tailoredResume, version.ai_context);
+      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context, session); else await downloadResumePdf(tailoredResume, version.ai_context);
     } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); }
     finally { setExportingFormat(''); }
   };
