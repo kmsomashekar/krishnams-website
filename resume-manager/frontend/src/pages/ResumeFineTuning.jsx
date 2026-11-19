@@ -61,7 +61,7 @@ function validateTailoredResumeContent(aiContext) {
   if (!text) throw new Error('The tailored resume has no saved content to export.');
 
   const placeholderPatterns = [
-    /\\[[^\\]]*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO)[^\\]]*\\]/i,
+    /\[[^\]]*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO)[^\]]*\]/i,
     /REPRODUCE ALL ORIGINAL CONTENT/i,
     /ENSURING ALL ROLES/i,
     /CONTENT HERE/i,
@@ -76,8 +76,8 @@ function validateTailoredResumeContent(aiContext) {
   if (!experience) throw new Error('The tailored resume is missing its Professional Experience section.');
 
   const experienceText = experience.paragraphs.join(' ');
-  const experienceWords = experienceText.split(/\\s+/).filter(Boolean).length;
-  const totalWords = text.split(/\\s+/).filter(Boolean).length;
+  const experienceWords = experienceText.split(/\s+/).filter(Boolean).length;
+  const totalWords = text.split(/\s+/).filter(Boolean).length;
   const employers = ['Toradex', 'Stoke Networks', 'Yodlee', 'Global Edge'];
   const includedEmployers = employers.filter(name => experienceText.toLowerCase().includes(name.toLowerCase()));
 
