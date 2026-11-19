@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
+import { AlignmentType, Document, Footer, Packer, Paragraph, TextRun } from 'docx';
 import { jsPDF } from 'jspdf';
 
 async function readApi(res, fallback) {
@@ -98,7 +98,7 @@ function sectionLabel(value) {
 }
 
 function safeFileName(value) {
-  const cleaned = String(value || 'Resume').replace(/^Tailored\s*[-:]?\s*/i, '');
+  const cleaned = String(value || 'Resume').replace(/^Tailored(?:[\s_-]*)(?:Resume)?[\s_-]*/i, '');
   return cleaned.replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Resume';
 }
 
@@ -114,7 +114,7 @@ async function downloadResumeDocx(resume, aiContext) {
   const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
   if (contact) {
     const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
-    if (lines.length) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines[0], bold: true, size: 32, color: '184368', font: 'Arial' })], spacing: { after: 0 } }));
+    if (lines.length) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[0], bold: true, size: 32, color: '184368', font: 'Arial' })], spacing: { after: 0 } }));
     if (lines.length > 1) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines[1], bold: true, size: 20, color: '374450', font: 'Arial' })], spacing: { after: 0 } }));
     if (lines.length > 2) children.push(new Paragraph({ alignment: 1, children: [new TextRun({ text: lines.slice(2).join(' | '), size: 16, font: 'Arial' })], spacing: { after: 180 } }));
   }
@@ -138,7 +138,8 @@ async function downloadResumeDocx(resume, aiContext) {
     creator: 'Resume Manager',
     title: resume.target_role || 'Professional Resume',
     sections: [{
-      properties: { page: { margin: { top: 550, right: 530, bottom: 550, left: 530 } } },
+      properties: { page: { margin: { top: 605, right: 835, bottom: 605, left: 835 } } },
+      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Krishna M S  |  IT & Cybersecurity Leader', size: 15, color: '666666', font: 'Arial' })] })] },
       children
     }]
   });
