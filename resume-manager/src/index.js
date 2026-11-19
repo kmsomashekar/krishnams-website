@@ -6425,7 +6425,7 @@ ${JSON.stringify(answered)}`;
         // that explicitly asks for a number-free rewrite. Do not require omitted older roles.
         const summarySection = sections.find(section => section.section_id === 'professional_summary');
         if (summarySection && summarySection.proposed_text) {
-          const unsupportedSummaryNumbers = findUnsupportedNumbers(summarySection.proposed_text, Object.values(sourceSections || {}).join('\\n') + '\\n' + numericEvidence);
+          const unsupportedSummaryNumbers = findUnsupportedNumbers(summarySection.proposed_text, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
           if (unsupportedSummaryNumbers.length) {
             const retryPrompt = [
               'Rewrite the Professional Summary for the target job description using only supported facts from the source resume and verified evidence.',
@@ -6437,17 +6437,17 @@ ${JSON.stringify(answered)}`;
               'SOURCE RESUME CONTEXT:', String(source.ai_context || '').slice(0, 90000),
               'VERIFIED EVIDENCE:', numericEvidence,
               'JOB DESCRIPTION:', String(session.jd_text_snapshot || '').slice(0, 25000)
-            ].join('\\n');
+            ].join('\n');
             const retry = await callGemini(retryPrompt, env.GEMINI_API_KEY, { maxOutputTokens: 1000, timeoutMs: 30000 });
             if (retry.success) {
-              let retryText = String(retry.text || '').trim().replace(/^\\s*```(?:text|markdown)?\\s*/i, '').replace(/\\s*```$/, '').trim();
+              let retryText = String(retry.text || '').trim().replace(/^\s*```(?:text|markdown)?\s*/i, '').replace(/\s*```$/, '').trim();
               if (retryText.startsWith('{')) {
                 try {
                   const retryJson = JSON.parse(retryText);
                   retryText = String(retryJson.summary || retryJson.professional_summary || '').trim();
                 } catch (_) {}
               }
-              const retryUnsupported = findUnsupportedNumbers(retryText, Object.values(sourceSections || {}).join('\\n') + '\\n' + numericEvidence);
+              const retryUnsupported = findUnsupportedNumbers(retryText, Object.values(sourceSections || {}).join('\n') + '\n' + numericEvidence);
               if (retryText && !retryUnsupported.length) {
                 summarySection.proposed_text = retryText.slice(0, 20000);
                 summarySection.rationale = 'Regenerated to remove unsupported numerical claims while tailoring the summary to the JD.';
