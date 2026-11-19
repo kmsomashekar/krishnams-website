@@ -6390,6 +6390,11 @@ ${JSON.stringify(answered)}`;
           sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: String(item.rationale || 'Proposal generated for this section.').slice(0, 3000), evidence_ids: safeEvidenceIds, decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
         }
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
+        // Never trust model-generated source text: replace it with the exact parsed Master Resume section.
+        for (const section of sections) section.original_text = sourceSections[section.section_id];
+        const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
+        const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
+        if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
         const totalProposedLength = sections.reduce((total, section) => total + section.proposed_text.length, 0);
         const sourceContentLength = String(source.ai_context || '').trim().length;
         if (sourceContentLength >= 1500 && totalProposedLength < sourceContentLength * 0.70) return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The generated resume omitted too much of the source resume content. No proposal was saved. Please regenerate.', 502, headers);
