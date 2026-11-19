@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import JSZip from 'jszip';
+import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle, Packer } from 'docx';
 
 async function readApi(res, fallback) {
   let body;
@@ -115,81 +115,131 @@ async function fetchCandidateProfile() {
   return result.profile || {};
 }
 
-async function fetchOriginalDocx(session) {
+async function verifySourceResumeFile(session) {
   if (!session?.source_resume_id || !session?.source_resume_version_id) {
-    throw new Error('The original Master Resume file could not be identified. Export stopped to protect the original content.');
+    throw new Error('The original Master Resume could not be identified. Export stopped to protect source content.');
   }
   const response = await fetch(
     `/api/v1/resumes/${session.source_resume_id}/versions/${session.source_resume_version_id}/file`
   );
   if (!response.ok) {
-    let message = 'Unable to retrieve the original Master Resume file.';
+    let message = 'Unable to verify the original Master Resume file.';
     try { message = (await response.json())?.error?.message || message; } catch (_) {}
     throw new Error(message);
   }
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const type = (response.headers.get('content-type') || '').toLowerCase();
   const disposition = response.headers.get('content-disposition') || '';
-  const isDocx = contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
-    /filename[^;]+\.docx/i.test(disposition);
-  if (!isDocx) {
-    throw new Error('The source resume version is not a DOCX file. Template-preserving export is available only when the original Master Resume is DOCX. No reconstructed file was generated.');
-  }
-  return await response.arrayBuffer();
+  const isPdf = type.includes('application/pdf') || /filename[^;]+\.pdf/i.test(disposition);
+  const isDocx = type.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') || /filename[^;]+\.docx/i.test(disposition);
+  if (!isPdf && !isDocx) throw new Error('The original Master Resume file format could not be verified. Export stopped.');
+  return isPdf ? 'PDF' : 'DOCX';
 }
 
-function replaceExecutiveProfileInDocx(xmlText, summaryText) {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
-  if (xmlDoc.getElementsByTagName('parsererror').length) throw new Error('The original Word document XML could not be safely parsed.');
-  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-  const paragraphs = Array.from(xmlDoc.getElementsByTagNameNS(W, 'p'));
-  const paragraphText = paragraph => Array.from(paragraph.getElementsByTagNameNS(W, 't')).map(node => node.textContent || '').join('').trim();
-  const headingIndex = paragraphs.findIndex(paragraph => /^(EXECUTIVE PROFILE|PROFESSIONAL SUMMARY)$/i.test(paragraphText(paragraph)));
-  if (headingIndex < 0) throw new Error('Could not locate the Executive Profile/Professional Summary heading in the original DOCX. Export stopped without changing the document.');
-  const summaryParagraph = paragraphs.slice(headingIndex + 1).find(paragraph => paragraphText(paragraph));
-  if (!summaryParagraph) throw new Error('The original document does not contain a summary paragraph under its profile heading.');
-  const trimmedSummary = String(summaryText || '').trim();
-  if (!trimmedSummary) throw new Error('The approved tailored summary is empty. Export stopped.');
-  const firstRun = summaryParagraph.getElementsByTagNameNS(W, 'r')[0];
-  const preservedRunProperties = firstRun?.getElementsByTagNameNS(W, 'rPr')[0]?.cloneNode(true) || null;
-  const pProperties = summaryParagraph.getElementsByTagNameNS(W, 'pPr')[0]?.cloneNode(true) || null;
-  while (summaryParagraph.firstChild) summaryParagraph.removeChild(summaryParagraph.firstChild);
-  if (pProperties) summaryParagraph.appendChild(pProperties);
-  const pieces = trimmedSummary.split(/\n+/);
-  pieces.forEach((piece, index) => {
-    if (index) {
-      const breakRun = xmlDoc.createElementNS(W, 'w:r');
-      breakRun.appendChild(xmlDoc.createElementNS(W, 'w:br'));
-      summaryParagraph.appendChild(breakRun);
+function normalizeSectionKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '');
+}
+
+function validateResumeSections(sections) {
+  const keys = sections.map(section => normalizeSectionKey(section.title));
+  const hasExperience = keys.some(key => ['professional_experience','earlier_experience','work_experience','employment_history','experience'].includes(key));
+  const hasSkills = keys.some(key => ['technical_skills','skills','skills_interests','core_competencies','competencies'].includes(key));
+  const hasEducation = keys.some(key => ['education','education_certifications','academic_qualifications'].includes(key));
+  const hasCertifications = keys.some(key => ['certifications','certification','credentials'].includes(key));
+  if (!hasExperience) throw new Error('The complete Professional Experience section is missing from the saved resume content. Export stopped.');
+  if (!hasSkills) throw new Error('The Technical Skills/Core Competencies section is missing from the saved resume content. Export stopped.');
+  if (!hasEducation) throw new Error('The Education section is missing from the saved resume content. Export stopped.');
+  if (!hasCertifications) throw new Error('The Certifications section is missing from the saved resume content. Export stopped.');
+  const experience = sections.filter(section => ['professional_experience','earlier_experience','work_experience','employment_history','experience'].includes(normalizeSectionKey(section.title)));
+  const experienceText = experience.flatMap(section => section.paragraphs).join('\n').trim();
+  if (experienceText.length < 500 || experienceText.split(/\n/).filter(line => line.trim()).length < 6) {
+    throw new Error('Professional Experience appears incomplete. Export stopped rather than generating a shortened resume.');
+  }
+  const skills = sections.filter(section => ['technical_skills','skills','skills_interests','core_competencies','competencies'].includes(normalizeSectionKey(section.title)));
+  if (skills.flatMap(section => section.paragraphs).join(' ').trim().length < 100) {
+    throw new Error('Technical Skills/Core Competencies appears incomplete. Export stopped rather than generating a shortened resume');
+  }
+  return sections;
+}
+
+function createDocxParagraphs(sections) {
+  const output = [];
+  const headingAliases = {
+    professional_summary: 'PROFESSIONAL SUMMARY',
+    executive_profile: 'PROFESSIONAL SUMMARY',
+    core_competencies: 'CORE COMPETENCIES',
+    professional_experience: 'PROFESSIONAL EXPERIENCE',
+    earlier_experience: 'EARLIER EXPERIENCE',
+    technical_skills: 'TECHNICAL SKILLS',
+    skills_interests: 'SKILLS & INTERESTS',
+    education: 'EDUCATION',
+    certifications: 'CERTIFICATIONS',
+    education_certifications: 'EDUCATION & CERTIFICATIONS',
+    portfolio: 'SELECTED TECHNOLOGY INITIATIVES & DIGITAL PORTFOLIO'
+  };
+  const heading = title => headingAliases[normalizeSectionKey(title)] || sectionLabel(title).toUpperCase();
+  for (const section of sections) {
+    const key = normalizeSectionKey(section.title);
+    if (key === 'contact_details') {
+      section.paragraphs.forEach((text, index) => output.push(new Paragraph({
+        children: [new TextRun({text, bold: index === 0, size: index === 0 ? 22 : 18})],
+        alignment: AlignmentType.CENTER,
+        spacing: {after: 60}
+      })));
+      continue;
     }
-    const run = xmlDoc.createElementNS(W, 'w:r');
-    if (preservedRunProperties) run.appendChild(preservedRunProperties.cloneNode(true));
-    const textNode = xmlDoc.createElementNS(W, 'w:t');
-    textNode.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-    textNode.textContent = piece;
-    run.appendChild(textNode);
-    summaryParagraph.appendChild(run);
-  });
-  return new XMLSerializer().serializeToString(xmlDoc);
+    output.push(new Paragraph({
+      text: heading(section.title),
+      heading: HeadingLevel.HEADING_1,
+      keepNext: true,
+      spacing: {before: 220, after: 100},
+      border: {bottom: {style: BorderStyle.SINGLE, size: 4, color: '334155', space: 3}}
+    }));
+    for (const rawParagraph of section.paragraphs) {
+      const lines = String(rawParagraph || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        const bullet = /^(?:[•●▪◦]|[-*])\s+/.test(line);
+        const numbered = /^\d+[.)]\s+/.test(line);
+        const clean = bullet ? line.replace(/^(?:[•●▪◦]|[-*])\s+/, '') : line;
+        output.push(new Paragraph({
+          children: [new TextRun(clean)],
+          bullet: bullet ? {level: 0} : undefined,
+          
+          indent: bullet || numbered ? {left: 360, hanging: 180} : undefined,
+          spacing: {after: 80, line: 276},
+          keepLines: true
+        }));
+      }
+    }
+  }
+  return output;
 }
 
 async function downloadResumeDocx(resume, aiContext, session, setExportStatus) {
-  setExportStatus('Step 1/5: Checking tailored resume content…');
-  const sections = getResumeSections(aiContext);
-  const summary = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'professional_summary');
+  setExportStatus('Step 1/5: Parsing the saved tailored resume…');
+  const sections = validateResumeSections(getResumeSections(aiContext));
+  const summary = sections.find(section => ['professional_summary','executive_profile'].includes(normalizeSectionKey(section.title)));
   if (!summary) throw new Error('The tailored Professional Summary was not found. Export stopped.');
-  setExportStatus('Step 2/5: Retrieving original Master Resume DOCX…');
-  const sourceBuffer = await fetchOriginalDocx(session);
-  setExportStatus('Step 3/5: Opening original DOCX…');
-  const zip = await JSZip.loadAsync(sourceBuffer);
-  const documentFile = zip.file('word/document.xml');
-  if (!documentFile) throw new Error('The original DOCX is missing its main document XML. Export stopped.');
-  const originalXml = await documentFile.async('string');
-  setExportStatus('Step 4/5: Updating Professional Summary while preserving formatting…');
-  const updatedXml = replaceExecutiveProfileInDocx(originalXml, summary.paragraphs.join(' '));
-  zip.file('word/document.xml', updatedXml);
-  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-  if (!blob || blob.size === 0) throw new Error('DOCX generation produced an empty file.');
+  setExportStatus('Step 2/5: Verifying the original Master Resume file…');
+  const sourceFormat = await verifySourceResumeFile(session);
+  setExportStatus(`Step 3/5: Building a complete DOCX from saved resume sections (source: ${sourceFormat})…`);
+  const doc = new Document({
+    creator: 'Resume Manager',
+    title: resume.resume_name || 'Tailored Resume',
+    subject: 'Tailored resume',
+    styles: {
+      default: {
+        document: { run: { font: 'Arial', size: 20, color: '1F2937' }, paragraph: { spacing: { after: 100, line: 276 } } },
+        heading1: { run: { font: 'Arial', size: 24, bold: true, color: '1F2937' }, paragraph: { spacing: { before: 240, after: 100 } } }
+      }
+    },
+    sections: [{
+      properties: { page: { margin: { top: 720, bottom: 720, left: 850, right: 850 } } },
+      children: createDocxParagraphs(sections)
+    }]
+  });
+  setExportStatus('Step 4/5: Creating DOCX file…');
+  const blob = await Packer.toBlob(doc);
+  if (!blob || blob.size < 5000) throw new Error('DOCX generation produced an unexpectedly small file. Export stopped.');
   setExportStatus('Step 5/5: Triggering browser download…');
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -198,7 +248,7 @@ async function downloadResumeDocx(resume, aiContext, session, setExportStatus) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  setExportStatus(`Download triggered (${Math.round(blob.size / 1024)} KB). If it did not appear, check your browser’s blocked-download indicator.`);
+  setExportStatus(`DOCX generated from the complete saved resume content (${Math.round(blob.size / 1024)} KB). If it did not appear, check your browser’s blocked-download indicator.`);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
