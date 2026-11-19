@@ -348,10 +348,10 @@ export default function ResumeFineTuning() {
             </div>
           </section>
 
-          {previousGenerations.length > 0 && !active && (
+          {previousGenerations.length > 0 && (
             <section className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
               <h2 className="text-xs font-bold text-amber-900">Previous proposal generations retained</h2>
-              <p className="text-xs text-amber-800">These proposals were generated using an earlier evidence selection. They remain available in session history but are no longer active. Generate a fresh set using the updated evidence.</p>
+              <p className="text-xs text-amber-800">These are saved proposal generations from this session. Delete any generation you no longer need.</p>
               <ul className="space-y-2 text-xs text-amber-800">
                 {previousGenerations.map(item => (
                   <li key={item.id} className="flex items-center justify-between gap-3">
