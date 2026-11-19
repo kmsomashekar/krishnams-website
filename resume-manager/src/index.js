@@ -6439,6 +6439,18 @@ ${JSON.stringify(answered)}`;
         for (const section of sections) section.original_text = sourceSections[section.section_id];
         const experienceProposal = sections.find(section => section.section_id === 'professional_experience');
         if (experienceProposal) { experienceProposal.proposed_text = ''; experienceProposal.decision = 'NO_CHANGE'; experienceProposal.rationale = 'Professional Experience is preserved verbatim from the Master Resume and is not AI-tailored.'; }
+        // If AI materially shortens a protected detail section, fall back to the exact source
+        // rather than rejecting the entire proposal. This keeps full skills/achievements intact.
+        const preservationThresholds = { achievements: 0.80, technical_skills: 0.85 };
+        for (const section of sections) {
+          const threshold = preservationThresholds[section.section_id];
+          if (!threshold || !section.proposed_text || section.original_text.length < 300) continue;
+          if (section.proposed_text.length < section.original_text.length * threshold) {
+            section.proposed_text = '';
+            section.decision = 'NO_CHANGE';
+            section.rationale = 'AI shortened this section below the preservation threshold; the original Master Resume content is retained verbatim.';
+          }
+        }
         const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
         const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
         if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
