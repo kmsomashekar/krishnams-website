@@ -222,11 +222,11 @@ function downloadResumePdf(resume, sections, setExportStatus) {
   const margin = 17, usableWidth = pageWidth - margin * 2, bottom = pageHeight - margin - 7;
   let y = margin;
   const bodyColor = [31, 41, 55], headingColor = [31, 41, 55], lineColor = [51, 65, 85];
-  const datePattern = /(?:\\b(?:19|20)\\d{2}\\b|\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s+\\d{4}\\b).*(?:-|–|to|present|current)|(?:-|–|to).*(?:\\b(?:19|20)\\d{2}\\b|present|current)/i;
-  const bulletPattern = /^(?:[•●▪◦]|[-*])\\s+/, numberedPattern = /^\\d+[.)]\\s+/;
+  const datePattern = /(?:\b(?:19|20)\d{2}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}\b).*(?:-|–|to|present|current)|(?:-|–|to).*(?:\b(?:19|20)\d{2}\b|present|current)/i;
+  const bulletPattern = /^(?:[•●▪◦]|[-*])\s+/, numberedPattern = /^\d+[.)]\s+/;
   const isBullet = line => bulletPattern.test(line);
   const isHeaderLine = line => !isBullet(line) && !numberedPattern.test(line) &&
-    (datePattern.test(line) || /\\s[|·]\\s/.test(line) || (line.length <= 95 && !/[.!?]$/.test(line) && /(?:Pvt\\.?|Ltd\\.?|Inc\\.?|LLC|Technologies|Systems|Corporation|Company|Manager|Director|Head|Lead|Engineer|Consultant|Vice President|VP|Chief|Officer)/i.test(line)));
+    (datePattern.test(line) || /\s[|·]\s/.test(line) || (line.length <= 95 && !/[.!?]$/.test(line) && /(?:Pvt\.?|Ltd\.?|Inc\.?|LLC|Technologies|Systems|Corporation|Company|Manager|Director|Head|Lead|Engineer|Consultant|Vice President|VP|Chief|Officer)/i.test(line)));
   const addPage = () => { pdf.addPage(); y = margin; };
   const ensureSpace = height => { if (y + height > bottom) addPage(); };
   const drawLines = (text, opts = {}) => {
@@ -262,7 +262,7 @@ function downloadResumePdf(resume, sections, setExportStatus) {
     drawSectionHeading(section.title);
     const isExperience = ['professional_experience','earlier_experience','work_experience','employment_history','experience'].includes(normalizeSectionKey(section.title));
     section.paragraphs.forEach(raw => {
-      const lines = String(raw || '').split(/\\n+/).map(line => line.trim()).filter(Boolean);
+      const lines = String(raw || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
       lines.forEach((line, index) => {
         if (isBullet(line)) drawBullet(line.replace(bulletPattern, '').trim());
         else if (numberedPattern.test(line)) drawLines(line, { indent: 4.2, after: 1.5 });
