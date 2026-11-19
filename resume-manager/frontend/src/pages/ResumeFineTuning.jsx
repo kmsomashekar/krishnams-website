@@ -56,6 +56,18 @@ function getResumeSections(aiContext) {
   return sections.map(section => ({ title: section.title, paragraphs: section.lines.join('\n').trim().split(/\n{2,}/).map(v => v.trim()).filter(Boolean) }));
 }
 
+function sectionLabel(value) {
+  const labels = {
+    professional_summary: 'Professional Summary',
+    core_competencies: 'Core Competencies',
+    professional_experience: 'Professional Experience',
+    achievements: 'Key Achievements',
+    technical_skills: 'Technical Skills'
+  };
+  const key = String(value || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '');
+  return labels[key] || String(value || '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
 function safeFileName(value) {
   return String(value || 'Tailored-Resume').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'Tailored-Resume';
 }
@@ -66,10 +78,12 @@ async function downloadResumeDocx(resume, aiContext) {
     new Paragraph({ text: resume.version_label || 'JD-tailored resume', spacing: { after: 260 } })
   ];
   for (const section of getResumeSections(aiContext)) {
-    children.push(new Paragraph({ text: section.title, heading: HeadingLevel.HEADING_1, spacing: { before: 240, after: 100 } }));
+    children.push(new Paragraph({ text: sectionLabel(section.title), heading: HeadingLevel.HEADING_1, spacing: { before: 220, after: 100 } }));
     for (const block of section.paragraphs) for (const line of block.split('\n').map(v => v.trim()).filter(Boolean)) {
       const bullet = /^[-•*]\s/.test(line);
-      children.push(new Paragraph({ children: [new TextRun({ text: bullet ? line.replace(/^[-•*]\s*/, '') : line, size: 20 })], spacing: { after: 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
+      const cleanLine = bullet ? line.replace(/^[-•*]\s*/, '') : line;
+      const dateHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(cleanLine);
+      children.push(new Paragraph({ children: [new TextRun({ text: cleanLine, bold: dateHeading, size: 20 })], spacing: { after: bullet ? 65 : 90 }, ...(bullet ? { bullet: { indent: 360 } } : {}) }));
     }
   }
   const doc = new Document({ creator: 'Resume Manager', title: resume.resume_name || 'Tailored Resume', sections: [{ properties: { page: { margin: { top: 900, right: 900, bottom: 900, left: 900 } } }, children }] });
@@ -82,13 +96,22 @@ function downloadResumePdf(resume, aiContext) {
   const margin = 48; const maxWidth = width - margin * 2; let y = margin;
   const clean = value => String(value || '').replace(/[•●▪]/g, '-').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '');
   const ensure = amount => { if (y + amount > height - margin) { pdf.addPage(); y = margin; } };
-  pdf.setFont('helvetica','bold'); pdf.setFontSize(18); const title = pdf.splitTextToSize(clean(resume.resume_name || 'Tailored Resume'), maxWidth); pdf.text(title, margin, y); y += title.length * 22 + 4;
-  pdf.setFont('helvetica','normal'); pdf.setFontSize(9); pdf.setTextColor(90); pdf.text(clean(resume.version_label || 'JD-tailored resume'), margin, y); y += 24;
-  pdf.setDrawColor(190); pdf.line(margin,y,width-margin,y); y += 18;
+  pdf.setFont('helvetica','bold'); pdf.setFontSize(16); pdf.text('TAILORED RESUME', margin, y); y += 21;
+  pdf.setFont('helvetica','normal'); pdf.setFontSize(8.5); pdf.setTextColor(90); pdf.text(clean(resume.version_label || 'JD-tailored resume'), margin, y); y += 15;
+  pdf.setDrawColor(190); pdf.line(margin,y,width-margin,y); y += 13;
   for (const section of getResumeSections(aiContext)) {
-    ensure(36); pdf.setTextColor(30,64,110); pdf.setFont('helvetica','bold'); pdf.setFontSize(12); const heading = pdf.splitTextToSize(clean(section.title.toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length * 15 + 6;
-    pdf.setTextColor(40); pdf.setFont('helvetica','normal'); pdf.setFontSize(9.5);
-    for (const block of section.paragraphs) { for (const line of pdf.splitTextToSize(clean(block),maxWidth)) { ensure(13); pdf.text(line,margin,y); y += 13; } y += 5; } y += 7;
+    ensure(36); pdf.setTextColor(30,64,110); pdf.setFont('helvetica','bold'); pdf.setFontSize(11); const heading = pdf.splitTextToSize(clean(sectionLabel(section.title).toUpperCase()),maxWidth); pdf.text(heading,margin,y); y += heading.length * 14 + 5;
+    for (const block of section.paragraphs) {
+      for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
+        const bullet = /^[-•*]\s/.test(rawLine); const lineText = bullet ? '- ' + rawLine.replace(/^[-•*]\s*/, '') : rawLine;
+        const dateHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(rawLine);
+        const lines = pdf.splitTextToSize(clean(lineText),maxWidth - (bullet ? 10 : 0));
+        pdf.setFont('helvetica', dateHeading ? 'bold' : 'normal'); pdf.setFontSize(dateHeading ? 9.3 : 9);
+        for (const line of lines) { ensure(12); pdf.text(line,margin + (bullet ? 10 : 0),y); y += 12; }
+      }
+      y += 4;
+    }
+    y += 5;
   }
   const pages = pdf.getNumberOfPages(); for (let i=1;i<=pages;i++) { pdf.setPage(i); pdf.setFontSize(8); pdf.setTextColor(130); pdf.text('Page ' + i + ' of ' + pages,width-margin,height-22,{align:'right'}); }
   pdf.save(safeFileName(resume.resume_name) + '.pdf');
