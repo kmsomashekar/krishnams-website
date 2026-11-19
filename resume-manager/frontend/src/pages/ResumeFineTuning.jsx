@@ -260,6 +260,7 @@ export default function ResumeFineTuning() {
             {evidence.length === 0 ? (
               <p className="text-xs text-amber-700">No verified evidence is available. Verify relevant entries in the Experience &amp; Achievement Repository first.</p>
             ) : (
+              <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
                   <input
@@ -285,6 +286,7 @@ export default function ResumeFineTuning() {
                     </span>
                   </label>
                 ))}
+              </div>
               </div>
             )}
             <div className="flex flex-wrap items-center gap-3">
