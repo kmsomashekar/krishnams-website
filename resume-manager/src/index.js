@@ -473,7 +473,8 @@ async function callAIProviderWithDocument(base64Data, env) {
     "CERTIFICATIONS\n\n" +
     "CAREER FACTS & CONSTRAINTS\n\n" +
     "IMPORTANT EVIDENCE\n\n" +
-    "Under PROFESSIONAL EXPERIENCE, reproduce every employer, title, date range, and responsibility/achievement bullet as separate role entries in source order. Do not combine roles or summarise them. If source text is unclear, mark it as unclear rather than inventing.\n" +\n    "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
+    "Under PROFESSIONAL EXPERIENCE, reproduce every employer, title, date range, and responsibility/achievement bullet as separate role entries in source order. Do not combine roles or summarise them. If source text is unclear, mark it as unclear rather than inventing.\n" +
+    "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
 
   const requestBody = {
     contents: [
