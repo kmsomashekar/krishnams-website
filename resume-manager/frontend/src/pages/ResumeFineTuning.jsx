@@ -34,6 +34,14 @@ async function generateProposals(sessionId, regenerate = false) {
   }), 'Unable to generate resume proposals.');
 }
 
+async function deleteProposalGeneration(sessionId, generationId) {
+  return readApi(await fetch(`/api/v1/customisation-sessions/${sessionId}/proposals`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ generation_id: generationId })
+  }), 'Unable to delete the proposal generation.');
+}
+
 async function saveReview(sessionId, payload) {
   return readApi(await fetch(`/api/v1/customisation-sessions/${sessionId}/proposals`, {
     method: 'PUT',
@@ -139,6 +147,7 @@ export default function ResumeFineTuning() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingGenerationId, setDeletingGenerationId] = useState('');
   const [error, setError] = useState('');
 
   const loadSession = async () => {
@@ -197,6 +206,24 @@ export default function ResumeFineTuning() {
       setError(err.message || 'Unable to generate resume proposals.');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleDeleteGeneration = async (generationId) => {
+    if (!generationId || deletingGenerationId) return;
+    if (!window.confirm('Delete this proposal generation permanently? This will not delete any tailored resume already created.')) return;
+    setDeletingGenerationId(generationId);
+    setError('');
+    try {
+      const result = await deleteProposalGeneration(sessionId, generationId);
+      setProposals(result.proposals || null);
+      setTailoredResume(result.proposals?.tailored_resume || tailoredResume);
+      setSession(previous => ({ ...previous, status: result.status || previous?.status }));
+      setDrafts({});
+    } catch (err) {
+      setError(err.message || 'Unable to delete proposal generation.');
+    } finally {
+      setDeletingGenerationId('');
     }
   };
 
@@ -321,12 +348,18 @@ export default function ResumeFineTuning() {
             </div>
           </section>
 
-          {previousGenerations.length > 0 && !active && (
+          {previousGenerations.length > 0 && (
             <section className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
               <h2 className="text-xs font-bold text-amber-900">Previous proposal generations retained</h2>
-              <p className="text-xs text-amber-800">These proposals were generated using an earlier evidence selection. They remain available in session history but are no longer active. Generate a fresh set using the updated evidence.</p>
-              <ul className="list-disc pl-5 text-xs text-amber-800">
-                {previousGenerations.map(item => <li key={item.id}>{item.created_at ? new Date(item.created_at).toLocaleString() : 'Saved generation'}</li>)}
+              <p className="text-xs text-amber-800">These are saved proposal generations from this session. Delete any generation you no longer need.</p>
+              <ul className="space-y-2 text-xs text-amber-800">
+                {previousGenerations.map(item => (
+                  <li key={item.id} className="flex items-center justify-between gap-3">
+                    <span>{item.created_at ? new Date(item.created_at).toLocaleString() : 'Saved generation'}</span>
+                    <button type="button" onClick={() => handleDeleteGeneration(item.id)} disabled={!!deletingGenerationId}
+                      className="text-red-700 underline disabled:opacity-50">{deletingGenerationId === item.id ? 'Deleting…' : 'Delete'}</button>
+                  </li>
+                ))}
               </ul>
             </section>
           )}
@@ -353,8 +386,12 @@ export default function ResumeFineTuning() {
                   <h2 className="text-sm font-bold text-slate-900">Review generated sections</h2>
                   <p className="text-xs text-slate-500 mt-1">Generation: {active.created_at ? new Date(active.created_at).toLocaleString() : 'Saved'}</p>
                 </div>
-                <button type="button" onClick={() => handleGenerate(true)} disabled={generating}
-                  className="text-xs font-semibold text-indigo-700 underline disabled:opacity-50">Generate another version</button>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => handleGenerate(true)} disabled={generating}
+                    className="text-xs font-semibold text-indigo-700 underline disabled:opacity-50">Generate another version</button>
+                  <button type="button" onClick={() => handleDeleteGeneration(active.id)} disabled={!!deletingGenerationId}
+                    className="text-xs font-semibold text-red-700 underline disabled:opacity-50">{deletingGenerationId === active.id ? 'Deleting…' : 'Delete proposals'}</button>
+                </div>
               </div>
               {active.sections.map(section => (
                 <article key={section.section_id} className="border border-slate-200 rounded-lg p-4 space-y-3">
