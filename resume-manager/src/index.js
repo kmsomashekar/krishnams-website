@@ -53,7 +53,26 @@ function validateResumePreservation(sourceSections, candidateSections, evidenceT
   return problems;
 }
 
-// --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
+
+function validateAIContextExperience(context) {
+  const parsed = parseResumeContextSections(context);
+  const experience = String(parsed.professional_experience || '').trim();
+  const words = experience.split(/\s+/).filter(Boolean).length;
+  const dateRanges = experience.match(/(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}|present|current)/gi) || [];
+  const employers = (experience.match(/(?:^|\n)\s*(?:EMPLOYER|COMPANY)\s*:/gi) || []).length;
+  const titles = (experience.match(/(?:^|\n)\s*(?:TITLE|ROLE)\s*:/gi) || []).length;
+  const bullets = (experience.match(/(?:^|\n)\s*(?:[-*•]|\d+[.)])\s+/g) || []).length;
+  const placeholder = /(?:placeholder|summary of experience|details not available|not provided|unable to extract|no professional experience|experience omitted)/i.test(experience);
+  const problems = [];
+  if (words < 100) problems.push('Professional Experience is too short (' + words + ' words); it appears to be a summary rather than complete employment history.');
+  if (!dateRanges.length) problems.push('No employment date ranges were detected.');
+  if (!employers || employers !== dateRanges.length) problems.push('Each role must have an EMPLOYER: line and date range. Detected ' + employers + ' employers and ' + dateRanges.length + ' date ranges.');
+  if (!titles || titles !== dateRanges.length) problems.push('Each role must have a TITLE: line. Detected ' + titles + ' titles and ' + dateRanges.length + ' date ranges.');
+  if (bullets < 3) problems.push('Responsibilities/achievement bullets are missing or too few (' + bullets + ' detected).');
+  if (placeholder) problems.push('Placeholder or omission language was detected.');
+  return { valid: problems.length === 0, problems, wordCount: words, roleCount: dateRanges.length, bulletCount: bullets };
+}
+\n// --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
 const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 async function callGemini(message, apiKey, options = {}) {
@@ -473,7 +492,7 @@ async function callAIProviderWithDocument(base64Data, env) {
     "CERTIFICATIONS\n\n" +
     "CAREER FACTS & CONSTRAINTS\n\n" +
     "IMPORTANT EVIDENCE\n\n" +
-    "Under PROFESSIONAL EXPERIENCE, reproduce every employer, title, date range, and responsibility/achievement bullet as separate role entries in source order. Do not combine roles or summarise them. If source text is unclear, mark it as unclear rather than inventing.\n" +
+    "Under PROFESSIONAL EXPERIENCE, transcribe the complete employment history directly from the PDF. Create a separate entry for EACH employer/position, in source order, using this exact format:\nEMPLOYER: [company name]\nTITLE: [exact job title]\nDATES: [exact date range]\n- [responsibility/achievement bullet]\n- [next source bullet]\nPreserve ALL responsibility and achievement bullets individually, including technical details and metrics. Do not combine, shorten, paraphrase into a summary, omit earlier roles, or impose a word limit. If a role has no bullets, state that explicitly. Never use a placeholder or generic summary. Before returning, verify every employment entry visible in the PDF is represented.\n" +
     "Under IMPORTANT EVIDENCE, preserve specific factual items (years of experience, team sizes, employee/user scope, geographic scope, percentages, cost reductions, certification outcomes, measurable achievements, named frameworks, named platforms/tools) ONLY when explicitly supported by the resume evidence.";
 
   const requestBody = {
@@ -497,8 +516,7 @@ async function callAIProviderWithDocument(base64Data, env) {
         {
           text: systemInstruction
         }
-      ]
-    }
+      ]    }
   };
 
   const abortController = new AbortController();
@@ -997,7 +1015,6 @@ async function getAuthenticatedUser(request, env) {
   const tokenHash = await hashSessionToken(rawToken);
   const now = new Date();
   const nowISO = now.toISOString();
-
   const sessionRecord = await env.DB.prepare(
     `SELECT s.user_id, s.expires_at, u.id, u.email, u.role, u.status, u.is_owner 
      FROM sessions s 
@@ -1498,7 +1515,6 @@ export default {
         )
         .bind(user.id)
         .first();
-
         // If verified TOTP exists, MFA challenge is strictly required.
         // What if verified TOTP does NOT exist? To enforce password + TOTP for active users while preserving
         // first-time setup for newly provisioned/bootstrapped accounts, we check if ANY totp record exists (even unverified)
@@ -1998,7 +2014,6 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
         const isProduction = env.ENVIRONMENT === 'production';
         const cookieSecure = isProduction ? "; Secure" : "";
         const expiredCookieString = `rm_session=; HttpOnly; Path=/; SameSite=Lax${cookieSecure}; Max-Age=0`;
-
         const responseHeaders = new Headers(headers);
         responseHeaders.append("Set-Cookie", expiredCookieString);
 
@@ -2498,7 +2513,6 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
       const coverLetterGeneratePattern = '/api/v1/cover-letters/generate';
       const coverLetterIdRegex = /^\/api\/v1\/cover-letters\/([^\/]+)$/;
       const coverLetterPdfMetadataRegex = /^\/api\/v1\/cover-letters\/([^\/]+)\/pdf-metadata$/;
-
       // =======================================================================
       // MODULE: OUTREACH LOGS API (Task 1.12)
       // =======================================================================
@@ -2997,8 +3011,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
 
         await env.DB.prepare(
           `INSERT INTO contacts (id, user_id, person_name, company, email, phone, linkedin_url, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`        )
         .bind(
           id,
           userId,
@@ -3497,8 +3510,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
               resume_id: resume_id,
               version_id: version_id,
               provider: "gemini",
-              model: GEMINI_MODEL,
-              response: {
+              model: GEMINI_MODEL,              response: {
                 answer: structuredChatJson.answer.trim(),
                 evidence_status: structuredChatJson.evidence_status,
                 supporting_evidence: structuredChatJson.supporting_evidence,
@@ -3820,8 +3832,7 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
 
         const aiContextResult = await callAIProviderWithDocument(b64PayloadData, env);
 
-        if (aiContextResult.success) {
-          return new Response(
+        if (aiContextResult.success) {\n          const extractionCheck = validateAIContextExperience(aiContextResult.text);\n          if (!extractionCheck.valid) return buildErrorResponse('AI_CONTEXT_INCOMPLETE', 'The Professional Experience extraction is incomplete and was not saved. ' + extractionCheck.problems.join(' ') + ' Please retry after ensuring the Master Resume PDF is readable.', 422, headers);\n          return new Response(
             JSON.stringify({
               success: true,
               data: {
@@ -3998,7 +4009,6 @@ if (pathname === '/api/v1/profile' && method === 'PUT') {
             headers: customHeaders
           });
         }
-
         if (method === 'DELETE') {
           const targetR2Key = ownershipCheck.r2_object_key;
           if (!targetR2Key) {
@@ -4497,8 +4507,7 @@ Return only the cover letter text.
              i.id, i.opportunity_id, i.round_number, i.round_title, i.status, i.interview_date, i.interviewer_names, i.created_at,
              o.id AS opp_id, o.job_title AS opp_job_title, o.status AS opp_status,
              c.id AS comp_id, c.name AS comp_name
-           FROM interviews i
-           JOIN opportunities o ON i.opportunity_id = o.id
+           FROM interviews i           JOIN opportunities o ON i.opportunity_id = o.id
            LEFT JOIN companies c ON o.company_id = c.id
            WHERE o.user_id = ?
            ORDER BY i.interview_date ASC`
@@ -4997,8 +5006,7 @@ if (atsMatch) {
     if (skill_gaps !== undefined) {
       if (!Array.isArray(skill_gaps)) {
         return buildErrorResponse(
-          'INVALID_INPUT',
-          "Field 'skill_gaps' must be a valid array.",
+          'INVALID_INPUT',          "Field 'skill_gaps' must be a valid array.",
           400,
           headers
         );
@@ -5497,8 +5505,7 @@ Question design:
 - Do not provide model answers or evaluate the candidate.
 Return only valid JSON in this exact shape: {"questions":[{"category":"Leadership","question":"..."}]}.
 The questions array must contain exactly ${questionCount} items.`;
-          const generated = await callGemini(prompt, env.GEMINI_API_KEY, { maxOutputTokens: 5000 });
-          if (!generated.success) {
+          const generated = await callGemini(prompt, env.GEMINI_API_KEY, { maxOutputTokens: 5000 });          if (!generated.success) {
             const status = generated.status === 429 ? 429 : 502;
             return buildErrorResponse('AI_PROVIDER_ERROR', generated.errorType === 'TIMEOUT' ? 'Question generation timed out. Please try again.' : generated.status === 429 ? 'Gemini API quota or billing limit reached.' : 'Unable to generate interview questions right now.', status, headers);
           }
@@ -5997,8 +6004,7 @@ ${JSON.stringify(answered)}`;
             }
           }
 
-          let parsedAnalysis = null;
-          if (atsAnalysis.analysis_json) {
+          let parsedAnalysis = null;          if (atsAnalysis.analysis_json) {
           try {
           parsedAnalysis = JSON.parse(atsAnalysis.analysis_json);
           } catch (e) {
@@ -6497,8 +6503,7 @@ ${JSON.stringify(answered)}`;
            !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value);
         if (!body || !allowedTypes.includes(body.evidence_type) || typeof body.title !== 'string' ||
             !body.title.trim() || body.title.trim().length > textLimits.title) {
-          return buildErrorResponse('INVALID_INPUT', 'A valid evidence_type and title (maximum 300 characters) are required.', 400, headers);
-        }
+          return buildErrorResponse('INVALID_INPUT', 'A valid evidence_type and title (maximum 300 characters) are required.', 400, headers);        }
         if (body.classification !== undefined && !allowedClasses.includes(body.classification)) {
           return buildErrorResponse('INVALID_INPUT', 'Unsupported evidence classification.', 400, headers);
         }
@@ -6997,8 +7002,7 @@ ${JSON.stringify(answered)}`;
                 is_active: existingVersion.is_active,
                 created_at: existingVersion.created_at,
                 has_file: Boolean(existingVersion.r2_object_key),
-                has_ai_context: hasAiContext
-              }
+                has_ai_context: hasAiContext              }
             }),
             { status: 200, headers }
           );
