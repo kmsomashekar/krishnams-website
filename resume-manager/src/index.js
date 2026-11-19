@@ -8,55 +8,13 @@
 
 // Resume tailoring guardrails: derive canonical source sections and detect unsupported facts.
 function parseResumeContextSections(context) {
-  const raw = {};
-  let heading = null, lines = [];
-  const flush = () => {
-    if (heading) raw[heading] = lines.join('\n').trim();
-  };
-  const headingAliases = {
-    'professional profile': 'professional_profile',
-    'professional summary': 'professional_profile',
-    'summary': 'professional_profile',
-    'target role positioning': 'target_role_positioning',
-    'leadership scope': 'leadership_scope',
-    'leadership and scope': 'leadership_scope',
-    'leadership scope and responsibilities': 'leadership_scope',
-    'core expertise': 'core_expertise',
-    'core competencies': 'core_expertise',
-    'key achievements': 'key_achievements',
-    'achievements': 'key_achievements',
-    'technologies platforms': 'technologies_platforms',
-    'technologies and platforms': 'technologies_platforms',
-    'technical skills': 'technologies_platforms',
-    'security governance': 'security_governance',
-    'security and governance': 'security_governance',
-    'certifications': 'certifications',
-    'career facts constraints': 'career_facts',
-    'career facts and constraints': 'career_facts',
-    'important evidence': 'important_evidence',
-    'professional experience': 'professional_experience',
-    'work experience': 'professional_experience',
-    'experience': 'professional_experience'
-  };
-  const isHeading = line => {
-    const normalized = String(line || '').replace(/^#{1,3}\s*/, '').replace(/[*_]/g, '').replace(/[:：]$/, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    return headingAliases[normalized] || null;
-  };
-  for (const line of String(context || '').replace(/\r/g, '').split('\n')) {
-    const next = isHeading(line);
-    if (next) { flush(); heading = next; lines = []; }
-    else if (heading) lines.push(line);
-  }
+  const raw = {}; let heading=null, lines=[];
+  const aliases={'professional profile':'professional_summary','professional summary':'professional_summary','summary':'professional_summary','target role positioning':'professional_summary','leadership scope':'core_competencies','leadership and scope':'core_competencies','core expertise':'core_competencies','core competencies':'core_competencies','key achievements':'achievements','achievements':'achievements','technologies platforms':'technical_skills','technologies and platforms':'technical_skills','technical skills':'technical_skills','security governance':'technical_skills','security and governance':'technical_skills','certifications':'technical_skills','professional experience':'professional_experience','work experience':'professional_experience','employment history':'professional_experience','experience':'professional_experience'};
+  const normalize=line=>String(line||'').replace(/^#{1,3}\s*/,'').replace(/[*_]/g,'').replace(/[:：]$/,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const flush=()=>{if(heading)raw[heading]=lines.join('\n').trim();};
+  for(const line of String(context||'').replace(/\r/g,'').split('\n')){const id=aliases[normalize(line)];if(id){flush();heading=id;lines=[];}else if(heading)lines.push(line);}
   flush();
-  const join = (...keys) => keys.map(key => raw[key]).filter(Boolean).join('\n\n').trim();
-  return {
-    professional_summary: join('professional_profile', 'target_role_positioning'),
-    core_competencies: join('core_expertise', 'leadership_scope', 'security_governance'),
-    professional_experience: join('professional_experience', 'leadership_scope', 'career_facts', 'important_evidence'),
-    achievements: join('key_achievements', 'important_evidence'),
-    technical_skills: join('technologies_platforms', 'security_governance', 'certifications'),
-    _sourceAll: Object.values(raw).join('\n\n')
-  };
+  return {professional_summary:raw.professional_summary||'',core_competencies:raw.core_competencies||'',professional_experience:raw.professional_experience||'',achievements:raw.achievements||'',technical_skills:raw.technical_skills||'',_sourceAll:Object.values(raw).join('\n\n')};
 }
 function resumeFactTokens(text) {
   return new Set((String(text || '').match(/\b(?:\$|₹|€|£)?\d+(?:[,.]\d+)*(?:%|\+|\s?(?:years?|months?|days?|hours?|K|M|B|L|Cr))?\b/gi) || [])
