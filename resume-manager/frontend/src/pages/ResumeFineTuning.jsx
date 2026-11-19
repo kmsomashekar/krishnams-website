@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AlignmentType, Document, Footer, Packer, Paragraph, TextRun } from 'docx';
 import { jsPDF } from 'jspdf';
+import JSZip from 'jszip';
 
 async function readApi(res, fallback) {
   let body;
@@ -114,6 +115,86 @@ function safeFileName(value) {
 async function fetchCandidateProfile() {
   const result = await readApi(await fetch('/api/v1/profile'), 'Unable to load profile details. Export stopped to avoid omitting profile information.');
   return result.profile || {};
+}
+
+async function fetchOriginalDocx(session) {
+  if (!session?.source_resume_id || !session?.source_resume_version_id) {
+    throw new Error('The original Master Resume file could not be identified. Export stopped to protect the original content.');
+  }
+  const response = await fetch(
+    `/api/v1/resumes/${session.source_resume_id}/versions/${session.source_resume_version_id}/file`
+  );
+  if (!response.ok) {
+    let message = 'Unable to retrieve the original Master Resume file.';
+    try { message = (await response.json())?.error?.message || message; } catch (_) {}
+    throw new Error(message);
+  }
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const disposition = response.headers.get('content-disposition') || '';
+  const isDocx = contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
+    /filename[^;]+\.docx/i.test(disposition);
+  if (!isDocx) {
+    throw new Error('The source resume version is not a DOCX file. Template-preserving export is available only when the original Master Resume is DOCX. No reconstructed file was generated.');
+  }
+  return await response.arrayBuffer();
+}
+
+function replaceExecutiveProfileInDocx(xmlText, summaryText) {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
+  if (xmlDoc.getElementsByTagName('parsererror').length) throw new Error('The original Word document XML could not be safely parsed.');
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const paragraphs = Array.from(xmlDoc.getElementsByTagNameNS(W, 'p'));
+  const paragraphText = paragraph => Array.from(paragraph.getElementsByTagNameNS(W, 't')).map(node => node.textContent || '').join('').trim();
+  const headingIndex = paragraphs.findIndex(paragraph => /^(EXECUTIVE PROFILE|PROFESSIONAL SUMMARY)$/i.test(paragraphText(paragraph)));
+  if (headingIndex < 0) throw new Error('Could not locate the Executive Profile/Professional Summary heading in the original DOCX. Export stopped without changing the document.');
+  const summaryParagraph = paragraphs.slice(headingIndex + 1).find(paragraph => paragraphText(paragraph));
+  if (!summaryParagraph) throw new Error('The original document does not contain a summary paragraph under its profile heading.');
+  const trimmedSummary = String(summaryText || '').trim();
+  if (!trimmedSummary) throw new Error('The approved tailored summary is empty. Export stopped.');
+  const firstRun = summaryParagraph.getElementsByTagNameNS(W, 'r')[0];
+  const preservedRunProperties = firstRun?.getElementsByTagNameNS(W, 'rPr')[0]?.cloneNode(true) || null;
+  const pProperties = summaryParagraph.getElementsByTagNameNS(W, 'pPr')[0]?.cloneNode(true) || null;
+  while (summaryParagraph.firstChild) summaryParagraph.removeChild(summaryParagraph.firstChild);
+  if (pProperties) summaryParagraph.appendChild(pProperties);
+  const pieces = trimmedSummary.split(/\n+/);
+  pieces.forEach((piece, index) => {
+    if (index) {
+      const breakRun = xmlDoc.createElementNS(W, 'w:r');
+      breakRun.appendChild(xmlDoc.createElementNS(W, 'w:br'));
+      summaryParagraph.appendChild(breakRun);
+    }
+    const run = xmlDoc.createElementNS(W, 'w:r');
+    if (preservedRunProperties) run.appendChild(preservedRunProperties.cloneNode(true));
+    const textNode = xmlDoc.createElementNS(W, 'w:t');
+    textNode.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    textNode.textContent = piece;
+    run.appendChild(textNode);
+    summaryParagraph.appendChild(run);
+  });
+  return new XMLSerializer().serializeToString(xmlDoc);
+}
+
+async function downloadResumeDocx(resume, aiContext, session) {
+  const sections = getResumeSections(aiContext);
+  const summary = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'professional_summary');
+  if (!summary) throw new Error('The tailored Professional Summary was not found. Export stopped.');
+  const sourceBuffer = await fetchOriginalDocx(session);
+  const zip = await JSZip.loadAsync(sourceBuffer);
+  const documentFile = zip.file('word/document.xml');
+  if (!documentFile) throw new Error('The original DOCX is missing its main document XML. Export stopped.');
+  const originalXml = await documentFile.async('string');
+  const updatedXml = replaceExecutiveProfileInDocx(originalXml, summary.paragraphs.join(' '));
+  zip.file('word/document.xml', updatedXml);
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = safeFileName(resume.resume_name) + '.docx';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function downloadResumeDocx(resume, aiContext) {
@@ -327,7 +408,7 @@ export default function ResumeFineTuning() {
     try {
       const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
       if (!version?.ai_context) throw new Error('The tailored resume has no saved content to export.');
-      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context); else await downloadResumePdf(tailoredResume, version.ai_context);
+      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context, session); else throw new Error('PDF export is temporarily unavailable because it cannot yet preserve the original Master Resume formatting. Download the DOCX and save it as PDF in Microsoft Word to retain the layout.');
     } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); }
     finally { setExportingFormat(''); }
   };
