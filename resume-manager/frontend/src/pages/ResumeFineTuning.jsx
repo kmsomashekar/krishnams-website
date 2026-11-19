@@ -173,18 +173,24 @@ function replaceExecutiveProfileInDocx(xmlText, summaryText) {
   return new XMLSerializer().serializeToString(xmlDoc);
 }
 
-async function downloadResumeDocx(resume, aiContext, session) {
+async function downloadResumeDocx(resume, aiContext, session, setExportStatus) {
+  setExportStatus('Step 1/5: Checking tailored resume content…');
   const sections = getResumeSections(aiContext);
   const summary = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'professional_summary');
   if (!summary) throw new Error('The tailored Professional Summary was not found. Export stopped.');
+  setExportStatus('Step 2/5: Retrieving original Master Resume DOCX…');
   const sourceBuffer = await fetchOriginalDocx(session);
+  setExportStatus('Step 3/5: Opening original DOCX…');
   const zip = await JSZip.loadAsync(sourceBuffer);
   const documentFile = zip.file('word/document.xml');
   if (!documentFile) throw new Error('The original DOCX is missing its main document XML. Export stopped.');
   const originalXml = await documentFile.async('string');
+  setExportStatus('Step 4/5: Updating Professional Summary while preserving formatting…');
   const updatedXml = replaceExecutiveProfileInDocx(originalXml, summary.paragraphs.join(' '));
   zip.file('word/document.xml', updatedXml);
   const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  if (!blob || blob.size === 0) throw new Error('DOCX generation produced an empty file.');
+  setExportStatus('Step 5/5: Triggering browser download…');
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -192,7 +198,8 @@ async function downloadResumeDocx(resume, aiContext, session) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setExportStatus(`Download triggered (${Math.round(blob.size / 1024)} KB). If it did not appear, check your browser’s blocked-download indicator.`);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 async function finalizeProposals(sessionId) {
@@ -214,6 +221,7 @@ export default function ResumeFineTuning() {
   const [tailoredResume, setTailoredResume] = useState(null);
   const [finalizing, setFinalizing] = useState(false);
   const [exportingFormat, setExportingFormat] = useState('');
+  const [exportStatus, setExportStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -324,12 +332,13 @@ export default function ResumeFineTuning() {
 
   const handleDownload = async (format) => {
     if (!tailoredResume?.resume_id || !tailoredResume?.resume_version_id || exportingFormat) return;
-    setExportingFormat(format); setError('');
+    setExportingFormat(format); setError(''); setExportStatus('Starting DOCX export…');
     try {
+      setExportStatus('Fetching tailored resume version…');
       const version = await fetchTailoredVersion(tailoredResume.resume_id, tailoredResume.resume_version_id);
       if (!version?.ai_context) throw new Error('The tailored resume has no saved content to export.');
-      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context, session); else throw new Error('PDF export is temporarily unavailable because it cannot yet preserve the original Master Resume formatting. Download the DOCX and save it as PDF in Microsoft Word to retain the layout.');
-    } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); }
+      if (format === 'docx') await downloadResumeDocx(tailoredResume, version.ai_context, session, setExportStatus); else throw new Error('PDF export is temporarily unavailable because it cannot yet preserve the original Master Resume formatting. Download the DOCX and save it as PDF in Microsoft Word to retain the layout.');
+    } catch (err) { setError(err.message || ('Unable to generate the ' + format.toUpperCase() + ' file.')); setExportStatus('Export failed.'); }
     finally { setExportingFormat(''); }
   };
 
@@ -507,6 +516,7 @@ export default function ResumeFineTuning() {
                     <button type="button" disabled title="PDF export is temporarily unavailable while preserving the original document layout." className="px-4 py-2 text-xs font-bold text-slate-500 bg-slate-200 rounded cursor-not-allowed">PDF: Save from Word</button>
                     <Link to="/resumes" className="px-4 py-2 text-xs font-semibold text-emerald-900 underline">Open Resumes</Link>
                   </div>
+                  {exportStatus && <p role="status" className="text-xs text-slate-600">{exportStatus}</p>}
                   <p className="text-xs text-slate-500">Download the DOCX to preserve your original resume layout. Open it in Microsoft Word and use Save As → PDF. Direct PDF export is temporarily disabled because the current converter rebuilds the document and loses formatting.</p>
                 </div>
               ) : (
