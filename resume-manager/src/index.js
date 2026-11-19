@@ -5,6 +5,96 @@
 // Architecture: Isolated Same-Origin API Router with Cookie-Based Sessions & TOTP
 // =============================================================================
 
+
+// Resume tailoring guardrails: derive canonical source sections and detect unsupported facts.
+function parseResumeContextSections(context) {
+  const raw = {};
+  let heading = null, lines = [];
+  const flush = () => {
+    if (heading) raw[heading] = lines.join('\n').trim();
+  };
+  const headingAliases = {
+    'professional profile': 'professional_profile',
+    'professional summary': 'professional_profile',
+    'summary': 'professional_profile',
+    'target role positioning': 'target_role_positioning',
+    'leadership scope': 'leadership_scope',
+    'leadership and scope': 'leadership_scope',
+    'leadership scope and responsibilities': 'leadership_scope',
+    'core expertise': 'core_expertise',
+    'core competencies': 'core_expertise',
+    'key achievements': 'key_achievements',
+    'achievements': 'key_achievements',
+    'technologies platforms': 'technologies_platforms',
+    'technologies and platforms': 'technologies_platforms',
+    'technical skills': 'technologies_platforms',
+    'security governance': 'security_governance',
+    'security and governance': 'security_governance',
+    'certifications': 'certifications',
+    'career facts constraints': 'career_facts',
+    'career facts and constraints': 'career_facts',
+    'important evidence': 'important_evidence',
+    'professional experience': 'professional_experience',
+    'work experience': 'professional_experience',
+    'experience': 'professional_experience'
+  };
+  const isHeading = line => {
+    const normalized = String(line || '').replace(/^#{1,3}\s*/, '').replace(/[*_]/g, '').replace(/[:：]$/, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return headingAliases[normalized] || null;
+  };
+  for (const line of String(context || '').replace(/\r/g, '').split('\n')) {
+    const next = isHeading(line);
+    if (next) { flush(); heading = next; lines = []; }
+    else if (heading) lines.push(line);
+  }
+  flush();
+  const join = (...keys) => keys.map(key => raw[key]).filter(Boolean).join('\n\n').trim();
+  return {
+    professional_summary: join('professional_profile', 'target_role_positioning'),
+    core_competencies: join('core_expertise', 'leadership_scope', 'security_governance'),
+    professional_experience: join('professional_experience', 'leadership_scope', 'career_facts', 'important_evidence'),
+    achievements: join('key_achievements', 'important_evidence'),
+    technical_skills: join('technologies_platforms', 'security_governance', 'certifications'),
+    _sourceAll: Object.values(raw).join('\n\n')
+  };
+}
+function resumeFactTokens(text) {
+  return new Set((String(text || '').match(/\b(?:\$|₹|€|£)?\d+(?:[,.]\d+)*(?:%|\+|\s?(?:years?|months?|days?|hours?|K|M|B|L|Cr))?\b/gi) || [])
+    .map(token => token.replace(/\s+/g, '').toLowerCase()));
+}
+function findUnsupportedNumbers(candidate, sourceAndEvidence) {
+  const allowed = resumeFactTokens(sourceAndEvidence);
+  return [...resumeFactTokens(candidate)].filter(token => !allowed.has(token));
+}
+function normalizeResumeLine(line) {
+  return String(line || '').toLowerCase().replace(/[–—]/g, '-').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function validateResumePreservation(sourceSections, candidateSections, evidenceText = '') {
+  const problems = [];
+  const sourceAll = Object.values(sourceSections || {}).join('\n') + '\n' + evidenceText;
+  for (const id of ['professional_experience', 'achievements', 'technical_skills']) {
+    const original = String(sourceSections?.[id] || '').trim();
+    const candidate = String(candidateSections?.[id] || '').trim();
+    if (!original || !candidate) { problems.push(id + ' is missing'); continue; }
+    const originalWords = original.split(/\s+/).filter(Boolean).length;
+    const candidateWords = candidate.split(/\s+/).filter(Boolean).length;
+    if (candidateWords < Math.floor(originalWords * 0.82)) problems.push(id + ' has been shortened excessively (' + candidateWords + ' words vs ' + originalWords + ' source words)');
+  }
+  const sourceExperience = String(sourceSections?.professional_experience || '');
+  const candidateExperience = String(candidateSections?.professional_experience || '');
+  const dateTokens = sourceExperience.match(/\b(?:19|20)\d{2}\b/g) || [];
+  const missingDates = [...new Set(dateTokens)].filter(year => !candidateExperience.includes(year));
+  if (missingDates.length) problems.push('professional_experience is missing source employment dates: ' + missingDates.join(', '));
+  const dateRangePattern = /(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:(?:\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+)?(?:19|20)\d{2}|present|current)/gi;
+  const sourceRanges = sourceExperience.match(dateRangePattern) || [];
+  const candidateRanges = candidateExperience.match(dateRangePattern) || [];
+  if (sourceRanges.length && candidateRanges.length < sourceRanges.length) problems.push('professional_experience has fewer employment date ranges than the source (' + candidateRanges.length + ' vs ' + sourceRanges.length + ')');
+  for (const range of sourceRanges) if (!candidateExperience.toLowerCase().replace(/[–—]/g, '-').includes(range.toLowerCase().replace(/[–—]/g, '-'))) problems.push('employment date range missing or altered: ' + range);
+  const unsupportedNumbers = findUnsupportedNumbers(Object.values(candidateSections || {}).join('\n'), sourceAll);
+  if (unsupportedNumbers.length) problems.push('unsupported numeric claims: ' + unsupportedNumbers.join(', '));
+  return problems;
+}
+
 // --- GEMINI AI SERVICE CONFIGURATION CONTROLS ---
 const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
@@ -6200,6 +6290,13 @@ ${JSON.stringify(answered)}`;
               ? section.edited_text
               : section.proposed_text || section.original_text || '').trim()
         }));
+        const sourceForFinal = await env.DB.prepare('SELECT rv.ai_context FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id WHERE rv.id = ? AND rv.resume_id = ? AND r.user_id = ?').bind(session.source_resume_version_id, session.source_resume_id, userId).first();
+        if (!sourceForFinal?.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'The source Master Resume could not be reloaded for final validation.', 409, headers);
+        const canonicalSourceSections = parseResumeContextSections(sourceForFinal.ai_context);
+        const evidenceForFinal = JSON.parse(session.evidence_snapshot_json || '[]');
+        const finalContentBySection = Object.fromEntries(finalSections.map(section => [section.section_id, section.content]));
+        const finalIntegrityProblems = validateResumePreservation(canonicalSourceSections, finalContentBySection, JSON.stringify(evidenceForFinal));
+        if (finalIntegrityProblems.length) return buildErrorResponse('RESUME_INTEGRITY_FAILED', 'Final resume blocked: ' + finalIntegrityProblems.join('; ') + '. Review the accepted/edited sections and regenerate if required.', 409, headers);
         const placeholderPattern = /(?:\[\s*(?:REPRODUCE|INSERT|ADD|PLACEHOLDER|TODO|TBD|WRITE|PUT|ENSURE)[\s\S]{0,1000}?\]|(?:REPRODUCE ALL ORIGINAL CONTENT|INSERT (?:CONTENT|TEXT) HERE|PLACEHOLDER TEXT|TODO:|TBD:|CONTENT GOES HERE|ALL ROLES AND BULLETS ARE RETAINED))/i;
         const invalidSection = finalSections.find(section => placeholderPattern.test(section.content));
         if (invalidSection) return buildErrorResponse('RESUME_PLACEHOLDER_BLOCKED', 'The final resume contains placeholder/instruction text in ' + invalidSection.section_id.replaceAll('_', ' ') + '. Resume creation was blocked. Review or regenerate the proposals.', 409, headers);
@@ -6259,8 +6356,14 @@ ${JSON.stringify(answered)}`;
         if (!source || !source.ai_context) return buildErrorResponse('AI_CONTEXT_NOT_FOUND', 'Source resume version has no saved AI Context.', 409, headers);
         if (!env.GEMINI_API_KEY) return buildErrorResponse('MISSING_KEY', 'Gemini API key is not configured.', 500, headers);
         const sectionIds = ['professional_summary', 'core_competencies', 'professional_experience', 'achievements', 'technical_skills'];
+        const sourceSections = parseResumeContextSections(source.ai_context);
+        const sourceSectionsComplete = sectionIds.every(id => typeof sourceSections[id] === 'string' && sourceSections[id].trim());
+        if (!sourceSectionsComplete) return buildErrorResponse('SOURCE_RESUME_STRUCTURE', 'The Master Resume AI Context does not contain all required sections in a recognisable format. Please correct the source resume structure before tailoring.', 409, headers);
         const prompt = [
-          'Tailor the resume to the job description WITHOUT shortening, summarising, or dropping the candidate’s original resume content.',
+          'Tailor the resume conservatively. The source resume is authoritative; never rewrite it into a short generic profile.',
+          'Do not invent facts, numbers, metrics, dates, employers, job titles, certifications, tools, budgets, responsibilities, or outcomes. Any numeric claim must appear verbatim in the source resume or selected verified evidence.',
+          'Keep each employer, title, date range and position separate exactly as in the source. Do not combine roles, create a current role, or alter dates. Preserve all substantive bullets and details.',
+          'Make only targeted keyword and emphasis changes supported by source facts. Keep professional experience, achievements, and technical skills at least 82% of their source word count. If safe tailoring cannot be done without omission, return proposed_text empty for that section.',
           'The source resume is the authoritative document. Preserve its complete structure, every employment entry (employer, title, dates), and all meaningful responsibilities, achievements, metrics, projects, and technical skills.',
           'Use only facts explicitly stated in the source resume AI Context or selected VERIFIED evidence. JD requirements and ATS gaps are not candidate experience.',
           'Never invent or infer employers, titles, dates, tenure, scope, team size, budgets, metrics, outcomes, tools, certifications, ownership or responsibilities.',
@@ -6270,6 +6373,7 @@ ${JSON.stringify(answered)}`;
           'Add JD keywords only when supported by source facts. If no safe change is possible, use an empty proposed_text.',
           'For evidence_ids, return ONLY exact ID strings copied from the supplied verified evidence records. If unsure or no evidence applies, return an empty array. Never invent IDs. Return complete replacement text for each section.',
           'Return ONLY JSON: {"sections":[{"section_id":"...","title":"...","original_text":"...","proposed_text":"...","rationale":"...","evidence_ids":[]}]}. Include exactly these section IDs once each, in this order: ' + sectionIds.join(', '),
+          'CANONICAL SOURCE SECTIONS (these are the exact text to preserve as original_text):', JSON.stringify(sourceSections),
           'SOURCE RESUME AI CONTEXT:', source.ai_context.slice(0, 90000),
           'VERIFIED EVIDENCE:', JSON.stringify(evidence),
           'JOB DESCRIPTION:', String(session.jd_text_snapshot || '').slice(0, 25000),
@@ -6326,6 +6430,11 @@ ${JSON.stringify(answered)}`;
           sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: String(item.rationale || 'Proposal generated for this section.').slice(0, 3000), evidence_ids: safeEvidenceIds, decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
         }
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
+        // Never trust model-generated source text: replace it with the exact parsed Master Resume section.
+        for (const section of sections) section.original_text = sourceSections[section.section_id];
+        const candidateSections = Object.fromEntries(sections.map(section => [section.section_id, section.proposed_text || section.original_text]));
+        const integrityProblems = validateResumePreservation(sourceSections, candidateSections, JSON.stringify(evidence));
+        if (integrityProblems.length) return buildErrorResponse('AI_RESUME_INTEGRITY_FAILED', 'Proposal rejected because it may omit or introduce source facts: ' + integrityProblems.join('; ') + '. No proposal was saved. Regenerate or review the source resume.', 502, headers);
         const totalProposedLength = sections.reduce((total, section) => total + section.proposed_text.length, 0);
         const sourceContentLength = String(source.ai_context || '').trim().length;
         if (sourceContentLength >= 1500 && totalProposedLength < sourceContentLength * 0.70) return buildErrorResponse('AI_CONTENT_TRUNCATED', 'The generated resume omitted too much of the source resume content. No proposal was saved. Please regenerate.', 502, headers);
