@@ -62,7 +62,7 @@ export function validateResumePreservation(sourceSections, candidateSections, ev
     if (!original) continue;
     const candidate = String(candidateSections?.[id] || '').trim();
     if (!candidate) problems.push(id + ' is missing from the final resume');
-    else if (original.replace(/\\s+/g, ' ').trim() !== candidate.replace(/\\s+/g, ' ').trim()) {
+    else if (original.replace(/\s+/g, ' ').trim() !== candidate.replace(/\s+/g, ' ').trim()) {
       problems.push(id + ' differs from the canonical Master Resume content');
     }
   }
