@@ -6397,13 +6397,8 @@ ${JSON.stringify(answered)}`;
           const rawEvidenceIds = Array.isArray(item.evidence_ids) ? item.evidence_ids : [];
           const safeEvidenceIds = [...new Set(rawEvidenceIds.filter(id => typeof id === 'string' && validEvidenceIds.has(id)))];
           if (rawEvidenceIds.length !== safeEvidenceIds.length) console.warn('Proposal generation: discarded unsupported evidence references for section', item.section_id);
-          // A short AI response cannot block proposal generation. Protected sections
-          // are restored from the canonical source below; competencies fall back safely.
-          const protectedSections = new Set(['core_competencies', 'professional_experience', 'achievements', 'technical_skills']);
-          const minimumCoverage = undefined;
-          if (!protectedSections.has(item.section_id) && proposedText && minimumCoverage && originalText.length >= 300 && proposedText.length < originalText.length * minimumCoverage) {
-            proposedText = '';
-          }
+          // Never reject based on AI word count. Protected sections are restored
+          // from canonical source below, so a truncated AI response cannot block generation.
           sections.push({ section_id: item.section_id, title: String(item.title || item.section_id), original_text: originalText.slice(0, 20000), proposed_text: proposedText.slice(0, 20000), rationale: String(item.rationale || 'Proposal generated for this section.').slice(0, 3000), evidence_ids: safeEvidenceIds, decision: proposedText ? 'PENDING' : 'NO_CHANGE', edited_text: null });
         }
         if (seen.size !== sectionIds.length) return buildErrorResponse('AI_INVALID_RESPONSE', 'A required proposal section is missing.', 502, headers);
@@ -6423,17 +6418,7 @@ ${JSON.stringify(answered)}`;
             section.rationale = protectedSectionReasons[section.section_id];
           }
         }
-        // Core Competencies safely fall back to source if AI shortened them materially.
-        const preservationThresholds = {};
-        for (const section of sections) {
-          const threshold = preservationThresholds[section.section_id];
-          if (!threshold || !section.proposed_text || section.original_text.length < 300) continue;
-          if (section.proposed_text.length < section.original_text.length * threshold) {
-            section.proposed_text = '';
-            section.decision = 'NO_CHANGE';
-            section.rationale = 'AI shortened this section below the preservation threshold; the original Master Resume content is retained verbatim.';
-          }
-        }
+        // All protected sections are already set to NO_CHANGE with canonical source text.
         // Unsupported numeric claims are isolated to the section that introduced them.
         // Restore that section verbatim instead of rejecting the entire proposal.
         const numericEvidence = JSON.stringify(evidence);
