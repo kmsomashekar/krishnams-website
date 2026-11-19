@@ -203,7 +203,7 @@ function createDocxParagraphs(sections) {
         output.push(new Paragraph({
           children: [new TextRun(clean)],
           bullet: bullet ? {level: 0} : undefined,
-          numbering: numbered ? {reference: 'resume-numbering', level: 0} : undefined,
+          
           indent: bullet || numbered ? {left: 360, hanging: 180} : undefined,
           spacing: {after: 80, line: 276},
           keepLines: true
