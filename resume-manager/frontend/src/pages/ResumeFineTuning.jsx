@@ -197,46 +197,6 @@ async function downloadResumeDocx(resume, aiContext, session) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function downloadResumeDocx(resume, aiContext) {
-  const profile = await fetchCandidateProfile();
-  const sections = getResumeSections(aiContext, profile);
-  const children = [];
-  const contact = sections.find(section => String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details');
-  if (contact) {
-    const lines = contact.paragraphs.join('\n').split('\n').map(v => v.trim()).filter(Boolean);
-    if (lines.length) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[0], bold: true, size: 32, color: '184368', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 1) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines[1], bold: true, size: 20, color: '374450', font: 'Arial' })], spacing: { after: 0 } }));
-    if (lines.length > 2) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: lines.slice(2).join(' | '), size: 16, font: 'Arial' })], spacing: { after: 180 } }));
-  }
-  for (const section of sections) {
-    const isContact = String(section.title || '').toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '') === 'contact_details';
-    if (isContact) continue;
-    children.push(new Paragraph({ children: [new TextRun({ text: sectionLabel(section.title).toUpperCase(), bold: true, size: 22, color: '184368', font: 'Arial' })], spacing: { before: 180, after: 80 } }));
-    for (const block of section.paragraphs) for (const rawLine of block.split('\n').map(v => v.trim()).filter(Boolean)) {
-      const bullet = /^[-•*]\s/.test(rawLine);
-      const line = bullet ? rawLine.replace(/^[-•*]\s*/, '') : rawLine;
-      const roleHeading = /(?:19|20)\d{2}\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2})/i.test(line) && !bullet;
-      const competencyLabel = !bullet && /^[^:]{2,80}:\s/.test(line);
-      const runs = competencyLabel ? [
-        new TextRun({ text: line.split(':')[0] + ': ', bold: true, font: 'Arial', size: 20 }),
-        new TextRun({ text: line.slice(line.indexOf(':') + 1).trim(), font: 'Arial', size: 20 })
-      ] : [new TextRun({ text: line, bold: roleHeading, font: 'Arial', size: roleHeading ? 21 : 20, color: roleHeading ? '184368' : undefined })];
-      children.push(new Paragraph({ children: runs, spacing: { after: bullet ? 45 : roleHeading ? 90 : 60 }, ...(bullet ? { bullet: { indent: 300 } } : {}) }));
-    }
-  }
-  const doc = new Document({
-    creator: 'Resume Manager',
-    title: resume.target_role || 'Professional Resume',
-    sections: [{
-      properties: { page: { margin: { top: 605, right: 835, bottom: 605, left: 835 } } },
-      footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'Krishna M S  |  IT & Cybersecurity Leader', size: 15, color: '666666', font: 'Arial' })] })] }) },
-      children
-    }]
-  });
-  const blob = await Packer.toBlob(doc); const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-  anchor.href = url; anchor.download = safeFileName(resume.resume_name) + '.docx'; anchor.click(); URL.revokeObjectURL(url);
-}
-
 async function downloadResumePdf(resume, aiContext) {
   const profile = await fetchCandidateProfile();
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' }); const width = pdf.internal.pageSize.getWidth(); const height = pdf.internal.pageSize.getHeight();
