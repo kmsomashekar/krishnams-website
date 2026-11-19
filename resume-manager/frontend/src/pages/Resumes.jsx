@@ -356,6 +356,15 @@ export default function Resumes() {
   const deleteResumeMutation = useMutation({
     mutationFn: deleteResume,
     onSuccess: (data) => {
+      // Remove the deleted resume from cached list immediately so the auto-select
+      // effect cannot reselect a stale ID before the list refetch completes.
+      queryClient.setQueryData(['resumes'], (current) => {
+        if (!current || !data?.id) return current;
+        return {
+          ...current,
+          resumes: (current.resumes || []).filter((resume) => resume.id !== data.id)
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['resumes'] });
       queryClient.removeQueries({ queryKey: ['resume-details', data?.id] });
       queryClient.removeQueries({ queryKey: ['resume-version-details', data?.id] });
