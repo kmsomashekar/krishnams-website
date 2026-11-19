@@ -13,6 +13,7 @@ import Resumes from './pages/Resumes.jsx';
 import Interviews from './pages/Interviews.jsx';
 import CoverLetters from './pages/CoverLetters.jsx';
 import JDAnalyzer from './pages/JDAnalyzer.jsx';
+import ResumeFineTuning from './pages/ResumeFineTuning.jsx';
 import Outreach from './pages/Outreach.jsx';
 import Settings from './pages/Settings';
 
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/jd-analyzer" element={<JDAnalyzer />} />
+            <Route path="/opportunities/:id/resume-fine-tuning/:sessionId" element={<ResumeFineTuning />} />
             <Route path="/opportunities" element={<Opportunities />} />
 			      <Route path="/outreach" element={<Outreach />} />
             <Route path="/opportunities/:id" element={<OpportunityDetail />} />
